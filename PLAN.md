@@ -55,6 +55,15 @@ decided mechanically, by the standard's grammar and flang (below).
   `#{:a 1, :b 2}` (map). Keywords `:a`; names may end in `?` and `!`.
 - Every Clojure function and macro, and every clotran package, callable
   as `f(args)`.
+- Lambdas, which Fortran has not (internal procedures cannot outlive
+  their host; procedure pointers name procedures): real closures, passed,
+  returned and stored, collected when unused. Syntax open, Fortran-
+  invalid either way (`=>` is taken, pointer assignment and renames):
+  `fn(x) x * x end`, as Fortran's `function ... end` reads, and a short
+  form for one-liners (Clojure's `#(% * %)`). A lambda captures values,
+  not Fortran variables -- a mutable array it closes over is copied,
+  the crossing rule -- so it is safe to hand to `map`, another thread, or
+  a lazy sequence that runs later.
 - Open: the file extension (`.lem` is Cambridge's Lem; `.lms` or
   `.lmis`), `val` versus another word, how a macro is written in Lemmis
   (a quoting form, as Julia's `:( )` and `$`), comments (`!` as Fortran).
