@@ -76,21 +76,47 @@ As for clotran, nothing is checked by eye:
 - **Conformance**: NIST's FCVS (the FORTRAN 77 validation suite, public
   domain); passing more of it over time is the compatibility score.
 
-## Verification, the long track
+## Verification: Fortran first, then Lemmis on it
 
-Kestrel's ACL2 books give a verified-grammar library (ABNF) and formal
-semantics of C, Java and Yul to learn from:
-1. the grammar of the subset and the extensions in ACL2, the parser
-   proved to accept exactly it -- "the extensions never collide with
-   Fortran" as a theorem;
-2. the subset's meaning as an executable ACL2 model, run against
-   gfortran and flang;
-3. each extension's desugaring proved to preserve meaning;
-4. the crossing proved: copying in, realising out.
+Two stages, in order. The first stands on its own: a machine-checked
+definition of the Fortran scientists write, which hardly exists
+anywhere (C, Java and ML have serious formal semantics; Fortran, the
+oldest of them still in heavy use, very little). The second makes Lemmis
+a proved extension of it. The books live in `model/` here, as clotran's
+do, certified by ACL2; Kestrel's ACL2 books (a verified-grammar library
+for ABNF, formal semantics of C, Java and Yul, ATC generating C from
+ACL2) are the examples to learn from.
+
+**Stage A -- Fortran in ACL2.**
+1. *The grammar*: the subset's syntax rules from the standard (J3/24-007),
+   each citing its R-number, as an ACL2 grammar; a parser proved to
+   accept exactly that grammar.
+2. *The meaning*: an executable ACL2 model of the subset -- values and
+   their kinds, arrays and their bounds, assignment, `do`, `if`,
+   procedures and their arguments (intent, `pure`), modules, the
+   intrinsics used most.
+3. *Checked against the compilers*: the model runs the oracle programs
+   and the fuzzer's, and prints what gfortran and flang print; FCVS
+   cases join as the subset grows. Where gfortran and flang disagree,
+   the standard decides, and the model says which follows it.
+
+**Stage B -- Lemmis as a conservative extension.**
+4. *The extended grammar*: Stage A's plus the extensions, and the
+   theorem that keeps the rule -- every program the Fortran grammar
+   accepts parses identically under Lemmis's; the extensions never
+   collide with Fortran.
+5. *The extended meaning*: Lemmis's model, and the theorem that it is
+   conservative -- on a Fortran program, Lemmis's meaning is Stage A's
+   meaning, step for step.
+6. *The extensions*: each desugaring to Clojure forms proved to preserve
+   meaning (against clotran's VM model for the core of Clojure).
+7. *The crossing*: an array copied into a value is unaffected by later
+   writes; a lazy sequence realised into an array holds the same values.
 
 Said plainly: gfortran and flang underneath are not verified, nor are
 clotran's builtins' answers (clj decides those); what is proved is the
-language's definition and clotran's machine.
+languages' definitions -- Fortran's subset, then Lemmis -- and clotran's
+machine. Stage A is worth publishing on its own when it is solid.
 
 ## Scope
 
@@ -110,4 +136,6 @@ GOTO.
 6. clotran's two hooks: `require` of a Lemmis file, and the index reading
    it (definitions and hover in every editor).
 7. Error messages in Lemmis's own terms, with its lines; then docs.
-8. FCVS, as far as it goes; the ACL2 track begins.
+8. FCVS, as far as it goes.
+9. Stage A (Fortran in ACL2), then Stage B (Lemmis as its conservative
+   extension) -- beside the milestones above once the subset is stable.
