@@ -27,6 +27,20 @@ meaning (C++'s mistake over C); extensions live only where Fortran had
 nothing (TypeScript over JavaScript). "Is this valid Fortran?" is
 decided mechanically, by the standard's grammar and flang (below).
 
+James, 2026-10-18: "I want to keep the c++ convention of any valid c
+program is also a valid c++ program ... I think it's a good restraint."
+Kept more strictly than C++ kept it: C++ broke it in places (`new` and
+`class` as names, `void*` conversions) and some programs valid in both
+mean different things (`sizeof('a')`); Lemmis's rule is the same
+*meaning*, not only acceptance, and Stage B proves it.
+
+**Fortran has no reserved words.** `val`, `fn`, `do`, `if` can all be
+names in valid Fortran (`val = 3`, `fn(x)`), so no extension may make a
+word a keyword: an extension is recognized only where the text is not
+valid Fortran -- `val xs = ...` (two names before `=`), `fn(x) x * x
+end` (nothing valid follows `fn(x)` so). Every extension passes that
+test, and the grammar theorem (Stage B, 4) checks all of them.
+
 ## Two kinds of value, and an explicit crossing
 
 - **Fortran's declarations keep Fortran's meaning**: `real :: x(100)` is
