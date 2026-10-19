@@ -5,13 +5,13 @@ procedures, arrays, the loops, `pure` and `elemental`, the intrinsics
 most used. This file lists the syntax rules of J3/24-007 (the Fortran
 2023 working draft, read for this list) that the Scope needs, and for
 each one whether the model has it. A rule counts as **proved** when
-fgram.lisp has it as grammar and fparse.lisp's parser is proved to
-accept exactly that grammar (`fp-sound`, `fp-complete`), for every
-alternative the Scope uses; **part** when only some alternatives are in;
-**next** when its statement or construct grammar is written but not yet
-proved (fstmt.lisp, fprog.lisp, not yet in the books); **no** otherwise.
+its grammar is in a book (fgram.lisp for expressions, fstmt.lisp for
+statements, fprog.lisp for program units) and that book's parser is
+proved to accept exactly that grammar (`fp-`, `fps-`, `fpu-sound` and
+`-complete`), for every alternative the Scope uses; **part** when only
+some alternatives are in; **no** otherwise.
 
-Score: **38 of 139** Scope rules proved; 9 more in part; 75 written (statements, units) and next to prove; 16 not yet in.
+Score: **101 of 138** Scope rules proved; 21 more in part; 16 not yet in.
 
 ## The books
 
@@ -28,6 +28,18 @@ Score: **38 of 139** Scope rules proved; 9 more in part; 75 written (statements,
     reads, plus a constant per nonterminal (`fp-d`, at most 17) -- with
     fp-complete, n tokens are read in at most 32n + 17 calls.
   All certify in about 25 s.
+- `fstmt.lisp`: one statement's tokens, the same way: `fgs`, `fys`, the
+  parser `fps` (its kind known from the first tokens), `fps-sound`,
+  `fps-complete` (followed by nothing: a statement is whole) and
+  `fps-cost`: at most 64 calls per token read, fp's among them, plus
+  `fps-d` (at most 48). About 8 minutes.
+- `fprog.lisp`: program units over statement trees: `fgu`, `fyu`, the
+  parser `fpu`, `fpu-sound` (on statement trees), `fpu-complete` and
+  `fpu-cost`: at most 32 calls per statement, plus `fpu-d` (at most 12).
+  About 5 minutes.
+- `fmean.lisp`: the meaning (item 2). `fortran-parse` is flex, then fps
+  on each statement, then fpu; `fortran-parse-sound`: what it accepts is
+  a program of the grammar.
 - `flex.lisp`: free source form (6.3.2) to statements of tokens, with
   `assert-event` tests. Not proved; it is checked by running programs.
 
@@ -50,17 +62,17 @@ Score: **38 of 139** Scope rules proved; 9 more in part; 75 written (statements,
 
 | Rule | Name | Status | Note |
 |---|---|---|---|
-| R501 | program | next | |
-| R502 | program-unit | next | main-program, external-subprogram, module |
-| R503 | external-subprogram | next | |
-| R504 | specification-part | next | use-stmts, IMPLICIT NONE, type-declaration-stmts |
-| R505 | implicit-part | next | IMPLICIT NONE only |
-| R507 | declaration-construct | next | type-declaration-stmt only |
-| R509 | execution-part | next | |
-| R511 | internal-subprogram-part | next | |
-| R512 | internal-subprogram | next | |
-| R514 | executable-construct | next | action-stmt, do-construct, if-construct |
-| R515 | action-stmt | next | assignment, call, cycle, exit, continue, if-stmt, print, return, stop |
+| R501 | program | proved |  |
+| R502 | program-unit | proved | main-program, external-subprogram, module |
+| R503 | external-subprogram | proved |  |
+| R504 | specification-part | proved | use-stmts, IMPLICIT NONE, type-declaration-stmts |
+| R505 | implicit-part | proved | IMPLICIT NONE only |
+| R507 | declaration-construct | part | type-declaration-stmt only; no derived-type-def, interface-block |
+| R509 | execution-part | proved |  |
+| R511 | internal-subprogram-part | proved |  |
+| R512 | internal-subprogram | proved |  |
+| R514 | executable-construct | part | action-stmt, do-construct, if-construct; no case-construct yet |
+| R515 | action-stmt | part | assignment, call, cycle, exit, continue, if-stmt, print, return, stop; no allocate, deallocate |
 | R516 | keyword | proved | as an actual-arg-spec's keyword |
 | R601 | alphanumeric-character | proved | in R603 |
 | R603 | name | proved | lower case (flex); not a statement keyword |
@@ -75,29 +87,29 @@ Score: **38 of 139** Scope rules proved; 9 more in part; 75 written (statements,
 | R717 | exponent | no | |
 | R724 | char-literal-constant | part | no kind-param prefix |
 | R725 | logical-literal-constant | proved | |
-| R703 | declaration-type-spec | next | intrinsic-type-spec |
-| R704 | intrinsic-type-spec | next | INTEGER, LOGICAL |
-| R705 | integer-type-spec | next | |
-| R706 | kind-selector | next | |
+| R703 | declaration-type-spec | proved | intrinsic-type-spec |
+| R704 | intrinsic-type-spec | part | INTEGER, LOGICAL; no REAL yet |
+| R705 | integer-type-spec | proved |  |
+| R706 | kind-selector | proved |  |
 | R777 | array-constructor | part | lbracket ac-spec rbracket |
 | R778 | ac-spec | part | ac-value-list |
 | R779 | lbracket | proved | |
 | R780 | rbracket | proved | |
 | R781 | ac-value | part | expr; no ac-implied-do |
-| R801 | type-declaration-stmt | next | |
-| R802 | attr-spec | next | DIMENSION, INTENT, PARAMETER, VALUE |
-| R803 | entity-decl | next | |
-| R804 | object-name | next | |
-| R805 | initialization | next | = constant-expr |
-| R814 | array-spec | next | explicit-shape-spec-list, assumed-shape-spec-list |
-| R815 | explicit-shape-spec | next | |
-| R816 | lower-bound | next | |
-| R817 | upper-bound | next | |
-| R820 | assumed-shape-spec | next | |
-| R828 | intent-spec | next | IN, OUT, INOUT, IN OUT |
-| R866 | implicit-stmt | next | IMPLICIT NONE |
+| R801 | type-declaration-stmt | proved |  |
+| R802 | attr-spec | part | DIMENSION, INTENT, PARAMETER, VALUE; no ALLOCATABLE, SAVE |
+| R803 | entity-decl | proved |  |
+| R804 | object-name | proved |  |
+| R805 | initialization | proved | = constant-expr |
+| R814 | array-spec | part | explicit-shape-spec-list, assumed-shape-spec-list; no deferred-shape |
+| R815 | explicit-shape-spec | proved |  |
+| R816 | lower-bound | proved |  |
+| R817 | upper-bound | proved |  |
+| R820 | assumed-shape-spec | proved |  |
+| R828 | intent-spec | proved | IN, OUT, INOUT, IN OUT |
+| R866 | implicit-stmt | proved | IMPLICIT NONE |
 | R901 | designator | proved | object-name, array-element, array-section |
-| R902 | variable | next | in assignment-stmt |
+| R902 | variable | proved | in assignment-stmt |
 | R911 | data-ref | proved | one part-ref (no derived types) |
 | R912 | part-ref | proved | |
 | R917 | array-element | proved | |
@@ -127,24 +139,24 @@ Score: **38 of 139** Scope rules proved; 9 more in part; 75 written (statements,
 | R1021 | or-op | proved | |
 | R1022 | equiv-op | proved | |
 | R1023 | expr | proved | no defined-binary-op |
-| R1033 | assignment-stmt | next | |
-| R1101 | block | next | |
-| R1119 | do-construct | next | |
-| R1120 | do-stmt | next | nonlabel-do-stmt |
-| R1122 | nonlabel-do-stmt | next | |
-| R1123 | loop-control | next | do-variable = e, e [, e]; WHILE; no CONCURRENT |
-| R1124 | do-variable | next | |
+| R1033 | assignment-stmt | proved |  |
+| R1101 | block | proved |  |
+| R1119 | do-construct | proved |  |
+| R1120 | do-stmt | proved | nonlabel-do-stmt |
+| R1122 | nonlabel-do-stmt | proved |  |
+| R1123 | loop-control | part | do-variable = e, e [, e]; WHILE; no CONCURRENT |
+| R1124 | do-variable | proved |  |
 | R1125 | concurrent-header | no | |
 | R1126 | concurrent-control | no | |
-| R1133 | end-do | next | end-do-stmt |
-| R1134 | end-do-stmt | next | |
-| R1135 | cycle-stmt | next | |
-| R1136 | if-construct | next | |
-| R1137 | if-then-stmt | next | |
-| R1138 | else-if-stmt | next | |
-| R1139 | else-stmt | next | |
-| R1140 | end-if-stmt | next | |
-| R1141 | if-stmt | next | |
+| R1133 | end-do | proved | end-do-stmt |
+| R1134 | end-do-stmt | proved |  |
+| R1135 | cycle-stmt | proved |  |
+| R1136 | if-construct | proved |  |
+| R1137 | if-then-stmt | proved |  |
+| R1138 | else-if-stmt | proved |  |
+| R1139 | else-stmt | proved |  |
+| R1140 | end-if-stmt | proved |  |
+| R1141 | if-stmt | proved |  |
 | R1142 | case-construct | no | |
 | R1143 | select-case-stmt | no | |
 | R1144 | case-stmt | no | |
@@ -153,38 +165,38 @@ Score: **38 of 139** Scope rules proved; 9 more in part; 75 written (statements,
 | R1147 | case-selector | no | |
 | R1148 | case-value-range | no | |
 | R1149 | case-value | no | |
-| R1158 | exit-stmt | next | |
-| R1161 | continue-stmt | next | |
-| R1162 | stop-stmt | next | no stop-code |
-| R1212 | print-stmt | next | |
-| R1215 | format | next | * |
-| R1217 | output-item | next | expr |
-| R1401 | main-program | next | the program-stmt required |
-| R1402 | program-stmt | next | |
-| R1403 | end-program-stmt | next | |
-| R1404 | module | next | |
-| R1405 | module-stmt | next | |
-| R1406 | end-module-stmt | next | |
-| R1407 | module-subprogram-part | next | |
-| R1408 | module-subprogram | next | |
-| R1409 | use-stmt | next | |
-| R1410 | module-nature | next | |
-| R1412 | only | next | only-use-name |
+| R1158 | exit-stmt | proved |  |
+| R1161 | continue-stmt | proved |  |
+| R1162 | stop-stmt | part | no stop-code |
+| R1212 | print-stmt | proved |  |
+| R1215 | format | part | * only |
+| R1217 | output-item | part | expr; no io-implied-do |
+| R1401 | main-program | proved | the program-stmt required |
+| R1402 | program-stmt | proved |  |
+| R1403 | end-program-stmt | proved |  |
+| R1404 | module | proved |  |
+| R1405 | module-stmt | proved |  |
+| R1406 | end-module-stmt | proved |  |
+| R1407 | module-subprogram-part | proved |  |
+| R1408 | module-subprogram | proved |  |
+| R1409 | use-stmt | part | no rename-list |
+| R1410 | module-nature | proved |  |
+| R1412 | only | part | only-use-name; no rename |
 | R1520 | function-reference | proved | |
-| R1521 | call-stmt | next | |
+| R1521 | call-stmt | proved |  |
 | R1522 | procedure-designator | proved | procedure-name |
 | R1523 | actual-arg-spec | proved | |
 | R1524 | actual-arg | part | expr (a variable is an expr's designator) |
-| R1529 | prefix | next | |
-| R1530 | prefix-spec | next | type-spec, ELEMENTAL, IMPURE, NON_RECURSIVE, PURE, RECURSIVE |
-| R1532 | function-subprogram | next | |
-| R1533 | function-stmt | next | |
-| R1534 | dummy-arg-name | next | |
-| R1535 | suffix | next | RESULT ( name ) |
-| R1536 | end-function-stmt | next | |
-| R1537 | subroutine-subprogram | next | |
-| R1538 | subroutine-stmt | next | |
-| R1539 | dummy-arg | next | dummy-arg-name |
-| R1540 | end-subroutine-stmt | next | |
-| R1545 | return-stmt | next | no alternate return |
-| R1546 | contains-stmt | next | |
+| R1529 | prefix | proved |  |
+| R1530 | prefix-spec | proved | type-spec, ELEMENTAL, IMPURE, NON_RECURSIVE, PURE, RECURSIVE |
+| R1532 | function-subprogram | proved |  |
+| R1533 | function-stmt | proved |  |
+| R1534 | dummy-arg-name | proved |  |
+| R1535 | suffix | proved | RESULT ( name ) |
+| R1536 | end-function-stmt | proved |  |
+| R1537 | subroutine-subprogram | proved |  |
+| R1538 | subroutine-stmt | proved |  |
+| R1539 | dummy-arg | proved | dummy-arg-name |
+| R1540 | end-subroutine-stmt | proved |  |
+| R1545 | return-stmt | proved | no alternate return |
+| R1546 | contains-stmt | proved |  |

@@ -12,6 +12,10 @@
 ;;
 ;; The harness (types module, main program, print, allocate) is outside
 ;; the subset; only the module m is the subset. Exit 1 on any difference.
+;;
+;; Then whole programs, model/cases/*.f90: each read as text by fmean's
+;; fortran-run (flex, fps, fpu, the meaning) and compiled by both
+;; compilers; what they print must agree, token by token.
 (require '[babashka.process :as p] '[babashka.fs :as fs] '[clojure.string :as str])
 
 (def here (str (fs/parent (fs/absolutize *file*))))
@@ -300,6 +304,72 @@
                     (not= (map str/upper-case got) (map str/upper-case lines))
                     (fail! (:name c) fc "printed" got "; the model" lines)
                     :else (do (swap! results update :agree inc) (println "ok" (:name c) fc (count lines) "values" (if err? "then the bounds error" "")))))))))))
+
+;; ---- whole programs: model/cases/*.f90 as text ---------------------------
+;;
+;; Each program is read by fmean.lisp's fortran-run (flex, fps, fpu, the
+;; meaning) and compiled by gfortran -std=f2018 and flang. PRINT *'s layout
+;; is processor dependent (13.10.4), so lines are compared as their
+;; whitespace-separated tokens. A program both compilers disagree on is
+;; reported: the standard decides it, case by case, in SUBSET.md.
+
+(def prog-files (sort (map str (fs/glob (str here "/cases") "*.f90"))))
+
+(defn lisp-str [s] (str "\"" (-> s (str/replace "\\" "\\\\") (str/replace "\"" "\\\"")) "\""))
+
+(def prog-model
+  (if (empty? prog-files) []
+    (let [input (str "(include-book \"fmean\")\n(set-iprint nil)\n(set-fmt-hard-right-margin 100000 state)\n(set-fmt-soft-right-margin 100000 state)\n"
+                     "(defun show-toks (ts) (declare (xargs :mode :program))\n"
+                     "  (if (endp ts) \"\" (concatenate 'string \" \" (car ts) (show-toks (cdr ts)))))\n"
+                     "(defun show-lines (ls) (declare (xargs :mode :program))\n"
+                     "  (if (endp ls) nil (prog2$ (cw \"LINE~s0~%\" (show-toks (car ls))) (show-lines (cdr ls)))))\n"
+                     (str/join (for [f prog-files]
+                                 (str "(let ((r (fortran-run " (lisp-str (slurp f)) " 100000000)))\n"
+                                      "  (prog2$ (cw \"~%PROG~%STATUS ~x0~%\" (car r)) (if (consp (car r)) (cw \"AT ~x0~%\" (cadr r)) (show-lines (cadr r)))))\n")))
+                     "(good-bye)\n")
+          r (sh! 1200 {:dir here :in input} "nice" acl2)
+          blocks (rest (str/split (:out r) #"\nPROG\n"))]
+      (when (not= (count blocks) (count prog-files))
+        (println "check-fsem: ACL2 answered" (count blocks) "programs of" (count prog-files) "; its output ends:")
+        (println (subs (:out r) (max 0 (- (count (:out r)) 3000))) (:err r))
+        (System/exit 1))
+      (mapv (fn [b] {:status (second (re-find #"STATUS (.*)" b))
+                     :at (second (re-find #"AT (.*)" b))
+                     :lines (vec (for [l (str/split-lines b) :let [[_ x] (re-find #"^LINE(.*)$" l)] :when x]
+                                   (vec (remove str/blank? (str/split (str/trim x) #"\s+")))))})
+            blocks))))
+
+(defn toks-of [out] (vec (for [l (str/split-lines (str/trim out)) :let [ts (vec (remove str/blank? (str/split (str/trim l) #"\s+")))] :when (seq ts)] ts)))
+
+(def prog-results (atom {:progs 0 :agree-both 0 :runs 0 :agree 0 :disagree-compilers []}))
+(doseq [[f m] (map vector prog-files prog-model)]
+  (swap! prog-results update :progs inc)
+  (let [nm (fs/file-name f)
+        outs (for [[fc & flags] compilers]
+               (let [exe (str work "/prog-" nm "-" fc)
+                     cr (apply sh! 180 {:dir work} "nice" fc (concat flags ["-o" exe f]))]
+                 (if (not= 0 (:exit cr)) [fc :compile-error (:err cr)]
+                   (let [rr (sh! 60 {:dir work} exe)] [fc (:exit rr) (toks-of (:out rr))]))))
+        ok-model (#{":NORMAL" ":STOP"} (:status m))]
+    (when-not ok-model (fail! nm "the model stops with" (:status m) (or (:at m) "")))
+    (let [agrees (for [[fc ex toks] outs]
+                   (do (swap! prog-results update :runs inc)
+                       (cond (= ex :compile-error) (do (fail! nm fc "did not compile:" toks) false)
+                             (not= 0 ex) (do (fail! nm fc "exited" ex) false)
+                             (not= toks (:lines m)) (do (fail! nm fc "printed" toks "; the model" (:lines m)) false)
+                             :else (do (swap! prog-results update :agree inc) true))))
+          agrees (doall agrees)]
+      (when (and (= 2 (count outs)) (not= (nth (first outs) 2) (nth (second outs) 2)))
+        (swap! prog-results update :disagree-compilers conj nm)
+        (println "compilers disagree on" nm))
+      (when (and ok-model (every? true? agrees))
+        (swap! prog-results update :agree-both inc)
+        (println "ok" nm (count (:lines m)) "lines, every compiler")))))
+
+(let [{:keys [progs agree-both runs agree disagree-compilers]} @prog-results]
+  (println (format "check-fsem: %d programs; agreeing with the model under every compiler %d/%d; compiler runs agreeing %d/%d; compilers disagreeing on %d %s"
+                   progs agree-both progs agree runs (count disagree-compilers) (str/join " " disagree-compilers))))
 
 (let [{:keys [cases runs agree values fail skipped]} @results]
   (println (format "check-fsem: %d cases; compiler runs agreeing with the model %d/%d (%.0f%%); %d values compared; %d failures; %d skipped; compilers: %s"

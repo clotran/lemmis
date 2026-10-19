@@ -20,9 +20,13 @@
                   (and (seq? x) (= 'mv-let (first x)))
                   (let [[_ vars bound & body] x
                         c (symbol (str "c" (swap! n inc)))
+                        ;; a branch counts its call, or the call an mv-let in it binds
+                        br (fn br [y] (cond (call? y) (cnt-of y)
+                                            (and (seq? y) (= 'mv-let (first y))) (br (nth y 2))
+                                            :else 0))
                         cexp (cond (call? bound) (cnt-of bound)
                                    (and (seq? bound) (= 'if (first bound)))
-                                   (let [[_ tst a b] bound] (list 'if tst (if (call? a) (cnt-of a) 0) (if (call? b) (cnt-of b) 0)))
+                                   (let [[_ tst a b] bound] (list 'if tst (br a) (br b)))
                                    :else (throw (ex-info "mv-let bound" {:b bound})))]
                     (list 'mv-let vars bound (list 'declare (cons 'ignorable vars))
                           (list 'let (list (list c cexp)) (tr (last body) (cons c acc)))))

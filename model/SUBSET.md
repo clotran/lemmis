@@ -174,6 +174,31 @@ procedure the same with or without it; `fsyn` records the flag.
   compared. The model's bounds error is checked against gfortran
   `-fcheck=bounds`, which must stop after the same lines.
   `make -C model check` certifies the books and runs it.
+- `fmean.lisp`: the meaning of Stage A's larger Scope, over the parse
+  trees of fstmt and fprog (SCOPE.md): integer kinds 1, 2, 4, 8 and
+  logical kinds, mixed-kind results of the greater range (10.1.9.3),
+  division toward zero (10.1.5.2.2), negative powers (10.1.5.2.1p5),
+  arrays with bounds, sections, constructors and elementwise operations
+  (10.1.10), DO with its iteration count (11.1.7.4.1), DO WHILE, IF
+  constructs, modules and USE, internal and module procedures with
+  VALUE, INTENT and host association, PURE and ELEMENTAL (15.9), and
+  19 intrinsics. `fortran-run` reads a program's text (flex, fps, fpu)
+  and runs it; `fortran-parse-sound` proves what it accepts is a
+  program of the grammar. Each error the standard leaves undefined stops
+  the run, as in fsem. Guards are not yet verified.
+- `check-fsem.bb` then runs the programs in `model/cases/` (kinds,
+  loops, arrays, procedures, host association, elemental) through
+  fortran-run, gfortran and flang: **6 of 6** agree with the model under
+  both compilers (12 of 12 compiler runs); the compilers disagree on
+  none. PRINT * is list-directed, its layout processor dependent
+  (13.10.4), so the comparison is token by token.
+- NIST's FCVS (the FORTRAN 77 validation suite; a work of the US
+  government, public domain under 17 USC 105, NIST asks that it be
+  acknowledged and that modifications be stated; the 180 programs of
+  LLVM's test-suite copy, `Fortran/UnitTests/fcvs21_f95`): **0 of 180**
+  are in the model's reach yet. Every one is fixed source form (6.3.3)
+  with statement labels, GO TO and FORMAT, and most use REAL; the model
+  reads free form only. Fixed form, labels and REAL come first.
 
 ## Not covered yet
 
@@ -196,7 +221,6 @@ procedure the same with or without it; `fsyn` records the flag.
 - 10.1.7 lets a processor skip evaluating an operand that is not
   needed. fsem evaluates every operand left to right, so a nonconforming
   operand is an error even where a processor might never evaluate it.
-- No theorem yet ties `scripts/acl2-fortran`'s output to fsem. That is
-  the next slice: the generator, or a model of it, proved to map each
-  guard-verified ACL2 definition to a procedure whose fsem meaning is
-  the definition.
+- No theorem yet ties `scripts/acl2-fortran`'s output to fsem. Stage A
+  proves Fortran itself first (SCOPE.md, fmean); the generator is one
+  consumer of that, later.
