@@ -1,0 +1,6 @@
+# ACL2 certificates, compiled books and logs (make makes them)
+*.cert
+*.cert.out
+*.fasl
+*.port
+*.log
