@@ -36,13 +36,7 @@
 
 (include-book "fsyn")
 
-; ---- safe accessors, alists
-
-(defun kar (x) (declare (xargs :guard t)) (if (consp x) (car x) nil))
-(defun kdr (x) (declare (xargs :guard t)) (if (consp x) (cdr x) nil))
-(defun kadr (x) (declare (xargs :guard t)) (kar (kdr x)))
-(defun kaddr (x) (declare (xargs :guard t)) (kar (kdr (kdr x))))
-(defun kadddr (x) (declare (xargs :guard t)) (kar (kdr (kdr (kdr x)))))
+; ---- alists
 
 (defun lkp (k al)
   (declare (xargs :guard t))

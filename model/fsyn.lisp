@@ -6,9 +6,10 @@
 ; Names are strings (R603, C601). The forms, keyword-headed lists:
 ;
 ;  type     :int64 | :logical                       R704/R705 (kind int64), R704 LOGICAL
-;  expr     (:int n)            n_int64, a literal; negative n is the
-;                               generator's -n_int64, a leading add-op
-;                               (R1007) on the literal (R708)
+;  expr     (:int n)            n_int64, a literal (R708); negative n is
+;                               written (-n_int64), a parenthesized
+;                               level-2-expr with a leading add-op (R1001,
+;                               R1007), so it may stand anywhere
 ;           (:true) (:false)    R725
 ;           (:var x)            a variable (R901/R903)
 ;           (:comp o c)         o%c, a structure component (R911/R913)
@@ -43,6 +44,13 @@
 (defconst *int64-max* 9223372036854775807)
 (defconst *int64-min* -9223372036854775808)
 
+; safe accessors
+(defun kar (x) (declare (xargs :guard t)) (if (consp x) (car x) nil))
+(defun kdr (x) (declare (xargs :guard t)) (if (consp x) (cdr x) nil))
+(defun kadr (x) (declare (xargs :guard t)) (kar (kdr x)))
+(defun kaddr (x) (declare (xargs :guard t)) (kar (kdr (kdr x))))
+(defun kadddr (x) (declare (xargs :guard t)) (kar (kdr (kdr (kdr x)))))
+
 ; ---- names (R603: a letter, then letters, digits, underscores; C601: 63 at most)
 
 (defun alnum-chars-p (cs)
@@ -70,15 +78,6 @@
   ; (-huge(0_int64) - 1_int64) for it
   (and (integerp n) (<= (- *int64-max*) n) (<= n *int64-max*)))
 
-; a literal written with a sign: -n_int64. An add-operand or mult-operand
-; cannot begin with a sign (R1006, R1007), so it is no right operand of
-; +, - or *, and no operand of a unary minus: (x + -1_int64) is not
-; Fortran (gfortran -std=f2018 refuses it; flang takes it). The
-; generator writes (-1_int64 + x), never the other order (SUBSET.md).
-(defun neg-lit-p (x)
-  (declare (xargs :guard t))
-  (and (consp x) (eq (car x) :int) (consp (cdr x)) (integerp (cadr x)) (< (cadr x) 0)))
-
 (mutual-recursion
  (defun fexpr-p (x)
    (declare (xargs :guard t :measure (acl2-count x)))
@@ -89,11 +88,8 @@
           (:var (and (= (len x) 2) (fname-p (cadr x))))
           ((:comp :size) (and (= (len x) 3) (fname-p (cadr x)) (fname-p (caddr x))))
           (:elem (and (= (len x) 4) (fname-p (cadr x)) (fname-p (caddr x)) (fexpr-p (cadddr x))))
-          (:neg (and (= (len x) 2) (fexpr-p (cadr x)) (not (neg-lit-p (cadr x)))))
-          (:not (and (= (len x) 2) (fexpr-p (cadr x))))
-          ((:add :sub :mul)
-           (and (= (len x) 3) (fexpr-p (cadr x)) (fexpr-p (caddr x)) (not (neg-lit-p (caddr x)))))
-          ((:eq :lt :le :ge :max)
+          ((:neg :not) (and (= (len x) 2) (fexpr-p (cadr x))))
+          ((:add :sub :mul :eq :lt :le :ge :max)
            (and (= (len x) 3) (fexpr-p (cadr x)) (fexpr-p (caddr x))))
           (:fcall (and (= (len x) 3) (fname-p (cadr x)) (fexpr-list-p (caddr x))))
           (otherwise nil))))
@@ -204,9 +200,9 @@
                                  ((:assign (:var "r") (:max (:int 0) (:var "ci_")))))))
 ; duplicate case values are refused (C1154)
 (assert-event (not (fstmt-p '(:select (:var "n_") ((1 nil) (1 nil)) nil))))
-; a signed literal leads a sum, never follows an operator (R1007)
-(assert-event (and (fexpr-p '(:add (:int -1) (:var "k_"))) (not (fexpr-p '(:add (:var "k_") (:int -1))))
-                   (fexpr-p '(:lt (:var "x_") (:int -1))) (not (fexpr-p '(:neg (:int -1))))))
+; a negative literal is parenthesized, so it may follow an operator (R1001, R1007)
+(assert-event (and (fexpr-p '(:add (:int -1) (:var "k_"))) (fexpr-p '(:add (:var "k_") (:int -1)))
+                   (fexpr-p '(:lt (:var "x_") (:int -1))) (fexpr-p '(:neg (:int -1)))))
 ; -2^63 has no literal
 (assert-event (not (fexpr-p '(:int -9223372036854775808))))
 ; a name: a letter first (R603), 63 characters at most (C601)

@@ -4,3 +4,4 @@
 *.fasl
 *.port
 *.log
+*.mod

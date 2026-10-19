@@ -136,9 +136,13 @@ procedure the same with or without it; `fsyn` records the flag.
    `-std=f2018` refuses that line, and flang accepts it. The three files
    have **0** such lines today, because ACL2's normal form puts the
    constant first, `(-1_int64 + k_)`. Nothing in the generator enforces
-   that, though. `fsyn` refuses the form (`neg-lit-p`), and
-   `check-fsem.bb` found it the first time it ran: its own cases had
-   `(x + -1)` until they were rewritten in the generator's order.
+   that, though. `fsyn` refused the form, and `check-fsem.bb` found it
+   the first time it ran: its own cases had `(x + -1)` until they were
+   rewritten in the generator's order. **Fixed** in clotran 66921a21: the
+   generator writes a negative constant in parentheses, `(-1_int64)`, a
+   primary (R1001) that may follow any operator. fsyn now accepts the
+   literal anywhere, `fprint.clj` prints it the generator's way, and
+   check-fsem's `arith` case has one after `+` and one after `*`.
 2. Every operation is parenthesised, and no expression has a side
    effect on the state (a function's object dummies are INTENT(IN)), so
    the abstract tree is the parse and the order of evaluation inside an
@@ -183,8 +187,9 @@ procedure the same with or without it; `fsyn` records the flag.
 - The derived-type definitions (they live in the runtime) and their
   allocation. fsem's objects are given whole: int64 scalars and 0-based
   int64 arrays.
-- The concrete syntax. There is no grammar or parser yet (PLAN step 1),
-  and `use`/`implicit none` are fixed text, not modelled.
+- The concrete syntax of this subset is fsyn's trees; the concrete
+  grammar of Stage A's larger Scope, with its parser proved, is in
+  SCOPE.md (fgram, fparse, flex).
 - Overflow can only be checked against the model, not against a
   compiler: neither compiler traps int64 overflow reliably. The
   `assert-event`s carry those cases.

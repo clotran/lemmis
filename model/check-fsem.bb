@@ -38,6 +38,9 @@
     :procs [(list :function "ops" 't 'nil [["a_" :value :int64] ["b_" :value :int64]] :int64 [["t_1" :int64]]
                   [(list :assign (v "t_1") (list :add (list :mul (v "a_") (n 3)) (list :neg (v "b_"))))
                    (list :assign (v "r") (list :add (n -1) (list :max (n 0) (v "t_1")))) ret])
+            ;; a negative literal after an operator: printed (-3_int64), as the generator now writes it
+            (list :function "neg" 't 'nil [["a_" :value :int64]] :int64 []
+                  [(list :assign (v "r") (list :mul (list :add (v "a_") (n -3)) (n -2)))])
             (list :function "lo" 't 'nil [] :int64 []
                   [(list :assign (v "r") '(:sub (:neg (:huge)) (:int 1)))])
             (list :function "cmp" 't 'nil [["a_" :value :int64] ["b_" :value :int64]] :logical [["t_1" :logical]]
@@ -48,6 +51,8 @@
     :probes [(list :print (list :fcall "ops" [(n 5) (n 4)]))
              (list :print (list :fcall "ops" [(n -5) (n 4)]))
              (list :print (list :fcall "ops" [(n 3037000499) (n -9)]))
+             (list :print (list :fcall "neg" [(n 10)]))
+             (list :print (list :fcall "neg" [(n -4)]))
              '(:print (:fcall "lo" ()))
              '(:print (:huge))
              (list :print (list :fcall "cmp" [(n 3) (n 6)]))
@@ -213,46 +218,8 @@
 
 ;; ---- Fortran text ----------------------------------------------------------
 
-(defn fx [e]
-  (let [[op a b c] e]
-    (case op
-      :int (str a "_int64") :true ".true." :false ".false." :huge "huge(0_int64)"
-      :var a :comp (str a "%" b) :elem (str a "%" b "(" (fx c) ")")
-      :add (str "(" (fx a) " + " (fx b) ")") :sub (str "(" (fx a) " - " (fx b) ")")
-      :mul (str "(" (fx a) " * " (fx b) ")") :neg (str "(-" (fx a) ")")
-      :eq (str "(" (fx a) " == " (fx b) ")") :lt (str "(" (fx a) " < " (fx b) ")")
-      :le (str "(" (fx a) " <= " (fx b) ")") :ge (str "(" (fx a) " >= " (fx b) ")")
-      :not (str "(.not. " (fx a) ")") :max (str "max(" (fx a) ", " (fx b) ")")
-      :size (str "size(" a "%" b ", kind=int64)")
-      :fcall (str a "(" (str/join ", " (map fx b)) ")"))))
-
-(declare fstmts)
-(defn fstmt [s]
-  (let [[op a b c] s ind #(map (fn [l] (str "  " l)) %)]
-    (case op
-      :assign [(str (fx a) " = " (fx b))]
-      :if (concat [(str "if (" (fx a) ") then")] (ind (fstmts b)) ["else"] (ind (fstmts c)) ["end if"])
-      :select (concat [(str "select case (" (fx a) ")")]
-                      (mapcat (fn [[k ss]] (cons (str "case (" k "_int64)") (ind (fstmts ss)))) b)
-                      ["case default"] (ind (fstmts c)) ["end select"])
-      :do (concat ["do"] (ind (fstmts a)) ["end do"])
-      (:cycle :exit :return) [(name op)]
-      :call [(str "call " a "(" (str/join ", " (map fx b)) ")")])))
-(defn fstmts [ss] (mapcat fstmt ss))
-
-(defn ftype [t] (case t :int64 "integer(int64)" :logical "logical"))
-
-(defn fproc [pr]
-  (let [fun (= :function (first pr))
-        [_ nm pure rec dummies rtype locals body] (if fun pr (let [[k nm rec ds ls b] pr] [k nm nil rec ds nil ls b]))
-        head (str (when (= 't rec) "recursive ") (when (= 't pure) "pure ")
-                  (if fun "function " "subroutine ") nm "(" (str/join ", " (map first dummies)) ")" (when fun " result(r)"))
-        decl (fn [[x k t]] (case k :value (str "integer(int64), value :: " x)
-                             (:in :inout) (str "type(" t "), intent(" (name k) ") :: " x)
-                             :out (str "integer(int64), intent(out) :: " x)))]
-    (concat [head] (map #(str "  " %) (concat (map decl dummies) (when fun [(str (ftype rtype) " :: r")])
-                                               (for [[x t] locals] (str (ftype t) " :: " x)) (fstmts body)))
-            [(str "end " (if fun "function " "subroutine ") nm)])))
+(declare fx fstmt fproc ftype)            ; defined by fprint.clj
+(load-file (str here "/fprint.clj"))
 
 (defn etype [c e]
   (let [[op a] e]
