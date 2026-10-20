@@ -19,6 +19,24 @@ syntaxes over Lisp (sweet-expressions, wisp) never caught on: what makes
 one used is error messages, docs and editors in its own terms, not the
 parser.
 
+## Lemmis is clotran
+
+James, 2026-10-19: "I want lemmis to still be clotran, just with fortran
+syntax. Libraries should work the same." A Lemmis file reads into Clojure
+forms, which clotran evaluates; nothing else changes. Libraries, in three
+tiers:
+
+1. clotran libraries (`.cljf`, those using `fortran/` arrays and Fortran
+   packages among them) work in Lemmis as in clotran; clotran's
+   ahead-of-time compiler also translates them to Fortran modules that
+   Lemmis code, or plain Fortran, uses directly (James: "clotran will
+   translate to fortran which can be used in lemmis").
+2. Pure Clojure libraries (`.clj`, `.cljc`, no Java interop), fetched as
+   source by `:git/url` and `:git/sha`, work too, as they do in clotran.
+3. Clojure libraries that use Java interop, and Maven jars, do not:
+   clotran has no JVM and does not emulate one (its DEVIATIONS and
+   PACKAGES.md say so).
+
 ## The rule
 
 **Every valid Fortran program means exactly what Fortran says. Every
@@ -135,6 +153,29 @@ ACL2) are the examples to learn from.
    meaning (against clotran's VM model for the core of Clojure).
 7. *The crossing*: an array copied into a value is unaffected by later
    writes; a lazy sequence realised into an array holds the same values.
+8. *Defined operators* (James, 2026-10-19; designed, not started). Fortran's
+   own defined-operator syntax, `.name.` (R1003 defined-unary-op, R1023
+   defined-binary-op), is already valid Fortran: no new grammar, so
+   theorem 4 covers it as it stands. In Lemmis `a .conj. b` and
+   `.not_empty. s` are the Clojure function of that name applied to
+   clotran values -- no `interface operator(...)` block per type, since
+   clotran values carry their types and the analyzer already knows them.
+   The intrinsic operators (+, ==, //, ...) keep exactly Fortran's meaning
+   on Fortran types and take a Clojure meaning only on Clojure values
+   (`v // w` concatenates two vectors); that is what keeps the meaning
+   conservative, and theorem 5 must cover it. Theorem 6 covers the
+   desugaring `a .f. b` -> `(f a b)`.
+   Open, not decided:
+   - names: a Fortran name holds no `?` or `-`, so `.empty?.` cannot be
+     written. A proposal: `_` reads as `-`, and a trailing `_p` as `?`
+     (`.not_empty.` -> not-empty, `.empty_p.` -> empty?); and how a
+     program picks the namespace (a `use` of the namespace, as of a
+     module, is one candidate);
+   - precedence: a defined binary operator binds loosest (R1023), a
+     defined unary one tightest (R1003); keep both;
+   - what a Lemmis module compiled to Fortran exports to a plain Fortran
+     caller: there an interface block over type(value) would be
+     generated.
 
 Said plainly: gfortran and flang underneath are not verified, nor are
 clotran's builtins' answers (clj decides those); what is proved is the

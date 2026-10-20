@@ -16,6 +16,9 @@
 ; Subset: a token is not split across lines and a character context is
 ; not continued (6.3.2.4p3, p4); no labels (6.3.2.6). A character the
 ; subset does not have gives (:bad c), which no statement accepts.
+;
+; A real literal (R714) is (:real m x e k): its significand's text m, the
+; exponent letter x ("e", "d" or nil), the exponent's text e, the kind k.
 
 (in-package "ACL2")
 
@@ -69,6 +72,39 @@
     (mv nil cs)))
 (defthm lx-kind-len (<= (len (mv-nth 1 (lx-kind cs))) (len cs)) :rule-classes :linear)
 
+; a real literal's exponent part (R714, R716, R717): E or D, then a
+; signed-digit-string
+(defun lx-exp (cs)                  ; (mv letter exponent rest), letter nil when none
+  (declare (xargs :guard t))
+  (if (and (consp cs) (member (car cs) '(#\e #\E #\d #\D)) (consp (cdr cs)))
+      (let* ((sg (and (member (cadr cs) '(#\+ #\-)) (cadr cs)))
+             (r (if sg (cddr cs) (cdr cs))))
+        (if (and (consp r) (lx-digit-p (car r)))
+            (mv-let (d r2) (lx-digits r)
+              (mv (if (member (car cs) '(#\e #\E)) "e" "d") (lx-str (if sg (cons sg d) d)) r2))
+          (mv nil nil cs)))
+    (mv nil nil cs)))
+(defthm lx-exp-len (<= (len (mv-nth 2 (lx-exp cs))) (len cs)) :rule-classes :linear)
+
+; after "digits.": a letter begins an operator or a logical constant
+; ("1.eq.2") when letters and a "." follow and spell one (6.2.6)
+(defun lx-dotword-p (cs)
+  (declare (xargs :guard t))
+  (mv-let (w r) (lx-letters cs)
+    (and (consp w) (consp r) (eql (car r) #\.)
+         (let ((s (lx-str (lx-down w))))
+           (or (member-equal s '("true" "false"))
+               (member-equal (concatenate 'string "." s ".") *fops*)))
+         t)))
+
+; a real literal from its significand text m: the exponent, then the kind
+(defun lx-real (m cs)               ; (mv token rest)
+  (declare (xargs :guard t))
+  (mv-let (x e r) (lx-exp cs)
+    (mv-let (k r2) (lx-kind r)
+      (mv (list :real m x e k) r2))))
+(defthm lx-real-len (<= (len (mv-nth 1 (lx-real m cs))) (len cs)) :rule-classes :linear)
+
 ; a character literal's body after its quote q, a doubled q one q (R724)
 (defun lx-quoted (q cs)             ; (mv ok chars rest)
   (declare (xargs :guard t))
@@ -115,6 +151,33 @@
 (defconst *lx-two* '("**" "==" "/=" "<=" ">=" "//"))
 (defconst *lx-one* '(#\+ #\- #\* #\/ #\< #\> #\( #\) #\, #\= #\: #\[ #\] #\%))
 
+(defthm lx-digits-strict
+  (implies (and (consp cs) (lx-digit-p (car cs))) (< (len (mv-nth 1 (lx-digits cs))) (len cs)))
+  :rule-classes :linear)
+
+; a number: an integer literal, or a real one (R708, R714)
+(defun lx-number (cs)               ; (mv token rest), cs at a digit or at "." and a digit
+  (declare (xargs :guard t))
+  (if (and (consp cs) (lx-digit-p (car cs)))
+      (mv-let (d r) (lx-digits cs)
+        (cond
+         ; digits "." [digits]: a real, unless an operator follows the digits
+         ((and (consp r) (eql (car r) #\.) (not (lx-dotword-p (cdr r))))
+          (mv-let (f r1) (lx-digits (cdr r))
+            (lx-real (lx-str (append d (cons #\. f))) r1)))
+         ; digits exponent: a real (R714's second form)
+         ((mv-let (x e r1) (lx-exp r) (declare (ignore e r1)) x)
+          (lx-real (lx-str d) r))
+         (t (mv-let (k r2) (lx-kind r) (mv (list :int (lx-str d) k) r2)))))
+    ; "." digits: a real (R715's second form)
+    (mv-let (f r1) (lx-digits (kdr cs))
+      (lx-real (lx-str (cons #\. f)) r1))))
+(defthm lx-number-len
+  (implies (consp cs) (< (len (mv-nth 1 (lx-number cs))) (len cs)))
+  :rule-classes :linear
+  :hints (("Goal" :in-theory (disable lx-dotword-p lx-exp lx-real lx-kind lx-str lx-digits))))
+(in-theory (disable lx-number))
+
 ; the tokens, with :eos where a statement ends
 (defun lx-toks (cs)
   (declare (xargs :guard t :measure (len cs)))
@@ -132,12 +195,8 @@
             (if pair
                 (list* (list :name (cadr pair)) (list :name (caddr pair)) (lx-toks r))
               (cons (list :name s) (lx-toks r))))))
-       ((lx-digit-p c)
-        (mv-let (d r) (lx-digits cs)
-          (if (and (consp r) (eql (car r) #\.) (consp (cdr r)) (not (lx-letter-p (cadr r))))
-              (list (list :bad "real"))   ; a real literal: not in the subset yet
-            (mv-let (k r2) (lx-kind r)
-              (cons (list :int (lx-str d) k) (lx-toks r2))))))
+       ((or (lx-digit-p c) (and (eql c #\.) (consp (cdr cs)) (lx-digit-p (cadr cs))))
+        (mv-let (tok r) (lx-number cs) (cons tok (lx-toks r))))
        ((eql c #\.)
         (mv-let (w r) (lx-letters (cdr cs))
           (let ((s (lx-str (lx-down w))))
@@ -177,3 +236,12 @@
 (assert-event (equal (flex "if (1.eq.2) print *, .true._1")
                      '(((:name "if") (:op "(") (:int "1" nil) (:op ".eq.") (:int "2" nil) (:op ")")
                         (:name "print") (:op "*") (:op ",") (:log t "1")))))
+; real literals (R714): the significand's forms, E and D, a kind, and the
+; digits before an operator still an integer
+(assert-event (equal (flex "x = 1.5 + .5e-3 + 2.d0 + 3e4_8 + 1.0_real64 + 1.e5")
+                     '(((:name "x") (:op "=") (:real "1.5" nil nil nil) (:op "+") (:real ".5" "e" "-3" nil)
+                        (:op "+") (:real "2." "d" "0" nil) (:op "+") (:real "3" "e" "4" "8")
+                        (:op "+") (:real "1.0" nil nil "real64") (:op "+") (:real "1." "e" "5" nil)))))
+(assert-event (equal (flex "if (1.eq.2.and.3.<4) x = 1")
+                     '(((:name "if") (:op "(") (:int "1" nil) (:op ".eq.") (:int "2" nil) (:op ".and.")
+                        (:real "3." nil nil nil) (:op "<") (:int "4" nil) (:op ")") (:name "x") (:op "=") (:int "1" nil)))))

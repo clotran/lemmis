@@ -36,6 +36,7 @@
 
 (include-book "fprog")
 (include-book "flex")
+(include-book "freal")
 
 ; logic mode, guards not yet verified: the meaning runs, and theorems can
 ; be proved about it; verifying its guards is owed
@@ -92,10 +93,71 @@
         ((= a 0) :divide)
         (t (idiv 1 (expt a (- b))))))
 
+
+; ---- reals (freal.lisp): (:r k x), k 4 or 8, x a value of the format;
+; (:pd ty k) a value the standard leaves to the processor
+
+(defun rval-p (v) (declare (xargs :guard t)) (and (consp v) (eq (car v) :r)))
+(defun pd-p (v) (declare (xargs :guard t)) (and (consp v) (eq (car v) :pd)))
+(defun vr (k x) (declare (xargs :guard t)) (list :r k x))
+(defun num-p (v) (declare (xargs :guard t)) (or (ival-p v) (rval-p v)))
+(defun rel-op-p (op)
+  (declare (xargs :guard t))
+  (and (member-equal op '("==" "/=" "<" "<=" ">" ">=" ".eq." ".ne." ".lt." ".le." ".gt." ".ge.")) t))
+(defun to-fl (k v)                   ; a numeric value as a value of real kind k (10.1.5.2.1, Table 10.2)
+  (declare (xargs :guard t))
+  (if (ival-p v) (if (integerp (v-num v)) (fl-round k (v-num v)) :nan) (fl-conv k (v-num v))))
+
+; x1 ** x2 with a real: an integer power 0, 1, 2, -1 is one exact
+; operation (or none); any other is the processor's approximation
+; (10.1.5.2.1), as is a real power; a negative real to a real power is
+; prohibited (10.1.5.2.4p1)
+(defun real-pow (k a b)
+  (declare (xargs :guard t))
+  (let ((x (to-fl k a)))
+    (cond ((ival-p b)
+           (let ((n (v-num b)))
+             (cond ((equal n 1) (vr k x))
+                   ((equal n 2) (vr k (fl-mul k x x)))
+                   ((equal n -1) (vr k (fl-div k 1 x)))
+                   ((and (equal n 0) (rationalp x) (not (= x 0))) (vr k 1))
+                   (t (list :pd :r k)))))
+          ((and (fl-neg-p x) (not (fl-zero-p x))) (err :domain))
+          (t (list :pd :r k)))))
+
+; + - * / ** and the relations when an operand is real: the other is
+; converted to the real's kind, the greater precision when both are
+; real (10.1.9.3); the relations are ISO/IEC 60559's (a NaN unordered)
+(defun real-op (op a b)
+  (declare (xargs :guard t))
+  (let ((k (cond ((and (rval-p a) (rval-p b)) (kmax (v-kind a) (v-kind b))) ((rval-p a) (v-kind a)) (t (v-kind b)))))
+    (if (not (rkind-p k)) (err :type)
+      (if (equal op "**") (real-pow k a b)
+        (let ((x (to-fl k a)) (y (to-fl k b)))
+          (cond ((equal op "+") (vr k (fl-add k x y)))
+                ((equal op "-") (vr k (fl-sub k x y)))
+                ((equal op "*") (vr k (fl-mul k x y)))
+                ((equal op "/") (vr k (fl-div k x y)))
+                ((member-equal op '("==" ".eq.")) (vl 4 (fl-eql x y)))
+                ((member-equal op '("/=" ".ne.")) (vl 4 (not (fl-eql x y))))
+                ((member-equal op '("<" ".lt.")) (vl 4 (fl-less x y)))
+                ((member-equal op '("<=" ".le.")) (vl 4 (or (fl-less x y) (fl-eql x y))))
+                ((member-equal op '(">" ".gt.")) (vl 4 (fl-less y x)))
+                ((member-equal op '(">=" ".ge.")) (vl 4 (or (fl-less y x) (fl-eql x y))))
+                (t (err :type))))))))
+
+(defun pd-result (op a b)            ; an operation on a processor-dependent value
+  (declare (xargs :guard t))
+  (cond ((rel-op-p op) (list :pd :l 4))
+        ((pd-p a) (list :pd (kadr a) (kaddr a)))
+        (t (list :pd (kadr b) (kaddr b)))))
+
 ; a numeric or relational or logical binary operation on two scalars
 (defun scalar-op (op a b)
   (declare (xargs :guard t))
   (cond
+   ((or (pd-p a) (pd-p b)) (pd-result op a b))
+   ((and (num-p a) (num-p b) (or (rval-p a) (rval-p b))) (real-op op a b))
    ((and (ival-p a) (ival-p b) (integerp (v-num a)) (integerp (v-num b)))
     (let ((x (v-num a)) (y (v-num b)) (k (kmax (v-kind a) (v-kind b))))
       (cond ((equal op "+") (mk-int k (+ x y)))
@@ -123,7 +185,10 @@
 
 (defun scalar-neg (a)
   (declare (xargs :guard t))
-  (if (and (ival-p a) (integerp (v-num a))) (mk-int (v-kind a) (- (v-num a))) (err :type)))
+  (cond ((and (ival-p a) (integerp (v-num a))) (mk-int (v-kind a) (- (v-num a))))
+        ((rval-p a) (vr (v-kind a) (fl-neg (v-num a))))
+        ((pd-p a) a)
+        (t (err :type))))
 (defun scalar-not (a)
   (declare (xargs :guard t))
   (if (and (lval-p a) (booleanp (v-num a))) (vl (v-kind a) (not (v-num a))) (err :type)))
@@ -156,10 +221,10 @@
 
 (defun wrap (ty k e)                 ; an element as a scalar value
   (declare (xargs :guard t))
-  (cond ((eq e :u) (list :u ty k)) ((eq ty :i) (vi k e)) (t (vl k e))))
-(defun raw (v) (declare (xargs :guard t)) (if (and (consp v) (eq (car v) :u)) :u (kaddr v)))
-(defun scal-ty (v) (declare (xargs :guard t)) (case (kar v) (:i :i) (:l :l) (:u (kadr v)) (otherwise nil)))
-(defun scal-k (v) (declare (xargs :guard t)) (if (eq (kar v) :u) (kaddr v) (kadr v)))
+  (cond ((eq e :u) (list :u ty k)) ((eq e :pd) (list :pd ty k)) ((eq ty :i) (vi k e)) ((eq ty :r) (vr k e)) (t (vl k e))))
+(defun raw (v) (declare (xargs :guard t)) (cond ((and (consp v) (eq (car v) :u)) :u) ((pd-p v) :pd) (t (kaddr v))))
+(defun scal-ty (v) (declare (xargs :guard t)) (case (kar v) (:i :i) (:l :l) (:r :r) ((:u :pd) (kadr v)) (otherwise nil)))
+(defun scal-k (v) (declare (xargs :guard t)) (if (member-eq (kar v) '(:u :pd)) (kaddr v) (kadr v)))
 
 (defun nth-safe (n xs) (declare (xargs :guard t)) (if (atom xs) nil (if (not (posp n)) (car xs) (nth-safe (1- n) (cdr xs)))))
 (defun upd-safe (n v xs)
@@ -221,6 +286,11 @@
 (defun conv1 (ty k v)
   (declare (xargs :guard t))
   (cond ((and (eq ty :i) (ival-p v)) (mk-int k (v-num v)))
+        ((and (eq ty :i) (rval-p v))       ; INT (expr, KIND (variable)), Table 10.8
+         (let ((n (fl-to-int :trunc (v-num v)))) (if (integerp n) (mk-int k n) (err :overflow))))
+        ((and (eq ty :r) (num-p v)) (vr k (to-fl k v)))   ; REAL (expr, KIND (variable))
+        ((and (pd-p v) (member-eq ty '(:i :r)) (member-eq (kadr v) '(:i :r))) (list :pd ty k))
+        ((and (pd-p v) (eq ty :l) (eq (kadr v) :l)) (list :pd ty k))
         ((and (eq ty :l) (lval-p v)) (vl k (v-num v)))
         ((and (consp v) (eq (car v) :u)) (err :undefined))
         (t (err :type))))
@@ -286,9 +356,19 @@
   (if (integerp n)
       (coerce (if (< n 0) (cons #\- (explode-nonnegative-integer (- n) 10 nil)) (explode-nonnegative-integer n 10 nil)) 'string)
     "?"))
+; a real is written exactly, ~Rk:n/d (or -0, +Inf, -Inf, NaN): check-fsem
+; reads what a compiler printed as a value of kind k and compares
+(defun rat-str (x)
+  (declare (xargs :guard t))
+  (if (integerp x) (int-str x) (if (rationalp x) (concatenate 'string (int-str (numerator x)) "/" (int-str (denominator x))) "?")))
+(defun real-str (k x)
+  (declare (xargs :guard t))
+  (concatenate 'string "~R" (int-str k) ":"
+               (case x (:nzero "-0") (:pinf "+Inf") (:ninf "-Inf") (:nan "NaN") (otherwise (rat-str x)))))
 (defun render1 (v)
   (declare (xargs :guard t))
   (case (kar v) (:i (int-str (kaddr v))) (:l (if (kaddr v) "T" "F")) (:c (if (stringp (kadr v)) (kadr v) ""))
+    (:r (real-str (kadr v) (kaddr v))) (:pd "~PD")
     (otherwise "?")))
 (defun render-raws (ty k es)
   (declare (xargs :guard t))
@@ -305,34 +385,91 @@
 
 (defun ival-scalar (v) (declare (xargs :guard t)) (and (ival-p v) (integerp (v-num v))))
 
-(defun el1 (name a)                  ; an elemental intrinsic of one integer argument
+(defun conv-kind-ty (name k ty kk)   ; the result type and kind of an elemental intrinsic
   (declare (xargs :guard t))
-  (cond ((not (ival-scalar a)) (if (eq (kar a) :u) (err :undefined) (err :type)))
-        ((equal name "abs") (mk-int (v-kind a) (abs (v-num a))))           ; 16.9.2
+  (cond ((member-equal name '("real" "dble")) (mv :r (if (equal name "dble") 8 k)))
+        ((member-equal name '("int" "nint" "floor" "ceiling")) (mv :i k))
+        (t (mv ty kk))))
+
+(defconst *pd-real-fns*              ; processor-dependent approximations (16.9)
+  '("sin" "cos" "tan" "asin" "acos" "atan" "exp" "log" "log10" "sinh" "cosh" "tanh"))
+
+(defun el1 (name k a)                ; an elemental intrinsic of one argument; k from KIND=
+  (declare (xargs :guard t))
+  (cond ((eq (kar a) :u) (err :undefined))
+        ((pd-p a) (mv-let (ty kk) (conv-kind-ty name k (kadr a) (kaddr a)) (list :pd ty kk)))
+        ((equal name "abs")                                                  ; 16.9.2
+         (cond ((ival-scalar a) (mk-int (v-kind a) (abs (v-num a))))
+               ((rval-p a) (vr (v-kind a) (fl-abs (v-num a))))
+               (t (err :type))))
+        ((not (num-p a)) (err :type))
+        ((member-equal name '("real" "dble"))                                ; 16.9.170, 16.9.68
+         (let ((kk (if (equal name "dble") 8 k))) (if (rkind-p kk) (vr kk (to-fl kk a)) (err :type))))
+        ((and (equal name "int") (ival-scalar a)) (mk-int k (v-num a)))      ; 16.9.110
+        ((member-equal name '("int" "nint" "floor" "ceiling"))               ; 16.9.110, .153, .80, .39
+         (if (not (rval-p a)) (err :type)
+           (let ((n (fl-to-int (cond ((equal name "nint") :nint) ((equal name "floor") :floor)
+                                     ((equal name "ceiling") :ceiling) (t :trunc))
+                               (v-num a))))
+             (if (integerp n) (mk-int k n) (err :overflow)))))
+        ((not (rval-p a)) (err :type))
+        ((equal name "sqrt")                                                 ; 16.9.191, 17.? item 6
+         (let ((x (v-num a)))
+           (if (or (eq x :nan) (and (fl-neg-p x) (not (fl-zero-p x)))) (err :domain)   ; X shall be >= 0
+             (vr (v-kind a) (fl-sqrt (v-kind a) x)))))
+        ((member-equal name *pd-real-fns*) (list :pd :r (v-kind a)))
         (t (err :type))))
 
-(defun el2 (name a p)                ; MOD, MODULO (16.9.145, 16.9.146), MAX, MIN of two
+(defun real-el2 (name a p)           ; MAX MIN MOD MODULO SIGN of two reals of one kind
   (declare (xargs :guard t))
-  (cond ((not (and (ival-scalar a) (ival-scalar p))) (if (or (eq (kar a) :u) (eq (kar p) :u)) (err :undefined) (err :type)))
+  (let ((k (v-kind a)) (x (v-num a)) (y (v-num p)))
+    (cond ((member-equal name '("max" "min"))
+           ; the largest (smallest) argument: open for a NaN, or two zeros of either sign
+           (cond ((or (eq x :nan) (eq y :nan)) (list :pd :r k))
+                 ((and (fl-zero-p x) (fl-zero-p y) (not (equal x y))) (list :pd :r k))
+                 ((equal name "max") (if (fl-less x y) p a))
+                 (t (if (fl-less y x) p a))))
+          ((equal name "sign")                                     ; 16.9.189: case (iv) for zeros
+           (if (eq y :nan) (list :pd :r k)
+             (vr k (if (fl-neg-p y) (fl-neg (fl-abs x)) (fl-abs x)))))
+          ((fl-zero-p y) (err :divide))                            ; P shall not be zero
+          ((equal name "mod") (vr k (fl-mod k x y)))               ; A - INT (A/P) * P
+          ((equal name "modulo")                                   ; A - FLOOR (A/P) * P
+           (if (not (and (fl-fin-p x) (fl-fin-p y))) (vr k :nan)
+             (let ((r (- (fl-val x) (* (floor (/ (fl-val x) (fl-val y)) 1) (fl-val y)))))
+               (vr k (if (= r 0) (fl-signed-zero (fl-neg-p x)) (fl-round k r))))))
+          (t (err :type)))))
+
+(defun el2 (name a p)                ; MOD, MODULO (16.9.145, 16.9.146), MAX, MIN, SIGN of two
+  (declare (xargs :guard t))
+  (cond ((or (eq (kar a) :u) (eq (kar p) :u)) (err :undefined))
+        ((or (pd-p a) (pd-p p)) (if (pd-p a) a (list :pd (scal-ty a) (scal-k a))))
+        ((and (rval-p a) (rval-p p))
+         (if (equal (v-kind a) (v-kind p)) (real-el2 name a p) (err :type)))
+        ((not (and (ival-scalar a) (ival-scalar p))) (err :type))
         ((not (equal (v-kind a) (v-kind p))) (err :type))   ; same kind (16.9.135, 16.9.145)
         ((equal name "max") (vi (v-kind a) (max (v-num a) (v-num p))))
         ((equal name "min") (vi (v-kind a) (min (v-num a) (v-num p))))
+        ((equal name "sign") (mk-int (v-kind a) (if (< (v-num p) 0) (- (abs (v-num a))) (abs (v-num a)))))
         ((= (v-num p) 0) (err :divide))                      ; P shall not be zero
         ((equal name "mod") (mk-int (v-kind a) (- (v-num a) (* (idiv (v-num a) (v-num p)) (v-num p)))))
         ((equal name "modulo") (mk-int (v-kind a) (mod (v-num a) (v-num p))))
         (t (err :type))))
 
-(defun ew1-list (name ty k es)
+(defun ew1-list (name k ty kk es)
   (declare (xargs :guard t))
   (if (atom es) nil
-    (let ((r (el1 name (wrap ty k (car es)))))
-      (if (errp r) r (let ((rest (ew1-list name ty k (cdr es)))) (if (errp rest) rest (cons (raw r) rest)))))))
+    (let ((r (el1 name k (wrap ty kk (car es)))))
+      (if (errp r) r (let ((rest (ew1-list name k ty kk (cdr es)))) (if (errp rest) rest (cons (raw r) rest)))))))
 
-(defun ew1 (name a)                  ; elemental over an array
+(defun ew1 (name k a)                ; elemental over an array
   (declare (xargs :guard t))
-  (if (not (aval-p a)) (el1 name a)
-    (let ((rs (ew1-list name (a-ty a) (a-k a) (a-es a))))
-      (if (errp rs) rs (mk-arr (a-ty a) (a-k a) (ones (len (a-lbs a))) (extents (a-lbs a) (a-ubs a)) rs)))))
+  (if (not (aval-p a)) (el1 name k a)
+    (let ((rs (ew1-list name k (a-ty a) (a-k a) (a-es a))))
+      (if (errp rs) rs
+        (mv-let (ty kk) (conv-kind-ty name k (a-ty a) (a-k a))
+          (mk-arr ty kk (ones (len (a-lbs a))) (extents (a-lbs a) (a-ubs a)) rs))))))
+
 (defun ew2-list (name ta ka tb kb xs ys)
   (declare (xargs :guard t))
   (if (or (atom xs) (atom ys)) nil
@@ -349,7 +486,7 @@
                   (xs (if (aval-p a) (a-es a) (repeat-v n (raw a))))
                   (ys (if (aval-p b) (a-es b) (repeat-v n (raw b))))
                   (rs (ew2-list name ta ka tb kb xs ys)))
-             (if (errp rs) rs (mk-arr :i ka (ones (len sh)) sh rs))))))
+             (if (errp rs) rs (mk-arr ta ka (ones (len sh)) sh rs))))))
 (defun fold-max-min (name v vs)      ; MAX, MIN of any number (16.9.135, 16.9.141)
   (declare (xargs :guard t))
   (if (atom vs) v (fold-max-min name (ew2 name v (car vs)) (cdr vs))))
@@ -359,6 +496,27 @@
 (defun max-raws (es m) (declare (xargs :guard t)) (if (atom es) m (max-raws (cdr es) (if (and (integerp (car es)) (rationalp m) (< m (car es))) (car es) m))))
 (defun min-raws (es m) (declare (xargs :guard t)) (if (atom es) m (min-raws (cdr es) (if (and (integerp (car es)) (rationalp m) (< (car es) m)) (car es) m))))
 (defun count-raws (es) (declare (xargs :guard t)) (if (atom es) 0 (+ (if (eq (car es) t) 1 0) (count-raws (cdr es)))))
+; SUM and PRODUCT of reals: a processor-dependent approximation
+; (16.9.201, 16.9.165); exact, as every processor's is, when the left to
+; right fold of finite elements never rounds. MAXVAL, MINVAL of finite
+; elements; with a NaN, a signed zero or none at all, the processor's
+(defun real-fold (sum k es acc)
+  (declare (xargs :guard t))
+  (cond ((atom es) acc)
+        ((not (and (rationalp (car es)) (rationalp acc))) nil)
+        (t (let ((q (if sum (+ acc (car es)) (* acc (car es)))))
+             (if (equal (fl-round k q) q) (real-fold sum k (cdr es) q) nil)))))
+(defun rat-list-p (es) (declare (xargs :guard t)) (if (atom es) t (and (rationalp (car es)) (rat-list-p (cdr es)))))
+(defun rat-max (es m) (declare (xargs :guard t)) (if (atom es) m (rat-max (cdr es) (if (and (rationalp (car es)) (rationalp m) (< m (car es))) (car es) m))))
+(defun rat-min (es m) (declare (xargs :guard t)) (if (atom es) m (rat-min (cdr es) (if (and (rationalp (car es)) (rationalp m) (< (car es) m)) (car es) m))))
+(defun real-reduce (name k es)
+  (declare (xargs :guard t))
+  (cond ((member :u es) (err :undefined))
+        ((member-equal name '("sum" "product"))
+         (let ((r (real-fold (equal name "sum") k es (if (equal name "sum") 0 1))))
+           (if (rationalp r) (vr k r) (list :pd :r k))))
+        ((and (consp es) (rat-list-p es)) (vr k (if (equal name "maxval") (rat-max (cdr es) (car es)) (rat-min (cdr es) (car es)))))
+        (t (list :pd :r k))))
 (defun nth1 (i xs) (declare (xargs :guard t)) (nth-safe (+ -1 (nfix i)) xs))
 
 (defun kind-arg (kw)                 ; KIND= : a scalar integer constant, a valid kind
@@ -371,23 +529,28 @@
   (let ((a (kar vs)) (n (len vs)))
     (cond
      ((member-equal name '("abs"))
-      (if (and (= n 1) (null kw)) (ew1 name a) (err :arity)))
-     ((member-equal name '("mod" "modulo"))
+      (if (and (= n 1) (null kw)) (ew1 name nil a) (err :arity)))
+     ((or (member-equal name '("sqrt" "real" "dble" "int" "nint" "floor" "ceiling")) (member-equal name *pd-real-fns*))
+      ; KIND positional (REAL (A, KIND)) or by keyword
+      (let ((k (if (= n 2) (and (null kw) (ival-scalar (kadr vs)) (v-num (kadr vs))) (kind-arg kw))))
+        (cond ((not (or (= n 1) (and (= n 2) (member-equal name '("real" "int" "nint" "floor" "ceiling")))))
+               (err :arity))
+              ((not k) (err :type))
+              (t (ew1 name k a)))))
+     ((member-equal name '("mod" "modulo" "sign"))
       (if (and (= n 2) (null kw)) (ew2 name a (kadr vs)) (err :arity)))
      ((member-equal name '("max" "min"))
       (if (and (<= 2 n) (null kw)) (fold-max-min name a (cdr vs)) (err :arity)))
      ((equal name "huge")                                     ; 16.9.96
-      (cond ((ival-p a) (vi (v-kind a) (ihuge (v-kind a)))) ((aval-p a) (vi (a-k a) (ihuge (a-k a)))) (t (err :type))))
+      (cond ((ival-p a) (vi (v-kind a) (ihuge (v-kind a))))
+            ((rval-p a) (vr (v-kind a) (fl-huge (v-kind a))))
+            ((and (aval-p a) (eq (a-ty a) :r)) (vr (a-k a) (fl-huge (a-k a))))
+            ((aval-p a) (vi (a-k a) (ihuge (a-k a)))) (t (err :type))))
+     ((member-equal name '("tiny" "epsilon"))                ; 16.9.210, 16.9.76
+      (let ((k (cond ((rval-p a) (v-kind a)) ((and (aval-p a) (eq (a-ty a) :r)) (a-k a)) (t nil))))
+        (if (rkind-p k) (vr k (if (equal name "tiny") (fl-tiny k) (fl-epsilon k))) (err :type))))
      ((equal name "kind")                                     ; 16.9.118
-      (cond ((or (ival-p a) (lval-p a)) (vi 4 (v-kind a))) ((aval-p a) (vi 4 (a-k a))) (t (err :type))))
-     ((equal name "int")                                      ; 16.9.110
-      (let ((k (kind-arg kw)))
-        (cond ((not k) (err :type))
-              ((ival-scalar a) (mk-int k (v-num a)))
-              ((and (aval-p a) (eq (a-ty a) :i))
-               (let ((rs (conv-raws :i k :i (a-k a) (a-es a))))
-                 (if (errp rs) rs (mk-arr :i k (ones (len (a-lbs a))) (extents (a-lbs a) (a-ubs a)) rs))))
-              (t (err :type)))))
+      (cond ((or (ival-p a) (lval-p a) (rval-p a)) (vi 4 (v-kind a))) ((aval-p a) (vi 4 (a-k a))) (t (err :type))))
      ((member-equal name '("size" "lbound" "ubound"))         ; 16.9.194, 16.9.119, 16.9.215
       (let ((k (kind-arg kw)) (dim (or (kadr vs) (cdr (alk "dim" kw)))))
         (cond ((not (and k (aval-p a))) (err :type))
@@ -401,7 +564,8 @@
               (t (let ((bs (if (equal name "lbound") (a-lbs a) (a-ubs a))))
                    (mk-arr :i k (list 1) (list (len bs)) bs))))))
      ((member-equal name '("sum" "product" "maxval" "minval"))   ; 16.9.201, 16.9.165, 16.9.138, 16.9.144
-      (cond ((not (and (= n 1) (null kw) (aval-p a) (eq (a-ty a) :i))) (err :type))
+      (cond ((and (= n 1) (null kw) (aval-p a) (eq (a-ty a) :r)) (real-reduce name (a-k a) (a-es a)))
+            ((not (and (= n 1) (null kw) (aval-p a) (eq (a-ty a) :i))) (err :type))
             ((member :u (a-es a)) (err :undefined))
             (t (let ((k (a-k a)) (es (a-es a)))
                  (cond ((equal name "sum") (mk-int k (sum-raws es)))
@@ -515,7 +679,8 @@
 ; ISO_FORTRAN_ENV's kind constants (16.10.2.17, .18)
 (defconst *iso-frame*
   (list (cons "int8" (list :const (vi 4 1))) (cons "int16" (list :const (vi 4 2)))
-        (cons "int32" (list :const (vi 4 4))) (cons "int64" (list :const (vi 4 8)))))
+        (cons "int32" (list :const (vi 4 4))) (cons "int64" (list :const (vi 4 8)))
+        (cons "real32" (list :const (vi 4 4))) (cons "real64" (list :const (vi 4 8)))))
 
 (defun only-frame (ns fr)            ; the bindings named in an only-list (14.2.2)
   (declare (xargs :guard t))
@@ -661,9 +826,33 @@
   `(mv-let ,vs ,form (if (errp ,(car vs)) (mv ,(car vs) ,(cadr vs)) (progn$ ,@body))))
 
 (defun op-str (tk) (declare (xargs :guard t)) (kadr tk))
+(defun ts-ty (name) (declare (xargs :guard t)) (cond ((equal name "integer") :i) ((equal name "real") :r) (t :l)))
+(defun cond-err (v) (declare (xargs :guard t)) (if (pd-p v) (err :pd) (err :type)))   ; control on the processor's choice
 
-(defun lit-val (tk env)              ; R708, R709, R725; a kind name is a named constant
+; a real literal's value (R714): the significand's digits over a power of
+; ten, scaled by the exponent, rounded to its kind -- default real, or
+; double precision for the letter D (7.4.3.2p7)
+(defun drop-dot (cs) (declare (xargs :guard t)) (if (atom cs) nil (if (eql (car cs) #\.) (cdr cs) (drop-dot (cdr cs)))))
+(defun real-lit-q (m e)
   (declare (xargs :guard t))
+  (let* ((cs (if (stringp m) (coerce m 'list) nil))
+         (n (str-nat (remove #\. cs) 0))
+         (fr (len (if (member #\. cs) (drop-dot cs) nil)))
+         (ecs (if (stringp e) (coerce e 'list) nil))
+         (x (cond ((eql (car ecs) #\-) (- (str-nat (cdr ecs) 0))) ((eql (car ecs) #\+) (str-nat (cdr ecs) 0)) (t (str-nat ecs 0)))))
+    (* n (expt 10 (- (ifix x) fr)))))
+
+(defun kind-of-param (kp env)       ; a kind-param's value: digits, or a named constant
+  (declare (xargs :guard t))
+  (cond ((digit-string-p kp) (digits-val kp))
+        (t (mv-let (b suf d) (env-lookup kp env) (declare (ignore suf d))
+             (if (and (eq (kar b) :const) (ival-scalar (kadr b))) (v-num (kadr b)) nil)))))
+
+(defun lit-val (tk env)              ; R708, R709, R714, R725; a kind name is a named constant
+  (declare (xargs :guard t))
+  (if (eq (kar tk) :real)
+      (let ((k (cond ((kar (cddddr tk)) (kind-of-param (kar (cddddr tk)) env)) ((equal (kaddr tk) "d") 8) (t 4))))
+        (if (rkind-p k) (vr k (fl-round k (real-lit-q (kadr tk) (kadddr tk)))) (err :type)))
   (let* ((kp (kaddr tk))
          (k (cond ((null kp) 4)
                   ((digit-string-p kp) (digits-val kp))
@@ -672,7 +861,43 @@
     (cond ((eq (kar tk) :char) (list :c (kadr tk)))
           ((not (ikind-p k)) (err :type))
           ((eq (kar tk) :log) (vl k (kadr tk)))
-          (t (mk-int k (digits-val (kadr tk)))))))
+          (t (mk-int k (digits-val (kadr tk))))))))
+
+; SELECT CASE (11.1.9): a case-value-range is the interval (lo . hi) of
+; raw values, nil for an open end (11.1.9.2); an arm's selector is its
+; intervals, or :default. A value lo > hi selects nothing. No value may
+; lie in two arms' ranges (C1154): checked on every run.
+(defun iv-hit (v iv)
+  (declare (xargs :guard t))
+  (let ((lo (kar iv)) (hi (kdr iv)))
+    (if (booleanp v) (equal lo v)
+      (and (rationalp v) (or (null lo) (and (rationalp lo) (<= lo v))) (or (null hi) (and (rationalp hi) (<= v hi)))))))
+(defun ivs-hit (v ivs) (declare (xargs :guard t)) (if (atom ivs) nil (or (iv-hit v (car ivs)) (ivs-hit v (cdr ivs)))))
+(defun iv-meet (a b)                 ; two intervals share a value
+  (declare (xargs :guard t))
+  (let ((alo (kar a)) (ahi (kdr a)) (blo (kar b)) (bhi (kdr b)))
+    (if (or (booleanp alo) (booleanp blo)) (equal alo blo)
+      (and (or (null alo) (null bhi) (and (rationalp alo) (rationalp bhi) (<= alo bhi)))
+           (or (null blo) (null ahi) (and (rationalp blo) (rationalp ahi) (<= blo ahi)))
+           (or (null alo) (null ahi) (and (rationalp alo) (rationalp ahi) (<= alo ahi)))
+           (or (null blo) (null bhi) (and (rationalp blo) (rationalp bhi) (<= blo bhi)))))))
+(defun iv-meet-any (a bs) (declare (xargs :guard t)) (if (atom bs) nil (or (iv-meet a (car bs)) (iv-meet-any a (cdr bs)))))
+(defun ivs-meet (as bs) (declare (xargs :guard t)) (if (atom as) nil (or (iv-meet-any (car as) bs) (ivs-meet (cdr as) bs))))
+(defun all-ivs (sels) (declare (xargs :guard t)) (if (atom sels) nil (append (if (eq (car sels) :default) nil (true-list-fix (car sels))) (all-ivs (cdr sels)))))
+(defun ivs-disjoint (ivs)            ; no two intervals of the list share a value
+  (declare (xargs :guard t))
+  (if (atom ivs) t (and (not (iv-meet-any (car ivs) (cdr ivs))) (ivs-disjoint (cdr ivs)))))
+(defun sel-pick (v sels i dflt)      ; the arm whose ranges hold v, else the default's, else nil
+  (declare (xargs :guard t))
+  (cond ((atom sels) dflt)
+        ((eq (car sels) :default) (sel-pick v (cdr sels) (+ 1 (nfix i)) (nfix i)))
+        ((ivs-hit v (car sels)) (nfix i))
+        (t (sel-pick v (cdr sels) (+ 1 (nfix i)) dflt))))
+(defun case-raw (ty v)               ; a case value of the case expression's type, as a raw value
+  (declare (xargs :guard t))
+  (cond ((and (eq ty :i) (ival-scalar v)) (v-num v))
+        ((and (eq ty :l) (lval-p v) (booleanp (v-num v))) (v-num v))
+        (t :bad)))
 
 (mutual-recursion
 
@@ -692,7 +917,7 @@
                 (mv a st))))
        (:l2 (with-v (a st) (me-ev :add (kadr x) env st cx (1- fuel))
               (let ((a (cond ((equal (kar x) (op "-")) (val-op :neg a nil))
-                             ((and (kar x) (not (or (ival-p a) (and (aval-p a) (eq (a-ty a) :i))))) (err :type))
+                             ((and (kar x) (not (or (num-p a) (pd-p a) (and (aval-p a) (member-eq (a-ty a) '(:i :r)))))) (err :type))
                              (t a))))
                 (if (errp a) (mv a st) (me-fold :l2* (kaddr x) a env st cx (1- fuel))))))
        (:mult (with-v (a st) (me-ev :prim (kar x) env st cx (1- fuel))
@@ -842,7 +1067,7 @@
                (if (and fn (prefix-ts hd))
                    (mv-let (k st) (me-kind (prefix-ts hd) env st cx (1- fuel))
                      (if (errp k) (mv k st)
-                       (mv-let (loc st) (st-new (list :u (if (equal (kar (prefix-ts hd)) "integer") :i :l) k) st)
+                       (mv-let (loc st) (st-new (list :u (ts-ty (kar (prefix-ts hd))) k) st)
                          (mv (cons (cons (result-name hd) (list :var loc :rw)) fr) st))))
                  (mv fr st))
                (if (errp fr) (mv fr st)
@@ -906,7 +1131,8 @@
    (if (not (posp fuel)) (mv (err :fuel) st)
      (if (null (kadr ts)) (mv 4 st)
        (with-v (v st) (me-ev :expr (kadr (kadr ts)) env st cx (1- fuel))
-         (if (and (ival-scalar v) (ikind-p (v-num v))) (mv (v-num v) st) (mv (err :type) st))))))
+         (if (and (ival-scalar v) (if (equal (kar ts) "real") (rkind-p (v-num v)) (ikind-p (v-num v))))
+             (mv (v-num v) st) (mv (err :type) st))))))
 
  ; explicit bounds (R815): (mv lbs-or-err ubs st)
  (defun me-bounds (ss env st cx fuel)
@@ -929,7 +1155,7 @@
          (t (let* ((d (car ds)) (ts (kadr d)) (attrs (kaddr d)))
               (mv-let (k st) (me-kind ts (cons fr env) st cx (1- fuel))
                 (if (errp k) (mv k nil nil st)
-                  (mv-let (e fr copies st) (me-ents (kar (kdr (kdr (kdr (kdr d))))) (if (equal (kar ts) "integer") :i :l) k attrs
+                  (mv-let (e fr copies st) (me-ents (kar (kdr (kdr (kdr (kdr d))))) (ts-ty (kar ts)) k attrs
                                                     env st cx (1- fuel) fr copies key dns)
                     (if e (mv e nil nil st) (me-decls (cdr ds) env st cx (1- fuel) fr copies key dns)))))))))
 
@@ -1034,18 +1260,54 @@
      (case (kar c)
        (:act (me-act (kadr c) env st cx (1- fuel)))
        (:ifc (with-v (v st) (me-ev :expr (kadr c) env st cx (1- fuel))
-               (cond ((not (and (lval-p v) (booleanp (v-num v)))) (mv (err :type) st))
+               (cond ((not (and (lval-p v) (booleanp (v-num v)))) (mv (cond-err v) st))
                      ((v-num v) (me-blk (kaddr c) env st cx (1- fuel)))
                      (t (me-eifs (kadddr c) (kar (kdr (kdr (kdr (kdr c))))) env st cx (1- fuel))))))
        (:doc (me-do (kadr c) (kaddr c) env st cx (1- fuel)))
+       (:casec (with-v (v st) (me-ev :expr (kadr c) env st cx (1- fuel))
+                 (let ((ty (cond ((ival-scalar v) :i) ((and (lval-p v) (booleanp (v-num v))) :l) (t nil))))
+                   (if (not ty) (mv (cond-err v) st)            ; C1150: integer, logical (or character)
+                     (mv-let (sels st) (me-sels (kaddr c) ty env st cx (1- fuel))
+                       (cond ((errp sels) (mv sels st))
+                             ((not (ivs-disjoint (all-ivs sels))) (mv (err :case) st))
+                             (t (let ((i (sel-pick (v-num v) sels 0 nil)))
+                                  (if (natp i) (me-blk (kadr (nth i (true-list-fix (kaddr c)))) env st cx (1- fuel))
+                                    (mv :normal st))))))))))
        (otherwise (mv (err :syntax) st)))))
+
+ ; each arm's selector: its ranges' intervals, or :default
+ (defun me-sels (arms ty env st cx fuel)
+   (declare (xargs :guard t :measure (nfix fuel)))
+   (cond ((not (posp fuel)) (mv (err :fuel) st))
+         ((atom arms) (mv nil st))
+         (t (mv-let (ivs st) (if (equal (kar (car arms)) '(:case-default)) (mv :default st)
+                               (me-ranges (kadr (kar (car arms))) ty env st cx (1- fuel)))
+              (if (errp ivs) (mv ivs st)
+                (mv-let (rest st) (me-sels (cdr arms) ty env st cx (1- fuel))
+                  (if (errp rest) (mv rest st) (mv (cons ivs rest) st))))))))
+
+ (defun me-ranges (rs ty env st cx fuel)
+   (declare (xargs :guard t :measure (nfix fuel)))
+   (cond ((not (posp fuel)) (mv (err :fuel) st))
+         ((atom rs) (mv nil st))
+         (t (let* ((r (car rs)) (open (member-eq (kar r) '(:from :to :rng))))
+              (mv-let (a st) (me-ev :expr (kadr r) env st cx (1- fuel))
+                (mv-let (b st) (if (eq (kar r) :rng) (me-ev :expr (kaddr r) env st cx (1- fuel)) (mv a st))
+                  (let ((x (case-raw ty a)) (y (case-raw ty b)))
+                    (cond ((errp a) (mv a st)) ((errp b) (mv b st))
+                          ((or (eq x :bad) (eq y :bad)) (mv (err :type) st))   ; C1152: the case expression's type
+                          ((and open (eq ty :l)) (mv (err :type) st))         ; C1153: no logical ranges
+                          (t (mv-let (rest st) (me-ranges (cdr rs) ty env st cx (1- fuel))
+                               (if (errp rest) (mv rest st)
+                                 (mv (cons (case (kar r) (:from (cons x nil)) (:to (cons nil x)) (otherwise (cons x y))) rest)
+                                     st))))))))))))
 
  (defun me-eifs (eifs els env st cx fuel)    ; 11.1.8.2: the first true condition's block
    (declare (xargs :guard t :measure (nfix fuel)))
    (cond ((not (posp fuel)) (mv (err :fuel) st))
          ((atom eifs) (if (consp els) (me-blk (car els) env st cx (1- fuel)) (mv :normal st)))
          (t (with-v (v st) (me-ev :expr (kar (car eifs)) env st cx (1- fuel))
-              (cond ((not (and (lval-p v) (booleanp (v-num v)))) (mv (err :type) st))
+              (cond ((not (and (lval-p v) (booleanp (v-num v)))) (mv (cond-err v) st))
                     ((v-num v) (me-blk (kadr (car eifs)) env st cx (1- fuel)))
                     (t (me-eifs (cdr eifs) els env st cx (1- fuel))))))))
 
@@ -1098,7 +1360,7 @@
    (declare (xargs :guard t :measure (nfix fuel)))
    (if (not (posp fuel)) (mv (err :fuel) st)
      (with-v (v st) (me-ev :expr e env st cx (1- fuel))
-       (cond ((not (and (lval-p v) (booleanp (v-num v)))) (mv (err :type) st))
+       (cond ((not (and (lval-p v) (booleanp (v-num v)))) (mv (cond-err v) st))
              ((not (v-num v)) (mv :normal st))
              (t (mv-let (s st) (me-blk blk env st cx (1- fuel))
                   (cond ((eq s :exit) (mv :normal st))
@@ -1131,7 +1393,7 @@
                  (with-v (vs st) (me-list (kadr s) env st cx (1- fuel))
                    (mv :normal (st-print (render vs) st)))))
        (:if (with-v (v st) (me-ev :expr (kadr s) env st cx (1- fuel))
-              (cond ((not (and (lval-p v) (booleanp (v-num v)))) (mv (err :type) st))
+              (cond ((not (and (lval-p v) (booleanp (v-num v)))) (mv (cond-err v) st))
                     ((v-num v) (me-act (kaddr s) env st cx (1- fuel)))
                     (t (mv :normal st)))))
        (otherwise (mv (err :syntax) st)))))

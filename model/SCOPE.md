@@ -11,7 +11,7 @@ proved to accept exactly that grammar (`fp-`, `fps-`, `fpu-sound` and
 `-complete`), for every alternative the Scope uses; **part** when only
 some alternatives are in; **no** otherwise.
 
-Score: **101 of 138** Scope rules proved; 21 more in part; 16 not yet in.
+Score: **113 of 138** Scope rules proved (82%); 21 more in part; 4 not yet in.
 
 ## The books
 
@@ -40,6 +40,10 @@ Score: **101 of 138** Scope rules proved; 21 more in part; 16 not yet in.
 - `fmean.lisp`: the meaning (item 2). `fortran-parse` is flex, then fps
   on each statement, then fpu; `fortran-parse-sound`: what it accepts is
   a program of the grammar.
+- `freal.lisp`: the binary32 and binary64 formats of ISO/IEC 60559 for
+  real kinds 4 and 8: rounding to nearest even, signed zeros, infinities,
+  NaN, subnormals, a correctly rounded SQRT; `assert-event` tests against
+  values clj computes, and the cost of its integer square root.
 - `flex.lisp`: free source form (6.3.2) to statements of tokens, with
   `assert-event` tests. Not proved; it is checked by running programs.
 
@@ -71,24 +75,24 @@ Score: **101 of 138** Scope rules proved; 21 more in part; 16 not yet in.
 | R509 | execution-part | proved |  |
 | R511 | internal-subprogram-part | proved |  |
 | R512 | internal-subprogram | proved |  |
-| R514 | executable-construct | part | action-stmt, do-construct, if-construct; no case-construct yet |
+| R514 | executable-construct | part | action-stmt, do-construct, if-construct, case-construct; no block-construct |
 | R515 | action-stmt | part | assignment, call, cycle, exit, continue, if-stmt, print, return, stop; no allocate, deallocate |
 | R516 | keyword | proved | as an actual-arg-spec's keyword |
 | R601 | alphanumeric-character | proved | in R603 |
 | R603 | name | proved | lower case (flex); not a statement keyword |
 | R604 | constant | part | literal-constant; named-constant as a designator |
-| R605 | literal-constant | part | int, logical, char; no real, complex, boz |
+| R605 | literal-constant | part | int, real, logical, char; no complex, boz |
 | R708 | int-literal-constant | proved | |
 | R709 | kind-param | proved | |
 | R711 | digit-string | proved | |
-| R714 | real-literal-constant | no | reals are next after the statements |
-| R715 | significand | no | |
-| R716 | exponent-letter | no | |
-| R717 | exponent | no | |
+| R714 | real-literal-constant | proved | the significand's two forms, E and D, a kind (C721) |
+| R715 | significand | proved |  |
+| R716 | exponent-letter | proved |  |
+| R717 | exponent | proved |  |
 | R724 | char-literal-constant | part | no kind-param prefix |
 | R725 | logical-literal-constant | proved | |
 | R703 | declaration-type-spec | proved | intrinsic-type-spec |
-| R704 | intrinsic-type-spec | part | INTEGER, LOGICAL; no REAL yet |
+| R704 | intrinsic-type-spec | part | INTEGER, REAL, LOGICAL; no COMPLEX, CHARACTER, DOUBLE PRECISION |
 | R705 | integer-type-spec | proved |  |
 | R706 | kind-selector | proved |  |
 | R777 | array-constructor | part | lbracket ac-spec rbracket |
@@ -157,14 +161,14 @@ Score: **101 of 138** Scope rules proved; 21 more in part; 16 not yet in.
 | R1139 | else-stmt | proved |  |
 | R1140 | end-if-stmt | proved |  |
 | R1141 | if-stmt | proved |  |
-| R1142 | case-construct | no | |
-| R1143 | select-case-stmt | no | |
-| R1144 | case-stmt | no | |
-| R1145 | end-select-stmt | no | |
-| R1146 | case-expr | no | |
-| R1147 | case-selector | no | |
-| R1148 | case-value-range | no | |
-| R1149 | case-value | no | |
+| R1142 | case-construct | proved | at most one DEFAULT (C1151) |
+| R1143 | select-case-stmt | proved | no construct name |
+| R1144 | case-stmt | proved |  |
+| R1145 | end-select-stmt | proved |  |
+| R1146 | case-expr | proved |  |
+| R1147 | case-selector | proved | ( case-value-range-list ), DEFAULT |
+| R1148 | case-value-range | proved | all four forms |
+| R1149 | case-value | proved |  |
 | R1158 | exit-stmt | proved |  |
 | R1161 | continue-stmt | proved |  |
 | R1162 | stop-stmt | part | no stop-code |

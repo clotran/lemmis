@@ -15,6 +15,8 @@
 ;   (:name s)        a name (R603), lower case; never one of *fkeywords*
 ;   (:int d k)       int-literal-constant (R708): digits d, kind-param k
 ;                    (R709) nil or a string
+;   (:real m l e k)  real-literal-constant (R714): significand text m,
+;                    exponent letter l ("e" "d" nil), exponent text e, kind k
 ;   (:log b k)       logical-literal-constant (R725), b t or nil
 ;   (:char s)        char-literal-constant (R724), s its characters
 ;   (:op s)          an operator or punctuation, s from *fops*
@@ -61,13 +63,51 @@
   (and (true-listp x) (= (len x) 2) (eq (car x) :name) (fname-p (cadr x))
        (not (member-equal (cadr x) *fkeywords*))))
 
-(defun lit-tok-p (x)               ; R708, R725, R724
+; R714 real-literal-constant: a significand of digits and at most one ".",
+; a digit among them; without the ".", an exponent; E or D and a
+; signed-digit-string (R716, R717); with a kind, the letter E (C721)
+(defun sig-chars-p (cs dot)
+  (declare (xargs :guard t))
+  (if (atom cs) (null cs)
+    (and (or (and (characterp (car cs)) (digit-char-p (car cs))) (and (eql (car cs) #\.) (not dot)))
+         (sig-chars-p (cdr cs) (or dot (eql (car cs) #\.))))))
+(defun some-digit-p (cs)
+  (declare (xargs :guard t))
+  (and (consp cs) (or (and (characterp (car cs)) (digit-char-p (car cs)) t) (some-digit-p (cdr cs)))))
+(defun signed-digit-string-p (s)
+  (declare (xargs :guard t))
+  (and (stringp s)
+       (let ((cs (coerce s 'list)))
+         (if (and (consp cs) (member (car cs) '(#\+ #\-))) (and (consp (cdr cs)) (digits-p (cdr cs))) (and (consp cs) (digits-p cs))))))
+(defun real-tok-p (x)
+  (declare (xargs :guard t))
+  (and (true-listp x) (= (len x) 5) (eq (car x) :real) (stringp (cadr x))
+       (let ((cs (coerce (cadr x) 'list)) (l (caddr x)) (e (cadddr x)) (k (car (cddddr x))))
+         (and (sig-chars-p cs nil) (some-digit-p cs)
+              (or (member #\. cs) l)
+              (if l (and (member-equal l '("e" "d")) (signed-digit-string-p e)) (null e))
+              (kind-param-p k)
+              (not (and k (equal l "d")))
+              t))))
+
+(defthm real-tok-car (implies (real-tok-p x) (equal (car x) :real)) :rule-classes :forward-chaining)
+(in-theory (disable real-tok-p))
+
+; a name in an expression: also REAL, the intrinsic function (16.9.170)
+; whose name is a type keyword -- "real (" never begins a statement's
+; expression, so the statement kinds stay told apart by their first token
+(defun xname-tok-p (x)
+  (declare (xargs :guard t))
+  (or (name-tok-p x) (equal x '(:name "real"))))
+
+(defun lit-tok-p (x)               ; R708, R714, R725, R724
   (declare (xargs :guard t))
   (and (true-listp x)
        (case (car x)
          (:int (and (= (len x) 3) (digit-string-p (cadr x)) (kind-param-p (caddr x))))
          (:log (and (= (len x) 3) (booleanp (cadr x)) (kind-param-p (caddr x))))
          (:char (and (= (len x) 2) (stringp (cadr x))))
+         (:real (real-tok-p x))
          (otherwise nil))))
 
 (defconst *eqv-ops* (list (op ".eqv.") (op ".neqv.")))                 ; R1022
@@ -159,8 +199,8 @@
     (:prim (and (true-listp x)
                 (case (car x)
                   (:lit (and (= (len x) 2) (lit-tok-p (cadr x))))
-                  (:name (and (= (len x) 2) (name-tok-p (cadr x))))
-                  (:ref (and (= (len x) 3) (name-tok-p (cadr x)) (fg :args (caddr x))))
+                  (:name (and (= (len x) 2) (xname-tok-p (cadr x))))
+                  (:ref (and (= (len x) 3) (xname-tok-p (cadr x)) (fg :args (caddr x))))
                   (:paren (and (= (len x) 2) (fg :expr (cadr x))))
                   (:acons (and (= (len x) 2) (consp (cadr x)) (fg :elist (cadr x))))
                   (otherwise nil))))
@@ -236,7 +276,7 @@
 
 (defun start-tok-p (tk)            ; a token that can begin an expression
   (declare (xargs :guard t))
-  (or (name-tok-p tk) (lit-tok-p tk)
+  (or (xname-tok-p tk) (lit-tok-p tk)
       (and (member-equal tk (list (op "(") (op "[") (op "+") (op "-") (op ".not."))) t)))
 
 (defun cont-tok-p (nt tk)

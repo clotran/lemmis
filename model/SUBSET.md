@@ -127,6 +127,28 @@ gfortran and flang. The standard's integer model (16.4) is symmetric, HUGE
 RECURSIVE is advisory in Fortran 2023 (15.6.2.1p3), so fsem treats a
 procedure the same with or without it; `fsyn` records the flag.
 
+## Reals: what the standard leaves to the processor
+
+fmean's reals are freal.lisp's IEEE formats, the processor gfortran and
+flang are on kinds 4 and 8 (17.1: IEEE_SUPPORT_DATATYPE and the rest are
+true there). Where the standard fixes nothing the model answers :pd, and
+check-fsem records what each compiler printed:
+
+| Situation | Standard | fmean |
+|---|---|---|
+| a mathematically equivalent form evaluated instead | 10.1.5.2.4p2 | the form written, one rounding per operation; checked with -ffp-contract=off |
+| SIN, EXP, LOG, ... | 16.9: a processor-dependent approximation | :pd |
+| x**n for n other than 0, 1, 2, -1; x**y of reals | 10.1.5.2.1 | :pd |
+| SUM, PRODUCT of reals once a rounding happens | 16.9.201, 16.9.165 | :pd |
+| MAX, MIN with a NaN, or of +0 and -0 | 16.9.135, 16.9.141: the largest | :pd |
+| SIGN with a NaN B | 16.9.189: no case covers it | :pd |
+| a negative real to a real power | 10.1.5.2.4p1: prohibited | `:domain` |
+| SQRT of a negative real or a NaN | 16.9.191: X shall be >= 0 | `:domain` |
+| INT, NINT, FLOOR, CEILING of an infinity, a NaN, or out of range | 16.9.110 | `:overflow` |
+| a CASE value in two ranges | C1154 | `:case` |
+
+A control decision on a :pd value (IF, DO WHILE, SELECT) stops with `:pd`.
+
 ## Findings
 
 1. **A latent nonconforming form.** The generator prints a negative
@@ -147,6 +169,14 @@ procedure the same with or without it; `fsyn` records the flag.
    effect on the state (a function's object dummies are INTENT(IN)), so
    the abstract tree is the parse and the order of evaluation inside an
    expression cannot change a defined result.
+
+3. **flang -O2 fuses a multiply and an add.** `(a*b) + c` is one
+   fused multiply-add under flang -O2 by default, the parentheses
+   notwithstanding (10.1.5.2.4p2 allows a mathematically equivalent form):
+   with a = 1 + 2^-52, b = 1 - 2^-52, c = -1 it prints -4.93E-32 where
+   one rounding per operation gives 0, and `(a*b) - (a*b)` is not 0.
+   gfortran -O2 does not; `-ffp-contract=off` stops both, and clotran
+   builds with it.
 
 ## What is formalized (model/)
 
@@ -175,7 +205,8 @@ procedure the same with or without it; `fsyn` records the flag.
   `-fcheck=bounds`, which must stop after the same lines.
   `make -C model check` certifies the books and runs it.
 - `fmean.lisp`: the meaning of Stage A's larger Scope, over the parse
-  trees of fstmt and fprog (SCOPE.md): integer kinds 1, 2, 4, 8 and
+  trees of fstmt and fprog (SCOPE.md): integer kinds 1, 2, 4, 8, real
+  kinds 4 and 8 (freal.lisp, above), SELECT CASE (11.1.9), and
   logical kinds, mixed-kind results of the greater range (10.1.9.3),
   division toward zero (10.1.5.2.2), negative powers (10.1.5.2.1p5),
   arrays with bounds, sections, constructors and elementwise operations
@@ -188,8 +219,8 @@ procedure the same with or without it; `fsyn` records the flag.
   the run, as in fsem. Guards are not yet verified.
 - `check-fsem.bb` then runs the programs in `model/cases/` (kinds,
   loops, arrays, procedures, host association, elemental) through
-  fortran-run, gfortran and flang: **6 of 6** agree with the model under
-  both compilers (12 of 12 compiler runs); the compilers disagree on
+  fortran-run, gfortran and flang (reals and select too): **8 of 8** agree with the model under
+  both compilers (16 of 16 compiler runs); the compilers disagree on
   none. PRINT * is list-directed, its layout processor dependent
   (13.10.4), so the comparison is token by token.
 - NIST's FCVS (the FORTRAN 77 validation suite; a work of the US

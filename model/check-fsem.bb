@@ -273,7 +273,9 @@
       (System/exit 1))
     (mapv (fn [b] (vec (for [l (str/split-lines b) :let [[_ x] (re-find #"^OUT (.*)$" l)] :when x] (str/trim x)))) blocks)))
 
-(def compilers (filter #(fs/which (first %)) [["gfortran" "-std=f2018"] ["flang"]]))
+;; -ffp-contract=off: flang -O2 fuses a*b + c into one rounding by default,
+;; parentheses or not (10.1.5.2.4p2 allows it); the model rounds each operation
+(def compilers (filter #(fs/which (first %)) [["gfortran" "-std=f2018" "-ffp-contract=off"] ["flang" "-ffp-contract=off"]]))
 
 (def results (atom {:cases 0 :runs 0 :agree 0 :values 0 :fail 0 :skipped 0}))
 (defn fail! [& msg] (swap! results update :fail inc) (apply println "FAIL" msg))
@@ -340,6 +342,33 @@
                                    (vec (remove str/blank? (str/split (str/trim x) #"\s+")))))})
             blocks))))
 
+;; a real the model prints exactly, ~Rk:n/d (or -0 +Inf -Inf NaN), against
+;; a compiler's list-directed text read as a value of kind k: the layout
+;; is processor dependent (13.10.4), the value is not. ~PD, a value the
+;; standard leaves to the processor, matches anything and is recorded.
+(defn real-of [k c]                  ; a compiler's token as a double, or nil
+  (let [c (str/replace c #"[dD]" "E")]
+    (cond (#{"Infinity" "+Infinity" "Inf" "+Inf"} c) Double/POSITIVE_INFINITY
+          (#{"-Infinity" "-Inf"} c) Double/NEGATIVE_INFINITY
+          (#{"NaN" "+NaN" "-NaN"} c) Double/NaN
+          :else (try (if (= k 4) (double (Float/parseFloat c)) (Double/parseDouble c)) (catch Exception _ nil)))))
+(defn neg-zero? [x] (and (zero? x) (neg? (Math/copySign 1.0 x))))
+(defn real-match? [m c]
+  (let [[_ k v] (re-matches #"~R(\d+):(.*)" m) k (parse-long k) x (real-of k c)]
+    (boolean
+     (and x (case v "NaN" (Double/isNaN x) "+Inf" (= x Double/POSITIVE_INFINITY) "-Inf" (= x Double/NEGATIVE_INFINITY)
+                "-0" (neg-zero? x)
+                (let [[n d] (str/split v #"/") q (.divide (BigDecimal. (str n)) (BigDecimal. (str (or d "1"))))]
+                  (and (not (Double/isNaN x)) (not (Double/isInfinite x)) (not (neg-zero? x))
+                       (zero? (.compareTo (BigDecimal. (double x)) q)))))))))
+(def pd-seen (atom []))
+(defn tok-match? [m c] (cond (str/starts-with? m "~R") (real-match? m c) (= m "~PD") true :else (= m c)))
+(defn lines-match? [ms cs] (and (= (count ms) (count cs)) (every? true? (map #(and (= (count %1) (count %2)) (every? true? (map tok-match? %1 %2))) ms cs))))
+(defn value-eq? [m a b]              ; two compilers' tokens, as the model's kind reads them
+  (if (or (str/starts-with? m "~R") (= m "~PD"))
+    (let [k (if (str/starts-with? m "~R4") 4 8) x (real-of k a) y (real-of k b)]
+      (and x y (= (Double/doubleToLongBits x) (Double/doubleToLongBits y))))
+    (= a b)))
 (defn toks-of [out] (vec (for [l (str/split-lines (str/trim out)) :let [ts (vec (remove str/blank? (str/split (str/trim l) #"\s+")))] :when (seq ts)] ts)))
 
 (def prog-results (atom {:progs 0 :agree-both 0 :runs 0 :agree 0 :disagree-compilers []}))
@@ -357,16 +386,22 @@
                    (do (swap! prog-results update :runs inc)
                        (cond (= ex :compile-error) (do (fail! nm fc "did not compile:" toks) false)
                              (not= 0 ex) (do (fail! nm fc "exited" ex) false)
-                             (not= toks (:lines m)) (do (fail! nm fc "printed" toks "; the model" (:lines m)) false)
+                             (not (lines-match? (:lines m) toks)) (do (fail! nm fc "printed" toks "; the model" (:lines m)) false)
                              :else (do (swap! prog-results update :agree inc) true))))
           agrees (doall agrees)]
-      (when (and (= 2 (count outs)) (not= (nth (first outs) 2) (nth (second outs) 2)))
+      (doseq [[i ml] (map-indexed vector (:lines m)) [j mt] (map-indexed vector ml) :when (= mt "~PD")]
+        (swap! pd-seen conj [nm (inc i) (inc j) (vec (for [[fc _ toks] outs] [fc (get-in toks [i j])]))]))
+      (when (and (= 2 (count outs))
+                 (not (every? true? (for [[i ml] (map-indexed vector (:lines m)) [j mt] (map-indexed vector ml)]
+                                      (value-eq? mt (get-in (nth (first outs) 2) [i j] "") (get-in (nth (second outs) 2) [i j] ""))))))
         (swap! prog-results update :disagree-compilers conj nm)
         (println "compilers disagree on" nm))
       (when (and ok-model (every? true? agrees))
         (swap! prog-results update :agree-both inc)
         (println "ok" nm (count (:lines m)) "lines, every compiler")))))
 
+(doseq [[nm l t cs] @pd-seen]
+  (println "processor dependent:" nm "line" l "value" t (str/join ", " (for [[fc v] cs] (str fc " printed " v)))))
 (let [{:keys [progs agree-both runs agree disagree-compilers]} @prog-results]
   (println (format "check-fsem: %d programs; agreeing with the model under every compiler %d/%d; compiler runs agreeing %d/%d; compilers disagreeing on %d %s"
                    progs agree-both progs agree runs (count disagree-compilers) (str/join " " disagree-compilers))))

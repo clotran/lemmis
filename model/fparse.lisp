@@ -20,7 +20,7 @@
 ; a token that can begin an expression
 (defun prim-start-p (tk)
   (declare (xargs :guard t))
-  (or (name-tok-p tk) (lit-tok-p tk) (equal tk (op "(")) (equal tk (op "["))))
+  (or (xname-tok-p tk) (lit-tok-p tk) (equal tk (op "(")) (equal tk (op "["))))
 
 (defun fp-rank (nt)
   (declare (xargs :guard t))
@@ -76,7 +76,7 @@
                      (t (mv t (list a nil) r)))))
       (:prim (cond ((not (consp toks)) (fail))
                    ((lit-tok-p tk) (mv t (list :lit tk) (cdr toks)))
-                   ((name-tok-p tk)
+                   ((xname-tok-p tk)
                     (if (and (consp (cdr toks)) (equal (cadr toks) (op "(")))
                         (mv-let (ok as r) (fp :args (cddr toks))
                           (if ok (mv t (list :ref tk as) r) (fail)))
@@ -138,18 +138,20 @@
 
 (defthm tok-facts
   (and (implies (name-tok-p x) (and (prim-start-p x) (start-tok-p x) (not (lit-tok-p x))
-                                    (consp x) (equal (car x) :name)))
+                                    (consp x) (equal (car x) :name) (xname-tok-p x)))
+       (implies (xname-tok-p x) (and (prim-start-p x) (start-tok-p x) (not (lit-tok-p x))
+                                     (consp x) (equal (car x) :name)))
        (implies (lit-tok-p x) (and (prim-start-p x) (start-tok-p x) (consp x) (not (equal (car x) :op))))
        (implies (prim-start-p x) (and (start-tok-p x) (not (member-equal x *add-ops*))
                                       (not (equal x '(:op ".not.")))))
        (implies (and (consp x) (eq (car x) :op))
-                (and (not (name-tok-p x)) (not (lit-tok-p x))
+                (and (not (name-tok-p x)) (not (xname-tok-p x)) (not (lit-tok-p x))
                      (equal (prim-start-p x) (or (equal x '(:op "(")) (equal x '(:op "["))))
                      (equal (start-tok-p x)
                             (and (member-equal x '((:op "(") (:op "[") (:op "+") (:op "-") (:op ".not."))) t)))))
-  :hints (("Goal" :in-theory (enable name-tok-p lit-tok-p prim-start-p start-tok-p))))
+  :hints (("Goal" :in-theory (enable name-tok-p xname-tok-p lit-tok-p prim-start-p start-tok-p))))
 
-(in-theory (disable name-tok-p lit-tok-p prim-start-p start-tok-p))
+(in-theory (disable name-tok-p xname-tok-p lit-tok-p prim-start-p start-tok-p))
 
 (defthm append-assoc-fp (equal (append (append a b) c) (append a (append b c))))
 (defthm len-append-fp (equal (len (append a b)) (+ (len a) (len b))))
@@ -219,7 +221,7 @@
        (implies (and (equal tk '(:op "]")) (not (member-eq nt '(:arg :tri*)))) (not (cont-tok-p nt tk)))
        (implies (and (member-equal tk '((:op ",") (:op "]"))) (not (member-eq nt '(:arg :tri*))))
                 (not (cont-tok-p nt tk))))
-  :hints (("Goal" :in-theory (enable cont-tok-p start-tok-p name-tok-p lit-tok-p))))
+  :hints (("Goal" :in-theory (enable cont-tok-p start-tok-p name-tok-p xname-tok-p lit-tok-p))))
 
 ; a list closed by its own punctuation is followed by anything
 (defthm follow-closed
@@ -237,7 +239,7 @@
        (implies (and (equal tk '(:op "]")) (not (member-eq nt '(:arg :tri*)))) (not (cont-tok-p nt tk)))
        (implies (and (member-equal tk '((:op ",") (:op "]"))) (not (member-eq nt '(:arg :tri*))))
                 (not (cont-tok-p nt tk))))
-  :hints (("Goal" :in-theory (enable cont-tok-p start-tok-p name-tok-p lit-tok-p))))
+  :hints (("Goal" :in-theory (enable cont-tok-p start-tok-p name-tok-p xname-tok-p lit-tok-p))))
 
 ; a list closed by its own punctuation is followed by anything
 (defthm follow-closed
@@ -252,7 +254,7 @@
 ; an expression's first token is no triplet punctuation
 (defthm start-not-closer
   (implies (start-tok-p tk) (not (member-equal tk '((:op ":") (:op ",") (:op ")")))))
-  :hints (("Goal" :in-theory (enable start-tok-p name-tok-p lit-tok-p))))
+  :hints (("Goal" :in-theory (enable start-tok-p name-tok-p xname-tok-p lit-tok-p))))
 
 ; an argument is followed by "," or ")"
 (defthm follow-arg-closers
@@ -595,7 +597,7 @@
     (cond
      ((not (consp toks)) (+ 1))
      ((lit-tok-p tk) (+ 1))
-     ((name-tok-p tk)
+     ((xname-tok-p tk)
       (if
        (and (consp (cdr toks)) (equal (cadr toks) (op "(")))
        (mv-let

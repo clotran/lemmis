@@ -34,6 +34,10 @@
 ;                                    or (blk)
 ;         (:doc ctl blk)             R1119 do-construct: do-stmt block end-do
 ;                                    (R1133 end-do: end-do-stmt)
+;         (:casec e arms)           R1142 case-construct: select-case-stmt
+;                                   [case-stmt block]... end-select-stmt;
+;                                   arms ((cs blk) ...), cs a CASE statement,
+;                                   at most one CASE DEFAULT (C1151)
 ;  :int   nil or (:has (sub ...))    R511 internal-subprogram-part,
 ;                                    R1407 module-subprogram-part:
 ;                                    contains-stmt [subprogram]...; nil when
@@ -64,6 +68,10 @@
 (defun action-stmt-p (s)          ; R515 action-stmt, the logical IF one of them
   (declare (xargs :guard t))
   (and (fgs :stmt s) (member-eq (kar s) (quote (:assign :simple :call :print :if))) t))
+
+(defun count-defaults (arms)
+  (declare (xargs :guard t))
+  (if (atom arms) 0 (+ (if (equal (kar (car arms)) '(:case-default)) 1 0) (count-defaults (cdr arms)))))
 
 (defun fgu-measure (nt x)
   (declare (xargs :guard t))
@@ -104,7 +112,11 @@
                               (and (true-listp (car (cddddr x))) (= (len (car (cddddr x))) 1)
                                    (fgu :exec (car (car (cddddr x))))))))
                (:doc (and (= (len x) 3) (fgs :ctl (cadr x)) (fgu :exec (caddr x))))
+               (:casec (and (= (len x) 3) (fg :expr (cadr x)) (fgu :arms (caddr x)) (<= (count-defaults (caddr x)) 1)))
                (otherwise nil))))
+    (:arms (if (atom x) (null x)
+             (and (true-listp (car x)) (= (len (car x)) 2) (member-eq (kar (caar x)) '(:case :case-default))
+                  (fgs :stmt (caar x)) (fgu :exec (cadar x)) (fgu :arms (cdr x)))))
     (:eifs (if (atom x) (null x)
              (and (true-listp (car x)) (= (len (car x)) 2) (fg :expr (caar x)) (fgu :exec (cadar x))
                   (fgu :eifs (cdr x)))))
@@ -136,7 +148,9 @@
                           (if (kar (kdr (kdr (kdr (kdr x)))))
                               (cons '(:else) (fyu :exec (kar (kar (kdr (kdr (kdr (kdr x)))))))) nil)
                           (list '(:end "if" nil))))
+            (:casec (append (list (list :select (kadr x))) (fyu :arms (kaddr x)) (list '(:end "select" nil))))
             (otherwise (append (list (list :do (kadr x))) (fyu :exec (kaddr x)) (list '(:end "do" nil)))))))
+    (:arms (if (atom x) nil (append (list (kar (car x))) (fyu :exec (kadr (car x))) (fyu :arms (cdr x)))))
     (:eifs (if (atom x) nil
              (append (list (list :else-if (kar (car x)))) (fyu :exec (kadr (car x))) (fyu :eifs (cdr x)))))
     (:int (if (atom x) nil (cons '(:contains) (fyu :subs (kadr x)))))
@@ -146,7 +160,7 @@
 
 (defun c-start-p (s)               ; a statement that begins an executable construct
   (declare (xargs :guard t))
-  (and (member-eq (kar s) '(:assign :simple :call :print :if :if-then :do)) t))
+  (and (member-eq (kar s) '(:assign :simple :call :print :if :if-then :do :select)) t))
 
 (defun fpu-rank (nt)
   (declare (xargs :guard t))
@@ -208,7 +222,17 @@
                    (if (and ok (equal (kar r) '(:end "do" nil)))
                        (mv t (list :doc (kadr s) blk) (cdr r))
                      (fail))))
+            (:select (mv-let (ok arms r) (fpu :arms (cdr toks))
+                       (if (and ok (equal (kar r) '(:end "select" nil)) (<= (count-defaults arms) 1))
+                           (mv t (list :casec (kadr s) arms) (cdr r))
+                         (fail))))
             (otherwise (if (c-start-p s) (mv t (list :act s) (cdr toks)) (fail)))))
+      (:arms (if (member-eq (kar s) '(:case :case-default))
+                 (mv-let (ok blk r) (fpu :exec (cdr toks))
+                   (if (not (and ok (<= (len r) (len (cdr toks))))) (fail)
+                     (mv-let (ok2 as r2) (fpu :arms r)
+                       (if ok2 (mv t (cons (list s blk) as) r2) (fail)))))
+               (mv t nil toks)))
       (:eifs (if (eq (kar s) :else-if)
                  (mv-let (ok blk r) (fpu :exec (cdr toks))
                    (if (not (and ok (<= (len r) (len (cdr toks))))) (fail)
@@ -239,7 +263,8 @@
   (implies (fgs :stmt s)
            (and (implies (equal (car s) :if-then) (and (consp (cdr s)) (fg :expr (cadr s)) (equal (list :if-then (cadr s)) s)))
                 (implies (equal (car s) :else-if) (and (consp (cdr s)) (fg :expr (cadr s)) (equal (list :else-if (cadr s)) s)))
-                (implies (equal (car s) :do) (and (consp (cdr s)) (fgs :ctl (cadr s)) (equal (list :do (cadr s)) s)))))
+                (implies (equal (car s) :do) (and (consp (cdr s)) (fgs :ctl (cadr s)) (equal (list :do (cadr s)) s)))
+                (implies (equal (car s) :select) (and (consp (cdr s)) (fg :expr (cadr s)) (equal (list :select (cadr s)) s)))))
   :hints (("Goal" :expand ((fgs :stmt s)))))
 
 ; the statement layer is opaque here: its trees are tokens
@@ -309,6 +334,7 @@
     (:decls (eq (kar s) :decl))
     (:spec (or (member-eq (kar s) '(:use :decl)) (equal s '(:implicit-none))))
     (:eifs (or (eq (kar s) :else-if) (c-start-p s)))   ; its last block's statements too
+    (:arms (or (member-eq (kar s) '(:case :case-default)) (c-start-p s)))
     (:int (or (equal s '(:contains)) (member-eq (kar s) '(:function :subroutine))))
     (:subs (member-eq (kar s) '(:function :subroutine)))
     (otherwise nil)))
@@ -346,7 +372,11 @@
                         (fgu-ind :eifs (kadddr x) ep)
                         (fgu-ind :exec (kar els) tl))))
           (:doc (fgu-ind :exec (kaddr x) (cons '(:end "do" nil) r)))
+          (:casec (fgu-ind :arms (kaddr x) (cons '(:end "select" nil) r)))
           (otherwise r)))
+    (:arms (if (atom x) r
+             (list (fgu-ind :exec (kadr (car x)) (append (fyu :arms (cdr x)) r))
+                   (fgu-ind :arms (cdr x) r))))
     (:eifs (if (atom x) r
              (list (fgu-ind :exec (kadr (car x)) (append (fyu :eifs (cdr x)) r))
                    (fgu-ind :eifs (cdr x) r))))
@@ -357,14 +387,14 @@
 ; nothing is spelled by an atom, and an atom is an empty list's tree
 (defthm fyu-atom (implies (atom x) (equal (fyu nt x) nil)) :hints (("Goal" :expand ((fyu nt x)))))
 (defthm fgu-atom
-  (implies (atom x) (equal (fgu nt x) (and (null x) (member-eq nt '(:units :exec :uses :decls :eifs :int :subs)) t)))
+  (implies (atom x) (equal (fgu nt x) (and (null x) (member-eq nt '(:units :exec :uses :decls :eifs :int :subs :arms)) t)))
   :hints (("Goal" :expand ((fgu nt x)))))
 
 ; on no statements
 (defthm fpu-atom
   (implies (atom toks)
            (equal (fpu nt toks)
-                  (cond ((member-eq nt '(:units :uses :decls :exec :eifs :int :subs)) (mv t nil toks))
+                  (cond ((member-eq nt '(:units :uses :decls :exec :eifs :int :subs :arms)) (mv t nil toks))
                         ((eq nt :spec) (mv t (list nil nil nil) toks))
                         (t (mv nil nil toks)))))
   :hints (("Goal" :expand ((fpu nt toks) (fpu :units toks) (fpu :uses toks) (fpu :decls toks)))))
@@ -429,6 +459,12 @@
            (and (equal (consp (fyu :int x)) (consp x))
                 (implies (consp x) (equal (car (fyu :int x)) '(:contains)))))
   :hints (("Goal" :expand ((fgu :int x) (fyu :int x)))))
+
+(defthm fyu-arms-first
+  (implies (fgu :arms x)
+           (and (equal (consp (fyu :arms x)) (consp x))
+                (implies (consp x) (and (consp (car (fyu :arms x))) (member-equal (car (car (fyu :arms x))) '(:case :case-default))))))
+  :hints (("Goal" :expand ((fgu :arms x) (fyu :arms x)))))
 
 (defthm fyu-eifs-first
   (implies (fgu :eifs x)
@@ -626,7 +662,36 @@
        (let
         ((c15 (fpu-steps :exec (cdr toks))))
         (if (and ok (equal (kar r) ' (:end "do" nil))) (+ 1 c15) (+ 1 c15)))))
+     (:select
+      (mv-let
+       (ok arms r)
+       (fpu :arms (cdr toks))
+       (declare (ignorable ok arms r))
+       (let
+        ((c16 (fpu-steps :arms (cdr toks))))
+        (if
+         (and ok (equal (kar r) ' (:end "select" nil)) (<= (count-defaults arms) 1))
+         (+ 1 c16)
+         (+ 1 c16)))))
      (otherwise (if (c-start-p s) (+ 1) (+ 1)))))
+   (:arms
+    (if
+     (member-eq (kar s) ' (:case :case-default))
+     (mv-let
+      (ok blk r)
+      (fpu :exec (cdr toks))
+      (declare (ignorable ok blk r))
+      (let
+       ((c17 (fpu-steps :exec (cdr toks))))
+       (if
+        (not (and ok (<= (len r) (len (cdr toks)))))
+        (+ 1 c17)
+        (mv-let
+         (ok2 as r2)
+         (fpu :arms r)
+         (declare (ignorable ok2 as r2))
+         (let ((c18 (fpu-steps :arms r))) (if ok2 (+ 1 c18 c17) (+ 1 c18 c17)))))))
+     (+ 1)))
    (:eifs
     (if
      (eq (kar s) :else-if)
@@ -635,15 +700,15 @@
       (fpu :exec (cdr toks))
       (declare (ignorable ok blk r))
       (let
-       ((c16 (fpu-steps :exec (cdr toks))))
+       ((c19 (fpu-steps :exec (cdr toks))))
        (if
         (not (and ok (<= (len r) (len (cdr toks)))))
-        (+ 1 c16)
+        (+ 1 c19)
         (mv-let
          (ok2 es r2)
          (fpu :eifs r)
          (declare (ignorable ok2 es r2))
-         (let ((c17 (fpu-steps :eifs r))) (if ok2 (+ 1 c17 c16) (+ 1 c17 c16)))))))
+         (let ((c20 (fpu-steps :eifs r))) (if ok2 (+ 1 c20 c19) (+ 1 c20 c19)))))))
      (+ 1)))
    (:int
     (if
@@ -652,7 +717,7 @@
       (ok ss r)
       (fpu :subs (cdr toks))
       (declare (ignorable ok ss r))
-      (let ((c18 (fpu-steps :subs (cdr toks)))) (if ok (+ 1 c18) (+ 1 c18))))
+      (let ((c21 (fpu-steps :subs (cdr toks)))) (if ok (+ 1 c21) (+ 1 c21))))
      (+ 1)))
    (:subs
     (if
@@ -662,15 +727,15 @@
       (fpu :sub toks)
       (declare (ignorable ok u r))
       (let
-       ((c19 (fpu-steps :sub toks)))
+       ((c22 (fpu-steps :sub toks)))
        (if
         (not (and ok (< (len r) (len toks))))
-        (+ 1 c19)
+        (+ 1 c22)
         (mv-let
          (ok2 us r2)
          (fpu :subs r)
          (declare (ignorable ok2 us r2))
-         (let ((c20 (fpu-steps :subs r))) (if ok2 (+ 1 c20 c19) (+ 1 c20 c19)))))))
+         (let ((c23 (fpu-steps :subs r))) (if ok2 (+ 1 c23 c22) (+ 1 c23 c22)))))))
      (+ 1)))
    (otherwise (+ 1)))))
 
