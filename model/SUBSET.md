@@ -146,6 +146,9 @@ check-fsem records what each compiler printed:
 | SQRT of a negative real or a NaN | 16.9.191: X shall be >= 0 | `:domain` |
 | INT, NINT, FLOOR, CEILING of an infinity, a NaN, or out of range | 16.9.110 | `:overflow` |
 | a CASE value in two ranges | C1154 | `:case` |
+| DO CONCURRENT: a variable referred to in one iteration and defined in another; EXIT or RETURN out of it; an impure reference in it | 11.1.7.5p7, C1172, C1140, C1143 | `:concurrent` |
+| a PRINT inside DO CONCURRENT (its lines in the order the processor runs the iterations) | 11.1.7.4.2 | `:pd` |
+| an error in an operand the value does not need (.AND. after false, .OR. after true) | 10.1.7 | `:pd` |
 
 A control decision on a :pd value (IF, DO WHILE, SELECT) stops with `:pd`.
 

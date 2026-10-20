@@ -29,8 +29,10 @@
 ; skipped reference (its side effect, or its error) does not conform
 ; (10.1.4p2: a function reference shall not affect or be affected by
 ; another entity in the statement), so the model is the meaning of every
-; conforming program, and it stops with the error where a processor
-; might not.
+; conforming program. Where the value is known without an operand --
+; .AND. after false, .OR. after true (10.1.7 NOTE 1) -- an error in that
+; operand is the processor's choice: the model answers :pd there, and
+; stops with the error elsewhere, where a processor might skip it.
 
 (in-package "ACL2")
 
@@ -304,19 +306,43 @@
 
 ; ---- the state: the store, the next location, the lines printed (newest
 ; first), the active DO variables' locations, the saved variables
-; (8.5.16: a variable initialized in its declaration has SAVE) by key
+; (8.5.16: a variable initialized in its declaration has SAVE) by key, and
+; inside a DO CONCURRENT the trace of its accesses, (:on entry ...) newest
+; first, else nil
 
+(defun write-list (loc ds) (declare (xargs :guard t)) (if (atom ds) nil (cons (list :w loc (car ds)) (write-list loc (cdr ds)))))
+(defun read-list (loc ds) (declare (xargs :guard t)) (if (atom ds) nil (cons (list :r loc (car ds)) (read-list loc (cdr ds)))))
 (defun st-store (st) (declare (xargs :guard t)) (kar st))
 (defun st-next (st) (declare (xargs :guard t)) (nfix (kadr st)))
 (defun st-out (st) (declare (xargs :guard t)) (kaddr st))
 (defun st-dovars (st) (declare (xargs :guard t)) (kadddr st))
 (defun st-saves (st) (declare (xargs :guard t)) (kar (kdr (kdr (kdr (kdr st))))))
-(defun mk-st (store next out dovars saves) (declare (xargs :guard t)) (list store next out dovars saves))
+(defun st-trace (st) (declare (xargs :guard t)) (kadr (kdr (kdr (kdr (kdr st))))))
+(defun mk-st6 (store next out dovars saves trace) (declare (xargs :guard t)) (list store next out dovars saves trace))
+(defmacro mk-st (store next out dovars saves) `(mk-st6 ,store ,next ,out ,dovars ,saves (st-trace st)))
+(defun st-trace-set (tr st)
+  (declare (xargs :guard t))
+  (mk-st6 (st-store st) (st-next st) (st-out st) (st-dovars st) (st-saves st) tr))
+; an access (k loc off): k :r or :w, off an element's offset or :all
+(defun st-log (es st)
+  (declare (xargs :guard t))
+  (if (st-trace st) (st-trace-set (cons :on (append es (true-list-fix (cdr (st-trace st))))) st) st))
+(defun diff-offs (xs ys i)          ; the offsets where two element lists differ
+  (declare (xargs :guard t))
+  (if (or (atom xs) (atom ys)) nil
+    (append (if (equal (car xs) (car ys)) nil (list (nfix i))) (diff-offs (cdr xs) (cdr ys) (+ 1 (nfix i))))))
+(defun write-entries (loc old new)  ; a definition: its changed elements, or the whole
+  (declare (xargs :guard t))
+  (if (and (aval-p old) (aval-p new) (equal (len (a-es old)) (len (a-es new))))
+      (let ((ds (diff-offs (a-es old) (a-es new) 0)))
+        (if (consp ds) (write-list loc ds) nil))
+    (list (list :w loc :all))))
 
 (defun st-get (loc st) (declare (xargs :guard t)) (cdr (alk loc (st-store st))))
 (defun st-put (loc v st)
   (declare (xargs :guard t))
-  (mk-st (aput loc v (st-store st)) (st-next st) (st-out st) (st-dovars st) (st-saves st)))
+  (let ((st (if (st-trace st) (st-log (write-entries loc (st-get loc st) v) st) st)))
+    (mk-st (aput loc v (st-store st)) (st-next st) (st-out st) (st-dovars st) (st-saves st))))
 (defun st-new (v st)                 ; (mv loc st)
   (declare (xargs :guard t))
   (let ((loc (st-next st)))
@@ -629,6 +655,9 @@
     (let ((o (arr-offset (car ts) (a-lbs a) (a-ubs a))))
       (if (not (natp o)) (err :bounds)
         (let ((rest (arr-gets a (cdr ts)))) (if (errp rest) rest (cons (nth-safe o (a-es a)) rest)))))))
+(defun tuple-offs (a ts)             ; the offsets of tuples, the in-bounds ones
+  (declare (xargs :guard t))
+  (if (atom ts) nil (let ((o (arr-offset (car ts) (a-lbs a) (a-ubs a)))) (if (natp o) (cons o (tuple-offs a (cdr ts))) (tuple-offs a (cdr ts))))))
 (defun arr-sets (a ts es)            ; raw elements es into tuples
   (declare (xargs :guard t :measure (len ts)))
   (if (or (atom ts) (atom es)) a
@@ -899,6 +928,57 @@
         ((and (eq ty :l) (lval-p v) (booleanp (v-num v))) (v-num v))
         (t :bad)))
 
+; DO CONCURRENT (11.1.7.4.2, 11.1.7.5): the iterations may run in any
+; order; the model runs them in array element order of the index tuples
+; and checks what makes the order not matter (11.1.7.5p7, unspecified
+; locality): a variable referenced in an iteration is defined earlier in
+; that iteration, or by no other iteration; one defined by two
+; iterations is undefined after the loop. A definition is seen where it
+; is an assignment to it, or a change of its value by any other means.
+(defun key-meet (a b)                ; two accesses (k loc off) of one variable or element
+  (declare (xargs :guard t))
+  (and (equal (kadr a) (kadr b)) (or (eq (kaddr a) :all) (eq (kaddr b) :all) (equal (kaddr a) (kaddr b)))))
+(defun meets-any (e es) (declare (xargs :guard t)) (if (atom es) nil (or (key-meet e (car es)) (meets-any e (cdr es)))))
+(defun any-meet (as bs) (declare (xargs :guard t)) (if (atom as) nil (or (meets-any (car as) bs) (any-meet (cdr as) bs))))
+(defun iter-sets (es ws rs)          ; an iteration's accesses, oldest first: (mv defs refs-before-own-def)
+  (declare (xargs :guard t))
+  (if (atom es) (mv ws rs)
+    (let ((e (car es)))
+      (if (eq (kar e) :w) (iter-sets (cdr es) (cons e ws) rs)
+        (iter-sets (cdr es) ws (if (meets-any e ws) rs (cons e rs)))))))
+(defun ws-of (sets) (declare (xargs :guard t)) (if (atom sets) nil (append (true-list-fix (kar (car sets))) (ws-of (cdr sets)))))
+(defun conc-bad (pre post)           ; some iteration refers to what another defines
+  (declare (xargs :guard t :measure (acl2-count post)))
+  (if (atom post) nil
+    (or (any-meet (kdr (car post)) (append (ws-of pre) (ws-of (cdr post))))
+        (conc-bad (cons (car post) pre) (cdr post)))))
+(defun multi-1 (ws others) (declare (xargs :guard t))
+  (if (atom ws) nil (if (meets-any (car ws) others) (cons (car ws) (multi-1 (cdr ws) others)) (multi-1 (cdr ws) others))))
+(defun conc-multi (pre post)         ; what two iterations define
+  (declare (xargs :guard t :measure (acl2-count post)))
+  (if (atom post) nil
+    (append (multi-1 (true-list-fix (kar (car post))) (append (ws-of pre) (ws-of (cdr post))))
+            (conc-multi (cons (car post) pre) (cdr post)))))
+(defun undef-val (v off)
+  (declare (xargs :guard t))
+  (cond ((and (aval-p v) (eq off :all)) (mk-arr (a-ty v) (a-k v) (a-lbs v) (a-ubs v) (repeat-v (len (a-es v)) :u)))
+        ((aval-p v) (mk-arr (a-ty v) (a-k v) (a-lbs v) (a-ubs v) (upd-safe off :u (a-es v))))
+        (t (list :u (scal-ty v) (scal-k v)))))
+(defun undef-all (es st)
+  (declare (xargs :guard t))
+  (if (atom es) st (undef-all (cdr es) (st-put (kadr (car es)) (undef-val (st-get (kadr (car es)) st) (kaddr (car es))) st))))
+(defun drop-locs (es locs)           ; accesses not of the index variables
+  (declare (xargs :guard t))
+  (if (atom es) nil (if (member-equal (kadr (car es)) locs) (drop-locs (cdr es) locs) (cons (car es) (drop-locs (cdr es) locs)))))
+(defun conc-frame (names ks vals st) ; each index a construct entity of its own (11.1.7.5p1): (mv frame locs st)
+  (declare (xargs :guard t))
+  (if (or (atom names) (atom vals)) (mv nil nil st)
+    (mv-let (loc st) (st-new (vi (kar ks) (car vals)) st)
+      (mv-let (fr locs st) (conc-frame (cdr names) (kdr ks) (cdr vals) st)
+        (mv (cons (cons (car names) (list :var loc :rw)) fr) (cons loc locs) st)))))
+(defun strip-cars-safe (ds) (declare (xargs :guard t)) (if (atom ds) nil (cons (kar (car ds)) (strip-cars-safe (cdr ds)))))
+(defun strip-caddrs-safe (ds) (declare (xargs :guard t)) (if (atom ds) nil (cons (kaddr (car ds)) (strip-caddrs-safe (cdr ds)))))
+
 (mutual-recursion
 
  (defun me-ev (nt x env st cx fuel)
@@ -934,7 +1014,8 @@
           (:name (mv-let (b suf d) (env-lookup (tok-name (kadr x)) env)
                    (declare (ignore suf d))
                    (case (kar b)
-                     (:var (let ((v (st-get (kadr b) st))) (if (undef-in v) (mv (err :undefined) st) (mv v st))))
+                     (:var (let ((v (st-get (kadr b) st)))
+                             (if (undef-in v) (mv (err :undefined) st) (mv v (st-log (list (list :r (kadr b) :all)) st)))))
                      (:const (mv (kadr b) st))
                      ((nil) (mv (err :undeclared) st))
                      (otherwise (mv (err :type) st)))))
@@ -947,6 +1028,14 @@
    (declare (xargs :guard t :measure (nfix fuel)))
    (cond ((not (posp fuel)) (mv (err :fuel) st))
          ((atom rest) (mv v st))
+         ; 10.1.7: an operand the value does not need (.and. after false,
+         ; .or. after true) need not be evaluated: an error in it is then
+         ; the processor's choice, and the value too
+         ((let ((op (op-str (kar (car rest)))))
+            (and (lval-p v) (booleanp (v-num v))
+                 (or (and (equal op ".and.") (not (v-num v))) (and (equal op ".or.") (v-num v)))))
+          (mv-let (b st) (me-ev (lev-sub nt) (kadr (car rest)) env st cx (1- fuel))
+            (me-fold nt (cdr rest) (if (errp b) (list :pd :l (v-kind v)) v) env st cx (1- fuel))))
          (t (with-v (b st) (me-ev (lev-sub nt) (kadr (car rest)) env st cx (1- fuel))
               (let ((r (val-op (op-str (kar (car rest))) v b)))
                 (if (errp r) (mv r st) (me-fold nt (cdr rest) r env st cx (1- fuel))))))))
@@ -1016,7 +1105,8 @@
             (if (not (aval-p a)) (mv (err :type) st)
               (mv-let (ds sc st) (me-subs args (a-lbs a) (a-ubs a) env st cx (1- fuel))
                 (if (errp ds) (mv ds st)
-                  (let ((es (arr-gets a (tuples ds))))
+                  (let ((es (arr-gets a (tuples ds)))
+                        (st (if (eq (kar b) :var) (st-log (read-list (kadr b) (tuple-offs a (tuples ds))) st) st)))
                     (cond ((errp es) (mv es st))
                           ((member :u es) (mv (err :undefined) st))
                           ((not (member nil sc)) (mv (wrap (a-ty a) (a-k a) (car es)) st))
@@ -1059,6 +1149,7 @@
             (m (match-pos (dummy-names hd) args nil)))
        (cond
         ((and (cx-pure cx) (not purep)) (mv (err :pure) st))   ; C1599: a pure procedure calls only pure ones
+        ((and (st-trace st) (not purep)) (mv (err :concurrent) st))   ; C1143: no impure reference in DO CONCURRENT
         ((not (alistp m)) (mv (err :arity) st))
         (t
          (mv-let (e fr copies st) (me-bind (dummy-names hd) m env st cx (1- fuel) nil nil)
@@ -1339,7 +1430,63 @@
                                                                   blk env st cx (1- fuel))
                                             (mv s (st-dovars-del loc st))))))))))))))))
        (:while (me-while (kaddr ctl) blk env st cx (1- fuel)))
+       (:conc (me-conc ctl blk env st cx (1- fuel)))
        (otherwise (me-forever blk env st cx (1- fuel))))))
+
+ (defun me-conc (ctl blk env st cx fuel)
+   (declare (xargs :guard t :measure (nfix fuel)))
+   (if (not (posp fuel)) (mv (err :fuel) st)
+     (mv-let (k st) (if (kaddr ctl) (me-kind (kaddr ctl) env st cx (1- fuel)) (mv nil st))
+       (if (errp k) (mv k st)
+         (mv-let (dims st) (me-conc-lims (kadddr ctl) k env st cx (1- fuel))
+           (if (errp dims) (mv dims st)
+             (let ((tr0 (st-trace st)))
+               (mv-let (s st sets) (me-conc-iters (tuples (strip-caddrs-safe dims)) (strip-cars-safe dims) (strip-cadrs-safe dims)
+                                                  blk env st cx (1- fuel) nil)
+                 (if (errp s) (mv s st)
+                   (let ((st (st-trace-set (if tr0 (cons :on (append (ws-of sets) (true-list-fix (cdr tr0)))) nil) st)))
+                     (if (conc-bad nil sets) (mv (err :concurrent) st)
+                       (mv :normal (undef-all (conc-multi nil sets) st)))))))))))))
+
+ ; the indices' values (11.1.7.4.2: the limits and steps evaluated first),
+ ; each (name k values); an index's kind its type-spec's, else that of
+ ; the variable of its name outside (R1125)
+ (defun me-conc-lims (ixs k env st cx fuel)
+   (declare (xargs :guard t :measure (nfix fuel)))
+   (cond ((not (posp fuel)) (mv (err :fuel) st))
+         ((atom ixs) (mv nil st))
+         (t (let* ((ix (car ixs)) (n (tok-name (kar ix))))
+              (mv-let (b suf d) (env-lookup n env)
+                (declare (ignore suf d))
+                (let ((kk (or k (and (eq (kar b) :var) (eq (scal-ty (st-get (kadr b) st)) :i) (scal-k (st-get (kadr b) st))))))
+                  (if (not kk) (mv (err :undeclared) st)
+                    (with-v (lo st) (me-ev :expr (kadr ix) env st cx (1- fuel))
+                      (with-v (hi st) (me-ev :expr (kaddr ix) env st cx (1- fuel))
+                        (with-v (sd st) (if (kadddr ix) (me-ev :expr (kadddr ix) env st cx (1- fuel)) (mv (vi kk 1) st))
+                          (let ((lo (conv1 :i kk lo)) (hi (conv1 :i kk hi)) (sd (conv1 :i kk sd)))
+                            (cond ((errp lo) (mv lo st)) ((errp hi) (mv hi st)) ((errp sd) (mv sd st))
+                                  ((= (v-num sd) 0) (mv (err :step) st))
+                                  (t (mv-let (rest st) (me-conc-lims (cdr ixs) k env st cx (1- fuel))
+                                       (if (errp rest) (mv rest st)
+                                         (mv (cons (list n kk (range-idx (v-num lo) (v-num hi) (v-num sd)
+                                                                         (range-count (v-num lo) (v-num hi) (v-num sd))))
+                                                   rest)
+                                             st))))))))))))))))
+
+ ; the iterations, each with its own indices and its accesses traced
+ (defun me-conc-iters (tups names ks blk env st cx fuel sets)   ; (mv status st sets)
+   (declare (xargs :guard t :measure (nfix fuel)))
+   (cond ((not (posp fuel)) (mv (err :fuel) st nil))
+         ((atom tups) (mv :normal st sets))
+         (t (mv-let (fr locs st) (conc-frame names ks (car tups) st)
+              (let ((st (st-dovars-set (append locs (true-list-fix (st-dovars st))) (st-trace-set (list :on) st))))
+                (mv-let (s st) (me-blk blk (cons fr env) st cx (1- fuel))
+                  (cond ((errp s) (mv s st nil))
+                        ((member-eq s '(:exit :return)) (mv (err :concurrent) st nil))   ; C1172, C1140
+                        (t (mv-let (ws rs) (iter-sets (reverse (drop-locs (true-list-fix (cdr (st-trace st))) locs)) nil nil)
+                             (me-conc-iters (cdr tups) names ks blk env
+                                            (st-dovars-set (set-difference-equal (true-list-fix (st-dovars st)) locs) st)
+                                            cx (1- fuel) (cons (cons ws rs) sets)))))))))))
 
  ; 11.1.7.4.3: while the count is positive, the block, then the variable
  ; incremented by m3 and the count decremented; EXIT ends the loop, CYCLE
@@ -1390,8 +1537,9 @@
                     (me-call (kadr b) (proc-host (kaddr b) suf cx) (kadddr s) env st cx (1- fuel))
                   (mv (err (if b :type :undeclared)) st))))
        (:print (if (cx-pure cx) (mv (err :pure) st)          ; C1599: no I/O in a pure procedure
+               (if (st-trace st) (mv (err :pd) st)     ; output in an order the processor picks (11.1.7.4.2)
                  (with-v (vs st) (me-list (kadr s) env st cx (1- fuel))
-                   (mv :normal (st-print (render vs) st)))))
+                   (mv :normal (st-print (render vs) st))))))
        (:if (with-v (v st) (me-ev :expr (kadr s) env st cx (1- fuel))
               (cond ((not (and (lval-p v) (booleanp (v-num v)))) (mv (cond-err v) st))
                     ((v-num v) (me-act (kaddr s) env st cx (1- fuel)))
@@ -1412,7 +1560,7 @@
                  ((and (cx-pure cx) (not (equal d 0))) (mv (err :pure) st))   ; C1594: no host or use variable
                  ((not (kaddr s))
                   (let ((n (assign-val (st-get loc st) v)))
-                    (if (errp n) (mv n st) (mv :normal (st-put loc n st)))))
+                    (if (errp n) (mv n st) (mv :normal (st-put loc n (st-log (list (list :w loc :all)) st))))))
                  (t (let ((a (st-get loc st)))
                       (if (not (aval-p a)) (mv (err :type) st)
                         (mv-let (ds sc st) (me-subs (kadddr s) (a-lbs a) (a-ubs a) env st cx (1- fuel))
@@ -1423,7 +1571,7 @@
                                    (c (if (member nil sc) (assign-val tgt v) (conv1 (a-ty a) (a-k a) v))))
                               (if (errp c) (mv c st)
                                 (let ((n (arr-sets (st-get loc st) ts (if (aval-p c) (a-es c) (list (raw c))))))
-                                  (if (errp n) (mv n st) (mv :normal (st-put loc n st)))))))))))))))))
+                                  (if (errp n) (mv n st) (mv :normal (st-put loc n (st-log (write-list loc (tuple-offs a ts)) st))))))))))))))))))
 )
 
 ; ---- a program: the modules elaborated in order, then the main program
@@ -1453,7 +1601,7 @@
 
 (defun me-program (units fuel)       ; (mv status lines)
   (declare (xargs :guard t :verify-guards nil))
-  (let ((gframe (ext-frame units)) (st (mk-st nil 0 nil nil nil)) (main (find-main units)))
+  (let ((gframe (ext-frame units)) (st (mk-st6 nil 0 nil nil nil nil)) (main (find-main units)))
     (mv-let (e mods modenvs st) (me-modules units nil nil gframe st fuel)
       (cond (e (mv e (reverse (true-list-fix (st-out st)))))
             ((not main) (mv (err :syntax) nil))
@@ -1548,3 +1696,35 @@
   (declare (xargs :guard t))
   (+ (arr-offset-steps idx (a-lbs a) (a-ubs a)) (upd-safe-steps (arr-offset idx (a-lbs a) (a-ubs a)) (a-es a))))
 (defthm arr-set-cost (<= (arr-set-steps a idx) (+ 2 (len idx) (len (a-es a)))) :rule-classes :linear)
+
+; ---- tests: DO CONCURRENT's rules (11.1.7.5), each broken once
+
+(defun lines-text (ls)              ; a program's text, one string per line
+  (declare (xargs :guard t))
+  (if (atom ls) "" (concatenate 'string (if (stringp (car ls)) (car ls) "") (string #\Newline) (lines-text (cdr ls)))))
+(defmacro prog-lines (&rest ls) `(lines-text (list ,@ls)))
+(defun run-status (text) (declare (xargs :mode :program)) (car (fortran-run text 1000000)))
+
+; s referred to in every iteration and defined in the others: a reduction
+; without REDUCE locality
+(assert-event (equal (run-status (prog-lines "program p" "implicit none" "integer :: i, s" "s = 0"
+                                             "do concurrent (i = 1:3)" "s = s + i" "end do" "print *, s" "end program p"))
+                     '(:error :concurrent)))
+; a(i) referred to in iteration i and defined in iteration i - 1
+(assert-event (equal (run-status (prog-lines "program p" "implicit none" "integer :: i, a(4)" "a = 1"
+                                             "do concurrent (i = 1:3)" "a(i + 1) = a(i)" "end do" "print *, a" "end program p"))
+                     '(:error :concurrent)))
+; EXIT out of the construct (C1172)
+(assert-event (equal (run-status (prog-lines "program p" "implicit none" "integer :: i" 
+                                             "do concurrent (i = 1:3)" "exit" "end do" "end program p"))
+                     '(:error :concurrent)))
+; each element its own iteration's: conforming
+(assert-event (equal (fortran-run (prog-lines "program p" "implicit none" "integer :: i, a(3)" "a = 1"
+                                              "do concurrent (i = 1:3)" "a(i) = a(i) + i" "end do" "print *, a" "end program p")
+                                  1000000)
+                     '(:normal (("2" "3" "4")))))
+; an operand the value does not need, and its error (10.1.7)
+(assert-event (equal (fortran-run (prog-lines "program p" "implicit none" "logical :: l" "integer :: z" "z = 0"
+                                              "l = (z > 1) .and. (1 / z > 0)" "print *, l" "end program p")
+                                  1000000)
+                     '(:normal (("~PD")))))

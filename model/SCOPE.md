@@ -11,7 +11,7 @@ proved to accept exactly that grammar (`fp-`, `fps-`, `fpu-sound` and
 `-complete`), for every alternative the Scope uses; **part** when only
 some alternatives are in; **no** otherwise.
 
-Score: **113 of 138** Scope rules proved (82%); 21 more in part; 4 not yet in.
+Score: **114 of 138** Scope rules proved (83%); 22 more in part; 2 not yet in.
 
 ## The books
 
@@ -148,10 +148,10 @@ Score: **113 of 138** Scope rules proved (82%); 21 more in part; 4 not yet in.
 | R1119 | do-construct | proved |  |
 | R1120 | do-stmt | proved | nonlabel-do-stmt |
 | R1122 | nonlabel-do-stmt | proved |  |
-| R1123 | loop-control | part | do-variable = e, e [, e]; WHILE; no CONCURRENT |
+| R1123 | loop-control | part | do-variable = e, e [, e]; WHILE; CONCURRENT without concurrent-locality |
 | R1124 | do-variable | proved |  |
-| R1125 | concurrent-header | no | |
-| R1126 | concurrent-control | no | |
+| R1125 | concurrent-header | part | no scalar-mask-expr |
+| R1126 | concurrent-control | proved |  |
 | R1133 | end-do | proved | end-do-stmt |
 | R1134 | end-do-stmt | proved |  |
 | R1135 | cycle-stmt | proved |  |
