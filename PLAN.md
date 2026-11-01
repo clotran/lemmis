@@ -96,8 +96,9 @@ test, and the grammar theorem (Stage B, 4) checks all of them.
   not Fortran variables -- a mutable array it closes over is copied,
   the crossing rule -- so it is safe to hand to `map`, another thread, or
   a lazy sequence that runs later.
-- Open: the file extension (`.lem` is Cambridge's Lem; `.lms` or
-  `.lmis`), `val` versus another word, how a macro is written in Lemmis
+- The file extension is `.lms` (James, 2026-11-01; `.lem` is Cambridge's
+  Lem).
+- Open: `val` versus another word, how a macro is written in Lemmis
   (a quoting form, as Julia's `:( )` and `$`), comments (`!` as Fortran).
 
 ## Oracles
@@ -189,17 +190,63 @@ the loops, `pure` and `elemental`, the intrinsics most used. Not soon,
 or not ever: coarrays, the whole of I/O's edges, fixed form, computed
 GOTO.
 
-## Milestones, smallest first
+## Milestones, in order
 
-1. Parse a small Fortran subset (a program, declarations, assignment,
-   `do`, `if`, `print`) to Clojure forms; flang's tree agrees.
-2. Run it: the same output as gfortran and flang; the fuzzer starts.
-3. The first extension: `->>` pipelines over a lazy sequence.
-4. `val`, `#[...]`, `#{...}`, `do x in coll`; the crossing.
-5. Procedures and modules; calling clotran packages and Clojure.
-6. clotran's two hooks: `require` of a Lemmis file, and the index reading
-   it (definitions and hover in every editor).
-7. Error messages in Lemmis's own terms, with its lines; then docs.
-8. FCVS, as far as it goes.
-9. Stage A (Fortran in ACL2), then Stage B (Lemmis as its conservative
-   extension) -- beside the milestones above once the subset is stable.
+James, 2026-11-01: the proofs come first -- "we need to make sure any
+Fortran program is valid lemmis" -- and `require` works as soon as they
+hold, before any extension.
+
+1. Stage A: Fortran in ACL2 (theorems 1-3), under way in `model/`.
+2. Theorem 4, the extended grammar's conservativity: every program the
+   Fortran grammar accepts parses identically under Lemmis's. This is
+   "any Fortran program is valid Lemmis", proved, not tested.
+3. The reader, generated from the proved grammar books (as clotran's
+   `src/f/gen/*` are, by its `scripts/acl2-fortran`): a `.lms` file to
+   Clojure forms. flang's tree agrees; the program runs with gfortran's
+   and flang's output; the fuzzer starts.
+4. The `require` hook (below): Lemmis and clotran libraries usable from
+   each other, both ways, from here on.
+5. The first extension: `->>` pipelines over a lazy sequence. Each
+   extension lands with its theorem 5 and 6 obligations.
+6. `val`, `#[...]`, `#{...}`, `do x in coll`; the crossing.
+7. Procedures and modules; `use` of a clotran namespace or package.
+8. Error messages in Lemmis's own terms, with its lines; then docs.
+9. FCVS, as far as it goes.
+
+## The require hook
+
+What makes Lemmis a library language and not a script runner: a `.lms`
+file is a clotran namespace, so `(require 'my.solver)` from clotran loads
+`my/solver.lms`, and a Lemmis file's `use my.helpers` loads
+`my/helpers.cljf`, with no glue on either side. What is needed:
+
+- **Resolution** (clotran, `Eval.f90`'s `classpath_find`): `lms` becomes
+  the fourth extension, after `cljf`, `cljc`, `clj`, in every root and
+  package directory. Two files for one lib (`a.cljf` beside `a.lms`)
+  load the first, as `.cljc` beside `.clj` does now (DEVIATIONS 33).
+- **Loading** (clotran's `load`): a `.lms` path is read by Lemmis's
+  reader, not LispReader. Its forms go down the same path as any file's:
+  analyzer, tree evaluator or VM, Vars interned in the file's namespace.
+  The reader is loaded on first use, as `clotran.rt` is.
+- **The namespace**: the file's module names it, and a file whose module
+  is not its lib's name is refused as clj refuses a mismatched `ns`. A
+  Lemmis `use` is `require` with `:refer`. Open: how a Fortran name
+  (no `.`, `-` or `?`) writes a Clojure one.
+- **Lines**: the reader's forms carry the `.lms` file's line and column
+  metadata, so stack traces, the debugger and `clotran test` name Lemmis
+  lines.
+- **The index** (clotran, `index.cljf`'s `clojure-file?`, the LSP and
+  hover): `.lms` files indexed through the same reader, so definitions,
+  hover and completion work in every editor, and both directions jump
+  across.
+- **The compiler**: `compiler.cljf` takes a Lemmis namespace like any
+  other, since what it gets is forms; a `.lms` library compiles to the
+  same Fortran module a `.cljf` one does (tier 1 above).
+- **Gates**: a language test requiring a `.lms` namespace from `.cljf`
+  and a `.cljf` one from `.lms`, each calling, closing over and passing
+  functions to the other; `check-index` over a mixed project; a fuzzer
+  drawing a namespace written both ways and checking the two agree.
+- **Proof**: resolution's order is a small model in clotran's ACL2 books
+  (first root, then the extension order). Loading is the reader (theorem
+  4's grammar, generated) followed by the desugaring (theorem 6), so a
+  required Lemmis library means what its Fortran or Lemmis text says.
