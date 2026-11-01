@@ -84,7 +84,7 @@ test, and the grammar theorem (Stage B, 4) checks all of them.
   and `do concurrent`; `exit` and `cycle` as in Fortran.
 - Collections: `[1, 2, 3]` is already a Fortran array constructor, so it
   stays one; persistent collections are `#[1, 2, 3]` (vector) and
-  `#{:a 1, :b 2}` (map). Keywords `:a`; names may end in `?` and `!`.
+  `#{:a 1, :b 2}` (map). Keywords `:a`; names may hold `?` (see Names).
 - Every Clojure function and macro, and every clotran package, callable
   as `f(args)`.
 - Lambdas, which Fortran has not (internal procedures cannot outlive
@@ -100,6 +100,46 @@ test, and the grammar theorem (Stage B, 4) checks all of them.
   Lem).
 - Open: `val` versus another word, how a macro is written in Lemmis
   (a quoting form, as Julia's `:( )` and `$`), comments (`!` as Fortran).
+
+## Names
+
+James, 2026-11-01: "Lemmis is Fortran++" -- a Fortran program is a Lemmis
+program, not the other way round, so Lemmis takes what Fortran rejects
+and nothing Fortran accepts. Checked with gfortran and flang, both
+agreeing:
+
+| Text | Fortran says | So in Lemmis |
+|---|---|---|
+| `not-empty` | `not` minus `empty` | stays subtraction |
+| `a.b.c` | the defined operator `.b.` on `a`, `c` | stays the operator |
+| `swap!(a, f)` | `swap`, then a comment | stays a comment |
+| `empty?` | rejected, in any name | a name |
+| `` `not-empty` `` | rejected (a backtick does not scan) | a name |
+| `use clojure.string` | rejected | a namespace |
+
+The rules:
+
+1. **`?` is a name character**, bare anywhere: `empty?(s)`, `some?(x)`.
+2. **Any other Clojure name is written in backticks**, exactly as Clojure
+   spells it: `` `not-empty`(s) ``, `` `swap!`(a, f) ``,
+   `` `clojure.string/join`(", ", xs) ``. One rule, no guessing, never
+   Fortran.
+3. **A namespace is dotted in `use`**: `use clojure.string, only: join`,
+   then `join(", ", xs)` bare.
+4. **No `_` for `-`**: `not_empty` is the name `not_empty`. A guessed
+   translation answers silently wrong when a Clojure name does hold `_`.
+
+**Into Fortran.** Most Lemmis is expected to compile to tier 1 Fortran
+modules (James, 2026-11-01), so these names are what a plain Fortran
+caller sees, and are an API: stable, readable, injective. A name that is
+already a Fortran name stays itself. Any other is spelled with readable
+escapes: `empty?` is `empty_qmark_`, `not-empty` is `not_dash_empty`,
+`swap!` is `swap_bang_`, and `.`/`/` in a qualified name are `_dot_`/
+`_slash_`. Two names of a module that spell alike are a compile error.
+A spelling past Fortran's 63 characters is cut, with a short hash of the
+whole name appended. Shared with clotran's compiler, so a `.cljf` and a
+`.lms` library export alike. The escape table is a model, proved
+injective on the names it does not refuse.
 
 ## Oracles
 
@@ -185,10 +225,12 @@ machine. Stage A is worth publishing on its own when it is solid.
 
 ## Scope
 
-The Fortran scientists write: free form, modules, procedures, arrays,
-the loops, `pure` and `elemental`, the intrinsics most used. Not soon,
-or not ever: coarrays, the whole of I/O's edges, fixed form, computed
-GOTO.
+All of standard Fortran (James, 2026-11-01: "any Fortran program is valid
+lemmis"), fixed form, GO TO and FORMAT included, as theorem 4 requires.
+The order is the scientists' first: free form, modules, procedures,
+arrays, the loops, `pure` and `elemental`, the intrinsics most used;
+then fixed form, GO TO, FORMAT and the rest of I/O (under way on branch
+`wip/fixed-form-goto-format`); coarrays last.
 
 ## Milestones, in order
 
@@ -230,8 +272,8 @@ file is a clotran namespace, so `(require 'my.solver)` from clotran loads
   The reader is loaded on first use, as `clotran.rt` is.
 - **The namespace**: the file's module names it, and a file whose module
   is not its lib's name is refused as clj refuses a mismatched `ns`. A
-  Lemmis `use` is `require` with `:refer`. Open: how a Fortran name
-  (no `.`, `-` or `?`) writes a Clojure one.
+  Lemmis `use` is `require` with `:refer`; a Clojure name is written as
+  Names says.
 - **Lines**: the reader's forms carry the `.lms` file's line and column
   metadata, so stack traces, the debugger and `clotran test` name Lemmis
   lines.
