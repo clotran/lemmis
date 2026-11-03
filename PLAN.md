@@ -239,21 +239,34 @@ Fortran program is valid lemmis" -- and `require` works as soon as they
 hold, before any extension.
 
 1. Stage A: Fortran in ACL2 (theorems 1-3), under way in `model/`.
-2. Theorem 4, the extended grammar's conservativity: every program the
+2. clotran's generator proved (James, 2026-11-03), alongside theorem 4.
+   Stage A's first slice, fsyn and fsem, is exactly the Fortran that
+   clotran's `scripts/acl2-fortran` emits for `src/f/gen/*`, and today
+   that translation is trusted: clotran's "Generated" rows rest on it.
+   The translation becomes an ACL2 function from the generator's input
+   (an ACL2 definition in the subset it takes) to fsyn's syntax, proved
+   once: fsem running the emitted Fortran computes what the ACL2
+   definition computes, a value or a bounds error, and terminates where
+   it does. Then `acl2-fortran` prints that function's output and decides
+   nothing itself. Every Generated row in clotran is then proved down to
+   its Fortran text, and only gfortran/flang are trusted. Each construct
+   the generator learns later (a new shim, a stobj field) lands with its
+   case of this theorem. This is where the two projects meet.
+3. Theorem 4, the extended grammar's conservativity: every program the
    Fortran grammar accepts parses identically under Lemmis's. This is
    "any Fortran program is valid Lemmis", proved, not tested.
-3. The reader, generated from the proved grammar books (as clotran's
+4. The reader, generated from the proved grammar books (as clotran's
    `src/f/gen/*` are, by its `scripts/acl2-fortran`): a `.lms` file to
    Clojure forms. flang's tree agrees; the program runs with gfortran's
    and flang's output; the fuzzer starts.
-4. The `require` hook (below): Lemmis and clotran libraries usable from
+5. The `require` hook (below): Lemmis and clotran libraries usable from
    each other, both ways, from here on.
-5. The first extension: `->>` pipelines over a lazy sequence. Each
+6. The first extension: `->>` pipelines over a lazy sequence. Each
    extension lands with its theorem 5 and 6 obligations.
-6. `val`, `#[...]`, `#{...}`, `do x in coll`; the crossing.
-7. Procedures and modules; `use` of a clotran namespace or package.
-8. Error messages in Lemmis's own terms, with its lines; then docs.
-9. FCVS, as far as it goes.
+7. `val`, `#[...]`, `#{...}`, `do x in coll`; the crossing.
+8. Procedures and modules; `use` of a clotran namespace or package.
+9. Error messages in Lemmis's own terms, with its lines; then docs.
+10. FCVS, as far as it goes.
 
 ## The require hook
 
