@@ -1,0 +1,16 @@
+#!/usr/bin/env bb
+;; with-timeout SECS CMD...: run CMD; after SECS kill it and every process
+;; it started, and exit 124 (macOS has no timeout(1)).
+(require '[babashka.process :as p])
+(let [[s & cmd] *command-line-args*
+      proc (p/process cmd {:in :inherit :out :inherit :err :inherit})
+      r (deref proc (* 1000 (parse-long s)) ::timeout)]
+  (if (= r ::timeout)
+    (let [h (.toHandle (:proc proc))
+          all (conj (vec (iterator-seq (.iterator (.descendants h)))) h)]
+      (run! #(.destroy %) all)          ; TERM, then KILL what is left
+      (Thread/sleep 3000)
+      (run! #(.destroyForcibly %) all)
+        (binding [*out* *err*] (println (str "with-timeout: timed out after " s "s")))
+        (System/exit 124))
+    (System/exit (:exit r))))
