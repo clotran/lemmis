@@ -21,10 +21,10 @@
 ;; runtime call -- integers and booleans only (GEN.md)
 (def books
   [{:book "heapgn" :file "src/f/gen/heap_gen.inc"
-    :fns '[hpg-add hpg-text-tag hpg-s64 hpg-n40 hpg-size-class hpg-class-len] :bools '[hpg-text-tag]}
+    :fns '[hpg-add hpg-text-tag hpg-s64 hpg-n40 hpg-size-class hpg-class-len] :bools '[hpg-text-tag] :raw "*heapgn-raw*"}
    {:book "vmfg" :file "src/f/gen/vm_gen.f90"
-    :fns '[bnd40p sk-step sk-more ex-aplook ex-apstep] :bools '[bnd40p sk-more]}
-   {:book "vmicg" :file "src/f/gen/vmc_gen.f90" :fns '[vmicg-sat] :bools '[]}])
+    :fns '[bnd40p sk-step sk-more ex-aplook ex-apstep] :bools '[bnd40p sk-more] :raw "*vmfg-raw*"}
+   {:book "vmicg" :file "src/f/gen/vmc_gen.f90" :fns '[vmicg-sat] :bools '[] :raw "*vmicg-raw*"}])
 
 (defn acl2! [dir input]
   (let [r (p/shell {:dir dir :in input :out :string :err :string :continue true} acl2)] (:out r)))
@@ -50,14 +50,17 @@
       (println "check-gen: ACL2 did not hand over" book "'s functions") (System/exit 1))
     blocks))
 
-(defn translate [raws bools]
+(defn translate [raws bools const]
   (let [out (acl2! "."
-                   (str "(include-book \"gen\")\n(set-print-case :downcase state)\n"
+                   (str "(include-book \"gen-inst\")\n(set-print-case :downcase state)\n"
                         "(defun g-show (ps) (declare (xargs :mode :program))\n"
                         "  (if (endp ps) nil (prog2$ (cw \"~%PROC ~x0~%\" (car ps)) (g-show (cdr ps)))))\n"
                         "(set-iprint nil)\n"
+                        "(cw \"~%RAWS ~x0~%\" (equal '(" (str/join "\n" raws) ") " const "))\n"
                         "(mv-let (e ps) (g-module '(" (str/join "\n" raws) ") '(" (str/join " " bools) "))\n"
                         "  (if e (cw \"~%GENERR ~x0~%\" e) (g-show ps)))\n(good-bye)\n"))]
+    (when-not (re-find #"RAWS t" out)
+      (println "check-gen: gen-inst.lisp's" const "is not what ACL2 hands over") (System/exit 1))
     (when-let [m (re-find #"GENERR (.*)" out)] (println "check-gen: gen.lisp refuses" (second m)) (System/exit 1))
     (map #(edn/read-string (form-text %)) (rest (str/split out #"\nPROC\s+")))))
 
@@ -67,8 +70,8 @@
     (when (and start end) (subvec lines start (inc end)))))
 
 (def failures (atom 0))
-(doseq [{:keys [book file fns bools] :as b} books]
-  (let [procs (translate (dump b) bools)
+(doseq [{:keys [book file fns bools raw] :as b} books]
+  (let [procs (translate (dump b) bools raw)
         lines (vec (str/split-lines (slurp (str clotran "/" file))))]
     (doseq [[fn pr] (map vector fns procs)]
       (let [pr (vec pr)
@@ -82,6 +85,27 @@
               (doseq [[a t] (map vector (concat ours (repeat "<none>")) (or theirs ["<not found>"]))
                       :when (not= a t)] ; first differences only
                 (println "  gen.lisp:     " a) (println "  acl2-fortran: " t))))))))
+;; gen-disch.lisp's copies of clotran's definitions: the formals, guard and
+;; body ACL2 makes of each must equal what clotran's certified books make
+;; (heapgn and vmfg are read in separate sessions: they clash on sb64p)
+(def disch-groups [["heapgn" '[hpg-add hpg-text-tag hpg-s64 hpg-n40]]
+                   ["vmfg" '[bnd40p sk-step sk-more ex-apstep ex-aplook vmicg-sat]]])
+(defn defs-text [dir book fns]
+  (let [fs (str/join " " fns)
+        out (acl2! dir (str "(include-book \"" book "\")\n"
+                            "(set-print-case :downcase state)\n(set-iprint nil)\n"
+                            "(defun dl (fns w) (declare (xargs :mode :program))\n"
+                            "  (if (endp fns) nil (cons (list (car fns) (formals (car fns) w) (guard (car fns) nil w) (body (car fns) nil w)) (dl (cdr fns) w))))\n"
+                            "(cw \"~%DEFS ~x0~%\" (dl '(" fs ") (w state)))\n"
+                            "(good-bye)\n"))]
+    (if (str/includes? out "\nDEFS ") (form-text (second (str/split out #"\nDEFS\s+"))) "<none>")))
+(doseq [[book fns] disch-groups]
+  (let [theirs (defs-text (str clotran "/model") book fns)
+        ours (defs-text "." "gen-disch" fns)]
+    (if (= ours theirs)
+      (println "check-gen: gen-disch.lisp's" (count fns) "definitions agree with clotran's" book)
+      (do (swap! failures inc) (println "check-gen: gen-disch.lisp's definitions DIFFER from clotran's" book)
+          (println "  gen-disch: " ours) (println "  clotran:   " theirs)))))
 (if (zero? @failures)
   (println "check-gen: all agree")
   (do (println "check-gen:" @failures "differ") (System/exit 1)))

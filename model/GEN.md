@@ -130,8 +130,9 @@ The proof is planned in three layers:
    (sequencing), and what code touches: `fv-agree` (an expression reads
    only its `ev-names`), `fx-list-keeps` (a statement list changes only
    its `asg` names, and no name's declared type), `fx-list-agree`.
-2. **The translation, per term** (gen-names.lisp proved; gen-proof.lisp
-   in part). The induction runs
+2. **The translation, per term** (gen-names, gen-proof, gen-proof2,
+   gen-cfout, gen-ret, gen-fresh, gen-retout, gen-fn: proved, through the
+   function-level theorem `g-fn-sem`; gen-inst instantiates it). The induction runs
    on g-expr's structure with a custom induction function. That function
    threads the frame, the source env and the a-ev fuel, because each
    sibling's statements start from the frame its predecessor left.
@@ -176,34 +177,118 @@ is how `fx-is-f-ex` went through after two monolithic attempts ran out.
   code = a-ev's value, of the inferred type) for the cases `ge-sym`,
   `ge-atom`, `ge-quote`, `ge-the-check`, `ge-big`, `ge-call`, and the
   argument lists `ge-args-nil`, `ge-args-cons`, plus `ge-binds-nil`.
+- **gen-proof2.lisp, proved:** the remaining cases `ge-if`, `ge-implies`
+  (g-if's temporary gets the branch's value; for implies, a-ev runs both
+  arguments while the code runs the second only when the first holds),
+  `ge-binds-self`, `ge-binds-cons` (each temporary holds its argument's
+  value; em-ok over the lambda's env `(pairlis$ vars vs)`), `ge-lambda`,
+  and the dispatching induction **`ge-sem-thm`** over `g-ind`: for every
+  term, g-expr's statements answer :normal and its code evaluates (fv) to
+  a-ev's value, of the inferred type (and likewise for g-args, g-binds).
+  Each case uses its parts through `ge-sem-use`/`gb-sem-use`
+  (backchaining), so no case splits on its parts' hypotheses.
+- **gen-cfout.lisp, proved:** `g-expr-cf` (by `gc-ok-thm`, its own
+  induction over `g-ind`): under `no-calls`, g-expr's statements are
+  `cf-stmts` and its code `cf-expr`, so `fx-list-is-f-ex-list` applies.
+- **gen-ret.lisp, proved:** `g-ret-locs`/`g-select-locs` (temporaries
+  only grow, via `g-tail-locs` too), and **`gr-sem-thm`** by induction
+  over `gr-ind` (g-ret/g-select's recursion with env, fuel and frame): on
+  call-free source, g-ret's statements answer :return with `"r"` holding
+  `(type . a-ev's value)`; g-select's arms, run by fsem's SELECT on the
+  tested variable's value, do what the if chain does. The arms all test
+  one variable (`chain-on`, from g-chain via `g-chain-on`); the keys need
+  not be distinct, SELECT and the chain both taking the first match.
+- **gen-fresh.lisp, proved:** `g-expr-fresh` (by `gf-ok-thm` over
+  `g-ind`): g-expr's temporaries stay `lf-ok` -- distinct, none `"r"`,
+  none a formal's name (every g-fresh call sees the formals' names).
+- **gen-retout.lisp, proved:** `g-ret-cf` (by `grc-ok-thm` over
+  `gr-ind`): under `no-calls`, with `self` a symbol other than `quote`
+  that has a signature, g-ret's statements are `cf-stmts` (so no CYCLE and
+  no DO) and its temporaries stay `lf-ok`.
+- **gen-fn.lisp, proved:** **`g-fn-sem`**, the function-level theorem. If
+  `(g-fn fn defs sigs)` succeeds, `fn` is a symbol other than `quote` with a
+  signature, its body calls no translated function (`no-calls`),
+  `no-prim-defs defs`, `args` are int64s as many as the formals, a-ev of
+  the body over `(pairlis$ formals args)` answers without an error, and
+  `fuel > 6 + (len args) + (acl2-count proc)`, then
+  `(f-invoke proc (g-lits args) caller heap procs fuel)` is
+  `(mv nil v heap)` with `v` a-ev's value. The pieces: `f-bind-g-dummies`
+  (the literals bound to the `:value` dummies), `em-ok-fb`,
+  `fn-frame-em-ok`/`fn-frame-decl` (the declarations of `"r"` and the
+  temporaries overwrite no formal: `lf-ok`), `fn-run` (gr-sem-thm on that
+  frame), and `f-ex-list-do`: g-fn's DO wrapper, put on when g-has finds a
+  `(:cycle)`, is handled directly rather than proved absent (cf-stmts
+  rules out a CYCLE statement, but not `(:cycle)` as a subtree, e.g. in a
+  name), so the theorem holds for both shapes. `ret-ok` (gen-ret) now also
+  carries `scalar-ok`, which f-invoke checks of `"r"`.
+- **gen-inst.lisp, proved:** g-fn-sem for clotran's 10 call-free,
+  loop-free functions: `hpg-add-gen`, `hpg-text-tag-gen`, `hpg-s64-gen`,
+  `hpg-n40-gen`, `bnd40p-gen`, `sk-step-gen`, `sk-more-gen`,
+  `ex-aplook-gen`, `ex-apstep-gen`, `vmicg-sat-gen`. Each: the procedure
+  g-module makes from what ACL2 hands over (found by its Fortran name, as
+  fsem's call finds it), on int64 arguments, answers a-ev's value of the
+  body whenever a-ev answers without an error (the fuel bound as above). All
+  of g-fn-sem's other hypotheses discharge by evaluation. The hand-over is
+  kept in the book as constants (`*heapgn-raw*`, `*vmfg-raw*`,
+  `*vmicg-raw*`); `make check-gen` now also checks they equal what
+  clotran's certified books hand over. Left out: `hpg-size-class` (loop)
+  and `hpg-class-len` (loop and calls), layer 3.
+- **gen-disch.lisp, proved:** the per-function discharge for those 10.
+  clotran's definitions are copied in (`make check-gen` checks the
+  formals, guard and body ACL2 makes of each equal clotran's). For each
+  function `<fn>`: `<fn>-a-ev`, on int64 arguments and under its guard
+  (read from the world by the macro, so the hypothesis is exactly the
+  guard), a-ev of the body answers without an error -- no `:range` -- the
+  function's own value; and **`<fn>-fortran-correct`**, the end-to-end
+  theorem with no a-ev hypothesis: on int64 arguments, under the guard,
+  with the fuel past the procedure's size, `(f-invoke p (g-lits args) ..)`
+  is `(mv nil (<fn> args..) heap)`, `p` the procedure g-module makes.
+  a-ev is opened on the quoted body by `a-ev-quoted`/`a-ev-list-quoted`
+  (syntaxp quotep on the term and fuel); the book proves in under a
+  second.
+  **One guard does not cover int64 range: `ex-aplook`.** Its guard is `t`,
+  and its body computes `(+ req 1)` once `req` is a natural and `k` an
+  integer. At `req = 2^63 - 1` (`huge(0_int64)`) that overflows: the
+  generated `req + 1_int64` is undefined in Fortran, where ACL2 answers 0.
+  `ex-aplook-range-at-huge` proves a-ev answers `:range` there, and
+  ex-aplook's two theorems carry the explicit extra hypothesis
+  `(< req 9223372036854775807)`. In clotran req is an arity, so this is
+  out of reach in practice, but neither the guard nor the code rules it
+  out; clotran could bound `req` in the body (e.g. `(< req *b40*)` in the
+  `and`), which keeps the add in range. The other 9 guards cover the
+  range: hpg-add's guard bounds `n` and `k` by 2^40, and the rest only
+  compare.
 - **Hypotheses added, explicit:** the source calls no translated function
   (`no-calls`, the "call-free" slice stated on the source, not the
-  output), and ACL2 defines none of the primitives (`no-prim-defs`).
-  g-expr now refuses a lambda with duplicate formals, as ACL2's translated
-  terms never have; the check-gen texts are unchanged.
+  output), and ACL2 defines none of the primitives (`no-prim-defs`; `=`
+  added to the list, since g-case-key accepts it and a-ev has no `=`
+  primitive). g-fn-sem (and so each gen-inst theorem) assumes a-ev of the
+  body answers without an error -- in particular no `:range`, the int64
+  hypothesis -- and a fuel bound past the procedure's size; the int64
+  arguments are a hypothesis, the signature's types being all int64. g-binds' run assumes the lambda's formals are symbols (g-expr
+  checks it). g-ret's run assumes the function's name is a symbol other
+  than `quote` and has a signature (`consp (lkp self sigs)`), and that
+  `"r"` is declared with the result type. g-expr now refuses a lambda with
+  duplicate formals, as ACL2's translated terms never have; the check-gen
+  texts are unchanged.
 
 ## What remains, in order (estimated in lanes)
 
-1. Layer 2, the rest. In gen-proof2.lisp (gen-proof.lisp certifies in
-   about 160 s of CPU; keep the next lemmas in their own book):
-   `ge-if` and `ge-implies` (g-if: the temporary's type from decl-ok, its
-   value surviving the other branch), `ge-binds-self` and
-   `ge-binds-cons` (em-ok over the lambda's env: `(pairlis$ vars vs)`,
-   needs the formals distinct), `ge-lambda`; the dispatching induction
-   over `g-ind` (`gkind` enabled, `kadr kaddr kadddr` disabled, as in
-   `gs-ok-thm`); a separate induction that the output is call-free
-   (`no-calls` => `cf-stmts`/`cf-expr`; `g-unop-cf`, `g-binop-cf` are
-   proved); then `g-ret` and `g-select` (the select against the if chain
-   needs `g-chain`'s invariant that every arm tests the same variable;
-   the keys need not be distinct, as lkp and the chain both take the first
-   match); then the function-level theorem with `fx-list-is-f-ex-list`.
-   This covers 10 of the 12 checked functions. One lane.
-2. Layer 3: calls (the frame-agreement lemma over fsem's clique, and the
-   fuel bound), then tail-recursive loops; the whole theorem for the slice.
+1. Layer 2 is done: g-expr, g-ret and the function (`g-fn-sem`), with
+   10 of the 12 checked functions proved (gen-inst.lisp).
+2. Layer 3: calls (the frame-agreement lemma over fsem's clique -- proved,
+   gen-call.lisp's `f-ev-agree`: for expressions of cf-expr's forms plus
+   `:fcall`, two frames agreeing on the names read (`ce-names`) give the
+   same f-ev at every fuel, by `ag-ok-thm` over f-ev, f-bind and f-invoke;
+   left: g-expr's run with fuel and calls, f-bind of argument expressions
+   (g-fn-sem binds literals), the cross-function induction on a-ev's fuel,
+   and the fuel bound), then tail-recursive loops; the whole theorem for the slice.
    One to two lanes.
-3. Per-function discharge of the hypotheses: the clotran definition equals
-   a-ev of its body, and guard ⇒ no `:range`. This is done in clotran's tree
-   or by include-book from here. One lane.
+3. Per-function discharge of the hypotheses: done for gen-inst's 10
+   (gen-disch.lisp, `<fn>-fortran-correct`; ex-aplook needs
+   `req < 2^63 - 1`, above). Left: the same for hpg-size-class and
+   hpg-class-len once layer 3 covers them, and for each function later
+   slices add.
 4. Stobjs: fields, arrays (the bounds error), subroutines, `mv` and the
    `intent(out)` results. fsyn has them already. Two lanes.
 5. Values and the runtime shims (`type(value)`, `rt_*`): fsyn/fsem first need

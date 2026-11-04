@@ -27,7 +27,7 @@
   (if (atom locs) t
     (and (equal (dty (car (car locs)) fr) (list (cdr (car locs)))) (decl-ok (cdr locs) fr))))
 
-(defconst *g-prims* '(binary-+ binary-* unary-- < equal eql not nfix zp natp integerp implies the-check hide))
+(defconst *g-prims* '(binary-+ binary-* unary-- < equal eql = not nfix zp natp integerp implies the-check hide))
 
 ; ACL2 defines none of the primitives: a-ev calls them, not a definition
 (defun no-prim-defs (defs) (not (intersectp-equal (strip-cars defs) *g-prims*)))
@@ -129,7 +129,7 @@
     (declare (ignore cnt2))
     (mv-let (ae vs) (a-ev-list xs env defs n)
       (implies (and (not e) (not ae) (no-calls :list xs sigs) (em-ok em env fr) (decl-ok locs2 fr)
-                    (no-prim-defs defs) (no-duplicatesp-equal vars) (equal (len vars) (len xs)))
+                    (no-prim-defs defs) (symbol-listp vars) (no-duplicatesp-equal vars) (equal (len vars) (len xs)))
                (mv-let (st fr2) (fx-list s fr)
                  (and (equal st :normal) (subsetp-equal (strip-cars binds) vars)
                       (em-ok em env fr2) (em-ok (append binds em) (pairlis$ vars vs) fr2)))))))

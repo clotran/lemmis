@@ -264,15 +264,29 @@ hold, before any extension.
    by kind); `gen-names.lisp`, what g-expr's statements write and its code
    reads (`gs-ok-thm`); `gen-proof.lisp`, the invariants (em-ok, decl-ok)
    and g-expr's run proved for its symbol, quote, the-check, `<`-against-
-   a-big-literal, primitive-call and argument-list cases. g-expr now
-   refuses a lambda with duplicate formals.
-   Left, in order: g-expr's if/implies, lambda and binding cases, the
-   call-free (cf) induction, the dispatching induction, then g-ret and
-   g-select, then the per-function theorem for call-free, loop-free
-   functions; calls (frame agreement over fsem's clique, the fuel
-   bound) and loops; per function, clotran's definition = a-ev and its
-   guard => no int64 overflow (guard verification alone does not give
-   it); stobjs (fields, arrays and the bounds error, subroutines, mv);
+   a-big-literal, primitive-call and argument-list cases; `gen-proof2.lisp`,
+   the rest of g-expr's cases (if, implies, a lambda and its bindings) and
+   the induction `ge-sem-thm`: every g-expr output runs (fx) to a-ev's
+   value; `gen-cfout.lisp`, its output call-free (`g-expr-cf`);
+   `gen-ret.lisp`, `gr-sem-thm`: g-ret's statements run to :return with
+   "r" = a-ev's value, a case chain's SELECT taking the if chain's arm.
+   g-expr now refuses a lambda with duplicate formals. `gen-fresh`,
+   `gen-retout`: the temporaries distinct and apart from the formals, g-ret's
+   output call-free; `gen-fn.lisp`, `g-fn-sem`: f-invoke of g-fn's output on
+   int64 literals answers a-ev's value of the body, for call-free bodies;
+   `gen-inst.lisp`: that, for 10 of the 12 checked functions of clotran
+   (all but the two with loops), from what clotran's books hand over.
+   `gen-disch.lisp`: for those 10, clotran's definitions (checked equal
+   by check-gen) equal a-ev of their bodies under their guards, with no
+   int64 overflow, so `<fn>-fortran-correct`: under the guard, on int64
+   arguments, the generated procedure answers the ACL2 function's value.
+   ex-aplook's guard (t) does not cover `req + 1` at req = 2^63 - 1; its
+   theorem states `req < 2^63 - 1` (GEN.md).
+   Layer 3 begun: `gen-call.lisp`, f-ev's frame agreement over fsem's
+   clique with calls (`f-ev-agree`).
+   Left, in order: calls (frame agreement over fsem's clique, the fuel
+   bound) and loops; the per-function discharge for the 2 loop functions;
+   stobjs (fields, arrays and the bounds error, subroutines, mv);
    values and the runtime shims; then acl2-fortran prints g-module's
    output (and its lambda scoping, which leaks a binding to later
    siblings, fixed or shown harmless). About 8-9 lanes.
