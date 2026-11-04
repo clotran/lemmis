@@ -131,8 +131,8 @@ The proof is planned in three layers:
    only its `ev-names`), `fx-list-keeps` (a statement list changes only
    its `asg` names, and no name's declared type), `fx-list-agree`.
 2. **The translation, per term** (gen-names, gen-proof, gen-proof2,
-   gen-cfout, gen-ret: proved for g-expr and g-ret; the function-level
-   step remains). The induction runs
+   gen-cfout, gen-ret, gen-fresh, gen-retout, gen-fn: proved, through the
+   function-level theorem `g-fn-sem`; gen-inst instantiates it). The induction runs
    on g-expr's structure with a custom induction function. That function
    threads the frame, the source env and the a-ev fuel, because each
    sibling's statements start from the frame its predecessor left.
@@ -198,11 +198,49 @@ is how `fx-is-f-ex` went through after two monolithic attempts ran out.
   tested variable's value, do what the if chain does. The arms all test
   one variable (`chain-on`, from g-chain via `g-chain-on`); the keys need
   not be distinct, SELECT and the chain both taking the first match.
+- **gen-fresh.lisp, proved:** `g-expr-fresh` (by `gf-ok-thm` over
+  `g-ind`): g-expr's temporaries stay `lf-ok` -- distinct, none `"r"`,
+  none a formal's name (every g-fresh call sees the formals' names).
+- **gen-retout.lisp, proved:** `g-ret-cf` (by `grc-ok-thm` over
+  `gr-ind`): under `no-calls`, with `self` a symbol other than `quote`
+  that has a signature, g-ret's statements are `cf-stmts` (so no CYCLE and
+  no DO) and its temporaries stay `lf-ok`.
+- **gen-fn.lisp, proved:** **`g-fn-sem`**, the function-level theorem. If
+  `(g-fn fn defs sigs)` succeeds, `fn` is a symbol other than `quote` with a
+  signature, its body calls no translated function (`no-calls`),
+  `no-prim-defs defs`, `args` are int64s as many as the formals, a-ev of
+  the body over `(pairlis$ formals args)` answers without an error, and
+  `fuel > 6 + (len args) + (acl2-count proc)`, then
+  `(f-invoke proc (g-lits args) caller heap procs fuel)` is
+  `(mv nil v heap)` with `v` a-ev's value. The pieces: `f-bind-g-dummies`
+  (the literals bound to the `:value` dummies), `em-ok-fb`,
+  `fn-frame-em-ok`/`fn-frame-decl` (the declarations of `"r"` and the
+  temporaries overwrite no formal: `lf-ok`), `fn-run` (gr-sem-thm on that
+  frame), and `f-ex-list-do`: g-fn's DO wrapper, put on when g-has finds a
+  `(:cycle)`, is handled directly rather than proved absent (cf-stmts
+  rules out a CYCLE statement, but not `(:cycle)` as a subtree, e.g. in a
+  name), so the theorem holds for both shapes. `ret-ok` (gen-ret) now also
+  carries `scalar-ok`, which f-invoke checks of `"r"`.
+- **gen-inst.lisp, proved:** g-fn-sem for clotran's 10 call-free,
+  loop-free functions: `hpg-add-gen`, `hpg-text-tag-gen`, `hpg-s64-gen`,
+  `hpg-n40-gen`, `bnd40p-gen`, `sk-step-gen`, `sk-more-gen`,
+  `ex-aplook-gen`, `ex-apstep-gen`, `vmicg-sat-gen`. Each: the procedure
+  g-module makes from what ACL2 hands over (found by its Fortran name, as
+  fsem's call finds it), on int64 arguments, answers a-ev's value of the
+  body whenever a-ev answers without an error (the fuel bound as above). All
+  of g-fn-sem's other hypotheses discharge by evaluation. The hand-over is
+  kept in the book as constants (`*heapgn-raw*`, `*vmfg-raw*`,
+  `*vmicg-raw*`); `make check-gen` now also checks they equal what
+  clotran's certified books hand over. Left out: `hpg-size-class` (loop)
+  and `hpg-class-len` (loop and calls), layer 3.
 - **Hypotheses added, explicit:** the source calls no translated function
   (`no-calls`, the "call-free" slice stated on the source, not the
   output), and ACL2 defines none of the primitives (`no-prim-defs`; `=`
   added to the list, since g-case-key accepts it and a-ev has no `=`
-  primitive). g-binds' run assumes the lambda's formals are symbols (g-expr
+  primitive). g-fn-sem (and so each gen-inst theorem) assumes a-ev of the
+  body answers without an error -- in particular no `:range`, the int64
+  hypothesis -- and a fuel bound past the procedure's size; the int64
+  arguments are a hypothesis, the signature's types being all int64. g-binds' run assumes the lambda's formals are symbols (g-expr
   checks it). g-ret's run assumes the function's name is a symbol other
   than `quote` and has a signature (`consp (lkp self sigs)`), and that
   `"r"` is declared with the result type. g-expr now refuses a lambda with
@@ -211,19 +249,8 @@ is how `fx-is-f-ex` went through after two monolithic attempts ran out.
 
 ## What remains, in order (estimated in lanes)
 
-1. Layer 2, the rest. g-expr (`ge-sem-thm`, `g-expr-cf`) and g-ret
-   (`gr-sem-thm`) are proved. Left: g-ret's output call-free (`cf-stmts`)
-   and without `(:cycle)` under `no-calls` (an induction over `gr-ind`
-   like `gc-ok-thm`; g-has on cf-stmts is false), then the function-level
-   theorem: for `(g-fn fn defs sigs) = (mv nil proc)`, call-free body,
-   int64 args, `f-invoke proc (g-lits args)` answers a-ev's value. Its
-   pieces: f-bind of `:value` dummies gives the formals' frame (em-ok for
-   `(g-em formals)` over `(pairlis$ formals args)`); undef-locals of
-   `("r" rtype)` and `(g-locals locs)` gives `decl-ok locs` and
-   `dty "r"` (the names distinct: g-fresh's check, `"r"` excluded);
-   `fx-list-is-f-ex-list` with fuel past `(acl2-count body)`; then
-   `gr-sem-thm`. This covers 10 of the 12 checked functions. Under one
-   lane.
+1. Layer 2 is done: g-expr, g-ret and the function (`g-fn-sem`), with
+   10 of the 12 checked functions proved (gen-inst.lisp).
 2. Layer 3: calls (the frame-agreement lemma over fsem's clique, and the
    fuel bound), then tail-recursive loops; the whole theorem for the slice.
    One to two lanes.

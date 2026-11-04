@@ -16,7 +16,7 @@
 
 (defmacro rty () '(kadr (cdr (lkp self sigs))))
 
-(defun ret-ok (fr2 rt v) (equal (cdr (lkp "r" fr2)) (cons rt v)))
+(defun ret-ok (fr2 rt v) (and (equal (cdr (lkp "r" fr2)) (cons rt v)) (scalar-ok rt v)))
 
 ; ---- g-ret's recursion, carrying a-ev's env and fuel and the frame
 
@@ -321,7 +321,7 @@
 (in-theory (disable gr-sem gsel-sem ret-ok))
 
 (defthm ret-ok-put
-  (equal (ret-ok (put "r" v fr) rt val) (equal v (cons rt val)))
+  (equal (ret-ok (put "r" v fr) rt val) (and (equal v (cons rt val)) (scalar-ok rt val)))
   :hints (("Goal" :in-theory (enable ret-ok))))
 
 (defthm ret-glue

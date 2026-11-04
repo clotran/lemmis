@@ -270,10 +270,13 @@ hold, before any extension.
    value; `gen-cfout.lisp`, its output call-free (`g-expr-cf`);
    `gen-ret.lisp`, `gr-sem-thm`: g-ret's statements run to :return with
    "r" = a-ev's value, a case chain's SELECT taking the if chain's arm.
-   g-expr now refuses a lambda with duplicate formals.
-   Left, in order: g-ret's output call-free and without CYCLE, then the
-   per-function theorem for call-free, loop-free
-   functions; calls (frame agreement over fsem's clique, the fuel
+   g-expr now refuses a lambda with duplicate formals. `gen-fresh`,
+   `gen-retout`: the temporaries distinct and apart from the formals, g-ret's
+   output call-free; `gen-fn.lisp`, `g-fn-sem`: f-invoke of g-fn's output on
+   int64 literals answers a-ev's value of the body, for call-free bodies;
+   `gen-inst.lisp`: that, for 10 of the 12 checked functions of clotran
+   (all but the two with loops), from what clotran's books hand over.
+   Left, in order: calls (frame agreement over fsem's clique, the fuel
    bound) and loops; per function, clotran's definition = a-ev and its
    guard => no int64 overflow (guard verification alone does not give
    it); stobjs (fields, arrays and the bounds error, subroutines, mv);
