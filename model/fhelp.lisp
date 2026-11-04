@@ -279,6 +279,7 @@
           ((not (ikind-p k)) (err :type))
           ((eq (kar tk) :log) (vl k (kadr tk)))
           (t (mk-int k (digits-val (kadr tk))))))))
+(in-theory (disable lit-val))
 
 ; SELECT CASE (11.1.9): a case-value-range is the interval (lo . hi) of
 ; raw values, nil for an open end (11.1.9.2); an arm's selector is its

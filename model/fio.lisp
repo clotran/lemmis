@@ -32,6 +32,7 @@
         (t e)))
 (defun flog10 (v)                    ; floor(log10 v), v a positive rational
   (if (and (rationalp v) (< 0 v)) (flog10-fix v (floor (* (flog2 v) 30103) 100000) 8) 0))
+(in-theory (disable flog10))
 
 ; ---- the format specification (13.2, 13.3), read into items:
 ;   (:str cs)  a character string edit descriptor (13.9)
@@ -141,6 +142,7 @@
                            ((eql (kar r) #\/) (mv-let (is r2) (fd-items (cdr r))
                                                 (mv (cons (list :rep (or n 1) (list (list :slash))) is) r2)))
                            (t (fd-item-1 r n neg cs)))))))))))
+(in-theory (disable fd-items))
 
 (defun parse-format (s)              ; a format-specification's text, "(" ... ")"
   (let ((cs (if (stringp s) (coerce s 'list) nil)))
@@ -225,6 +227,7 @@
         (let ((xp (fd-exp ex e (if (eq style :d) #\D #\E))))
           (if (not xp) (make-list (nfix w) :initial-element #\*)
             (fd-fit (append (md-plus (fl-neg-p x) md) mant xp) w)))))))
+(in-theory (disable fd-real-e))
 (defun fd-real-g (x w d e md)        ; Gw.dEe for a real (13.7.5.2.3)
   (cond ((not (fl-fin-p x)) (fd-special x w))
         ((or (null d) (eql w 0)) :pd)            ; G0, Gw: the processor's d (and w)
@@ -251,6 +254,7 @@
           ((lval-p v) (if (member-eq (kar it) '(:l :g)) (fd-pad (list (if (v-num v) #\T #\F)) (if (eql w 0) 1 w)) (err :type)))
           ((eq (kar v) :c) (if (member-eq (kar it) '(:a :g)) (fd-a (fd-chars v) (if (eql w 0) nil w)) (err :type)))
           (t (err :type)))))
+(in-theory (disable fd-data))
 
 ; ---- output: records under a format. A record being written is (buf pos
 ; lim): its characters, the position of the next (0-based), and the left
@@ -287,6 +291,7 @@
                     (cond ((errp cs) (mv vals rec recs md cs))
                           ((eq cs :pd) (mv vals rec recs md (err :pd)))
                           (t (fo-pass (cdr ds) (cdr vals) (rec-put cs rec) recs md)))))))))))
+(in-theory (disable fo-pass))
 ; passes until the items are done; the reversion each time the format
 ; ends with items left, onto a new record (13.4p8); (mv err rec recs)
 (defun fo-run (ds rev vals rec recs md k)
@@ -392,6 +397,7 @@
                (if q (fi-real-val k sg q) (err :input)))))
           ((eq ty :l) (if (not (member-eq d '(:l :g))) (err :type) (let ((b (fi-logical cs))) (if (eq b :bad) (err :input) b))))
           (t (err :type)))))
+(in-theory (disable fi-field))
 
 ; formatted input: the reader rs = (:fmt ds rev md lim taken), taken the
 ; data edit descriptors this pass has used; one descriptor at a time
@@ -417,6 +423,7 @@
                          (v (if (and (member-eq (kar it) '(:a)) t) (err :type) (fi-field it fld ty k md))))
                     (if (or (eql (kadr it) 0) (null (kadr it))) (mv (err :format) rs in)   ; w shall not be zero on input
                       (mv v (list :fmt (cdr ds) rev md lim (+ 1 tk)) (cons (in-recs in) (+ pos w))))))))))))
+(in-theory (disable fi-take1))
 ; after the last item, the descriptors up to the next data edit
 ; descriptor, colon or the format's end still act (13.4p9)
 (defun fi-finish (ds in)

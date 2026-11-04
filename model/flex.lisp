@@ -54,6 +54,7 @@
     (mv nil cs)))
 (defthm lx-alnums-len (<= (len (mv-nth 1 (lx-alnums cs))) (len cs)) :rule-classes :linear)
 (defthm lx-digits-len (<= (len (mv-nth 1 (lx-digits cs))) (len cs)) :rule-classes :linear)
+(defthm lx-digits-true-listp (true-listp (mv-nth 0 (lx-digits cs))))   ; for the guards that append them
 (defthm lx-letters-len (<= (len (mv-nth 1 (lx-letters cs))) (len cs)) :rule-classes :linear)
 
 (defthm lx-len-cdr (implies (consp x) (equal (len (cdr x)) (+ -1 (len x)))))
@@ -105,7 +106,8 @@
   (mv-let (x e r) (lx-exp cs)
     (mv-let (k r2) (lx-kind r)
       (mv (list :real m x e k) r2))))
-(defthm lx-real-len (<= (len (mv-nth 1 (lx-real m cs))) (len cs)) :rule-classes :linear)
+(defthm lx-real-len (<= (len (mv-nth 1 (lx-real m cs))) (len cs)) :rule-classes :linear
+  :hints (("Goal" :in-theory (disable lx-exp lx-kind))))
 
 ; a character literal's body after its quote q, a doubled q one q (R724)
 (defun lx-quoted (q cs)             ; (mv ok chars rest)
@@ -196,8 +198,10 @@
 (defthm lx-fmt-raw-len (<= (len (mv-nth 1 (lx-fmt-raw cs depth q))) (len cs)) :rule-classes :linear)
 
 ; the tokens, with :eos where a statement ends
-(defun lx-toks (cs)
-  (declare (xargs :guard t :measure (len cs)))
+(defun lx-toks (cs)                 ; its measure: the helpers' -len lemmas, the helpers closed
+  (declare (xargs :guard t :measure (len cs)
+                  :hints (("Goal" :in-theory (disable lx-cont lx-fmt-raw lx-number lx-quoted lx-str lx-down lx-kind
+                                                      lx-letters lx-blanks)))))
   (if (atom cs) nil
     (let ((c (car cs)))
       (cond
@@ -234,6 +238,7 @@
         (cons (list :op (lx-str (list c (cadr cs)))) (lx-toks (cddr cs))))
        ((member c *lx-one*) (cons (list :op (lx-str (list c))) (lx-toks (cdr cs))))
        (t (list (list :bad (lx-str (list c)))))))))
+(in-theory (disable lx-toks))
 
 ; the statements: the tokens between :eos marks, the empty ones dropped
 ; a statement's label (6.3.2.5): the digits before it, its own statement
@@ -362,8 +367,11 @@
     ("elseif" . "else if") ("endif" . "end if") ("enddo" . "end do")))
 
 ; a squeezed statement's free-form text
+; ff-stmt's guard: what ff-kw answers is a keyword; it and the tests stay closed
+(defthm ff-kw-type (or (stringp (ff-kw cs ks)) (equal (ff-kw cs ks) nil)) :rule-classes :type-prescription)
 (defun ff-stmt (cs)
-  (declare (xargs :guard t :measure (len cs)))
+  (declare (xargs :guard t :measure (len cs)
+                  :guard-hints (("Goal" :in-theory (disable ff-kw ff-prefix-p ff-top-eq ff-top-comma-p ff-labels-p ff-close)))))
   (cond
    ((ff-prefix-p '(#\i #\f #\() cs)
     (let ((n (ff-close (kdr (kdr (kdr cs))) 1 nil 0)))   ; just after IF's "("
@@ -384,6 +392,7 @@
         (if (not k) cs
           (let ((sp (kdr (assoc-equal k *ff-spaced*))))
             (append (coerce (if sp sp k) 'list) (cons #\Space (ff-drop (len (coerce k 'list)) cs)))))))))
+(in-theory (disable ff-stmt))
 
 (defun ff-stmts (ss)                 ; each statement's tokens, its label's statement first
   (declare (xargs :guard t))

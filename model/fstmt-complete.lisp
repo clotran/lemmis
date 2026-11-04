@@ -386,14 +386,21 @@
 (defun kind-cases (ks) (declare (xargs :mode :program))
   (if (endp ks) nil (cons `(equal (car x) ,(car ks)) (kind-cases (cdr ks)))))
 
-; fps-complete: a statement's tokens are read back as that statement
+(defconst *stmt-kinds*
+  '(:program :module :end :contains :implicit-none :else :use :decl :assign :if-then :else-if :do :simple :call :print
+    :function :subroutine :if :select :case :case-default :label :goto :aif :ldo :format :write :read :readf))
+(defthm fgs-stmt-kinds                ; a statement is of one of the kinds above
+  (implies (fgs :stmt x) (member-equal (car x) *stmt-kinds*))
+  :rule-classes nil :hints (("Goal" :expand ((fgs :stmt x)) :in-theory (enable member-equal))))
+
+; fps-complete: a statement's tokens are read back as that statement,
+; each kind by its own lemma above
 (make-event
  `(defthm fps-complete
     (implies (and (fgs :stmt x) (atom r))
              (equal (fps :stmt (append (fys :stmt x) r)) (mv t x r)))
-    :hints (("Goal" :cases ,(kind-cases '(:program :module :end :contains :implicit-none :else :use :decl :assign
-                                          :if-then :else-if :do :simple :call :print :function :subroutine :if
-                                          :select :case :case-default :label :goto :aif :ldo :format :write :read :readf))
-             :in-theory (enable member-equal))
-            ("Subgoal 1" :expand ((fgs :stmt x))))))
+    :hints (("Goal" :cases ,(kind-cases *stmt-kinds*) :use fgs-stmt-kinds
+             :in-theory (e/d (member-equal) (fgs-var-open fys-var-open fps-open))))))
 
+; the openers stay closed past here: a proof that opens a statement says so
+(in-theory (disable fgs-cons-open fys-cons-open fgs-var-open fys-var-open fps-open))

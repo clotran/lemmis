@@ -53,13 +53,14 @@
   (implies (label-int-p tk) (and (consp tk) (consp (cdr tk)) (stringp (cadr tk))))
   :rule-classes :forward-chaining)
 
+; an opener is the definition itself: proved in the minimal theory
 (defmacro def-cons-opener (name call)
   `(make-event
     (let ((fn (car ',call)))
       `(defthm ,',name
          (implies (syntaxp (and (quotep nt) (consp x) (member-eq (car x) '(cons quote))))
                   (equal ,',call ,(body fn nil (w state))))
-         :hints (("Goal" :expand (,',call)))))))
+         :hints (("Goal" :in-theory (union-theories '(booleanp) (theory 'minimal-theory)) :expand (,',call)))))))
 ; a format as the parser reads it from its token, and back
 (defthm fmt-head-facts
   (and (implies (fmt-head-p tk) (and (fmt-spec-p (fmt-of tk)) (equal (fmt-tok (fmt-of tk)) tk)))
