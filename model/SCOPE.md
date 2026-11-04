@@ -24,7 +24,7 @@ Score: **126 of 155** Scope rules proved (81%); 29 more in part; none not yet in
   - `fp-complete`: on the spelling of any tree, followed by any token
     that does not continue it, fp answers that tree -- so the grammar is
     unambiguous and fp accepts every sentence of it;
-  - `fp-cost`: a successful parse makes at most 32 calls per token it
+  - `fp-cost` (`fparse-cost.lisp`): a successful parse makes at most 32 calls per token it
     reads, plus a constant per nonterminal (`fp-d`, at most 19) -- with
     fp-complete, n tokens are read in at most 32n + 17 calls.
   All certify in about 25 s.
@@ -41,10 +41,10 @@ Score: **126 of 155** Scope rules proved (81%); 29 more in part; none not yet in
   parser `fpu`, `fpu-sound` (on statement trees), `fpu-complete` and
   `fpu-cost`: at most 32 calls per statement, plus `fpu-d` (at most 12).
   About 5 minutes.
-- `fval.lisp`, `fhelp.lisp`, `fio.lisp`, `fmean.lisp`: the meaning (item 2): the
+- `fval.lisp`, `fhelp.lisp`, `fio.lisp`, `fmean.lisp`, `frun.lisp`: the meaning (item 2): the
   values, state and intrinsics; the helpers and labels; formatted and
-  list-directed I/O on the unit * (13); the evaluation itself
-  (`fmean-cost.lisp`: its data operations' cost, and tests). `fortran-parse` is flex, then fps
+  list-directed I/O on the unit * (13); the evaluation itself; a whole
+  program from its text (`fmean-cost.lisp`: its data operations' cost, and tests). `fortran-parse` is flex, then fps
   on each statement, then fpu; `fortran-parse-sound`: what it accepts is
   a program of the grammar.
 - `freal.lisp`: the binary32 and binary64 formats of ISO/IEC 60559 for
@@ -187,7 +187,7 @@ Score: **126 of 155** Scope rules proved (81%); 29 more in part; none not yet in
 | R1143 | select-case-stmt | proved | no construct name |
 | R1144 | case-stmt | proved |  |
 | R1145 | end-select-stmt | proved |  |
-| R1146 | case-expr | proved |  |
+| R1146 | case-expr | proved | integer, logical, character (the meaning) |
 | R1147 | case-selector | proved | ( case-value-range-list ), DEFAULT |
 | R1148 | case-value-range | proved | all four forms |
 | R1149 | case-value | proved |  |
@@ -202,7 +202,7 @@ Score: **126 of 155** Scope rules proved (81%); 29 more in part; none not yet in
 | R1212 | print-stmt | proved |  |
 | R1213 | io-control-spec | part | [UNIT=], [FMT=], ADVANCE= (a literal); C1210, C1211, C1218, C1223; a format required (no unformatted I/O) |
 | R1215 | format | part | *, a label, a char-literal-constant; no other default-char-expr |
-| R1216 | input-item | part | variable (a designator); no io-implied-do |
+| R1216 | input-item | part | variable (a designator, character included; not a substring in the meaning); no io-implied-do |
 | R1217 | output-item | part | expr; no io-implied-do |
 | R1301 | format-stmt | part | its format-specification one token (flex); read into edit descriptors by fio.lisp's parse-format, not proved |
 | R1401 | main-program | proved | the program-stmt required |

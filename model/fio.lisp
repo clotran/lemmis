@@ -461,7 +461,8 @@
         ((eq ty :l) (let ((b (fi-logical cs))) (if (eq b :bad) (err :input) b)))
         ; a character value, delimited or not (13.10.3.1p5), as if assigned
         ; to the item: truncated or padded with blanks (10.2.1.3p10)
-        ((eq ty :c) (let ((cs (if (and (consp cs) (member (car cs) '(#\' #\"))) (mv-nth 0 (fd-str (cdr cs) (car cs) nil)) cs)))
+        ((eq ty :c) (if (and (consp cs) (member (car cs) '(#\' #\")))
+                        (mv-let (q rest) (fd-str (cdr cs) (car cs) nil) (declare (ignore rest)) (fi-a-fit q k))
                       (fi-a-fit cs k)))
         (t (err :type))))
 (defun li-split-rep (cs)             ; r*c: (mv r c), r nil when no repeat
