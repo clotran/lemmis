@@ -17,8 +17,8 @@ reads left sitting in the context.
 - **Read a failed proof's checkpoints only:**
   `grep -n -A30 'Key checkpoint' build/<book>.log | head -80`. Never cat
   a log.
-- **Time limits:** each book has a `CERT_SECS` limit (default 1800 s)
-  through `scripts/with-timeout` (bb). A proof that needs longer is wrong:
+- **Time limits:** each book is killed at `CERT_SECS` seconds of CPU
+  (default 1800; `ulimit -t`, so a loaded machine doesn't trip it). A proof that needs longer is wrong:
   disable what's opening, add the lemma, give the hint. Don't raise the limit.
 - **Keep books small:** under ~800 lines. Split a book before it grows past
   that, so a change re-certifies only its own part.
