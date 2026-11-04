@@ -233,6 +233,31 @@ is how `fx-is-f-ex` went through after two monolithic attempts ran out.
   `*vmicg-raw*`); `make check-gen` now also checks they equal what
   clotran's certified books hand over. Left out: `hpg-size-class` (loop)
   and `hpg-class-len` (loop and calls), layer 3.
+- **gen-disch.lisp, proved:** the per-function discharge for those 10.
+  clotran's definitions are copied in (`make check-gen` checks the
+  formals, guard and body ACL2 makes of each equal clotran's). For each
+  function `<fn>`: `<fn>-a-ev`, on int64 arguments and under its guard
+  (read from the world by the macro, so the hypothesis is exactly the
+  guard), a-ev of the body answers without an error -- no `:range` -- the
+  function's own value; and **`<fn>-fortran-correct`**, the end-to-end
+  theorem with no a-ev hypothesis: on int64 arguments, under the guard,
+  with the fuel past the procedure's size, `(f-invoke p (g-lits args) ..)`
+  is `(mv nil (<fn> args..) heap)`, `p` the procedure g-module makes.
+  a-ev is opened on the quoted body by `a-ev-quoted`/`a-ev-list-quoted`
+  (syntaxp quotep on the term and fuel); the book proves in under a
+  second.
+  **One guard does not cover int64 range: `ex-aplook`.** Its guard is `t`,
+  and its body computes `(+ req 1)` once `req` is a natural and `k` an
+  integer. At `req = 2^63 - 1` (`huge(0_int64)`) that overflows: the
+  generated `req + 1_int64` is undefined in Fortran, where ACL2 answers 0.
+  `ex-aplook-range-at-huge` proves a-ev answers `:range` there, and
+  ex-aplook's two theorems carry the explicit extra hypothesis
+  `(< req 9223372036854775807)`. In clotran req is an arity, so this is
+  out of reach in practice, but neither the guard nor the code rules it
+  out; clotran could bound `req` in the body (e.g. `(< req *b40*)` in the
+  `and`), which keeps the add in range. The other 9 guards cover the
+  range: hpg-add's guard bounds `n` and `k` by 2^40, and the rest only
+  compare.
 - **Hypotheses added, explicit:** the source calls no translated function
   (`no-calls`, the "call-free" slice stated on the source, not the
   output), and ACL2 defines none of the primitives (`no-prim-defs`; `=`
@@ -259,9 +284,11 @@ is how `fx-is-f-ex` went through after two monolithic attempts ran out.
    (g-fn-sem binds literals), the cross-function induction on a-ev's fuel,
    and the fuel bound), then tail-recursive loops; the whole theorem for the slice.
    One to two lanes.
-3. Per-function discharge of the hypotheses: the clotran definition equals
-   a-ev of its body, and guard ⇒ no `:range`. This is done in clotran's tree
-   or by include-book from here. One lane.
+3. Per-function discharge of the hypotheses: done for gen-inst's 10
+   (gen-disch.lisp, `<fn>-fortran-correct`; ex-aplook needs
+   `req < 2^63 - 1`, above). Left: the same for hpg-size-class and
+   hpg-class-len once layer 3 covers them, and for each function later
+   slices add.
 4. Stobjs: fields, arrays (the bounds error), subroutines, `mv` and the
    `intent(out)` results. fsyn has them already. Two lanes.
 5. Values and the runtime shims (`type(value)`, `rt_*`): fsyn/fsem first need

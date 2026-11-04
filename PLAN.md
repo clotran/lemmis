@@ -276,12 +276,17 @@ hold, before any extension.
    int64 literals answers a-ev's value of the body, for call-free bodies;
    `gen-inst.lisp`: that, for 10 of the 12 checked functions of clotran
    (all but the two with loops), from what clotran's books hand over.
+   `gen-disch.lisp`: for those 10, clotran's definitions (checked equal
+   by check-gen) equal a-ev of their bodies under their guards, with no
+   int64 overflow, so `<fn>-fortran-correct`: under the guard, on int64
+   arguments, the generated procedure answers the ACL2 function's value.
+   ex-aplook's guard (t) does not cover `req + 1` at req = 2^63 - 1; its
+   theorem states `req < 2^63 - 1` (GEN.md).
    Layer 3 begun: `gen-call.lisp`, f-ev's frame agreement over fsem's
    clique with calls (`f-ev-agree`).
    Left, in order: calls (frame agreement over fsem's clique, the fuel
-   bound) and loops; per function, clotran's definition = a-ev and its
-   guard => no int64 overflow (guard verification alone does not give
-   it); stobjs (fields, arrays and the bounds error, subroutines, mv);
+   bound) and loops; the per-function discharge for the 2 loop functions;
+   stobjs (fields, arrays and the bounds error, subroutines, mv);
    values and the runtime shims; then acl2-fortran prints g-module's
    output (and its lambda scoping, which leaks a binding to later
    siblings, fixed or shown harmless). About 8-9 lanes.
