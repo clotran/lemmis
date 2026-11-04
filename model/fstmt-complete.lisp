@@ -28,25 +28,27 @@
   (case nt
     (:ts (equal tk (op "(")))
     (:attrs (equal tk (op ",")))
-    ((:shape :range :ix) (not (member-equal tk (list (op ",") (op ")")))))   ; a shape or a range is ended by "," or ")" only
+    ((:shape :range :ix :io) (not (member-equal tk (list (op ",") (op ")")))))   ; a shape or a range is ended by "," or ")" only
     (:init (cont-tok-p :expr tk))
     (:ent (or (cont-tok-p :expr tk) (equal tk (op "(")) (equal tk (op "="))))
     ((:ents :decl-rest) (or (cont-tok-p :expr tk) (equal tk (op "(")) (equal tk (op "=")) (equal tk (op ","))))
     (:prefix (or (tok-in tk *prefix-kws*) (tok-in tk *type-kws*) (equal tk (op "("))))
     (:fn-rest (equal tk (kw "result")))
     (:sub-rest (equal tk (op "(")))
-    ((:shapes :shapes* :names :names1 :ranges :ixs) nil)
+    ((:shapes :shapes* :names :names1 :ranges :ixs :ios :kios) nil)
     (otherwise t)))                       ; a statement is whole; DO's control ends it
 
 (defun sfollow-ok (nt r)
   (declare (xargs :guard t))
-  (if (atom r) (not (member-eq nt '(:shape :range :ix))) (not (scont-tok-p nt (car r)))))
+  (if (atom r) (not (member-eq nt '(:shape :range :ix :io))) (not (scont-tok-p nt (car r)))))
 
 (defthm sfollow-facts
-  (and (implies (and (atom r) (not (member-eq nt '(:shape :range :ix)))) (sfollow-ok nt r))
+  (and (implies (and (atom r) (not (member-eq nt '(:shape :range :ix :io)))) (sfollow-ok nt r))
        (equal (sfollow-ok nt (cons a b)) (not (scont-tok-p nt a)))
        (equal (sfollow-ok nt (append a b)) (if (consp a) (not (scont-tok-p nt (car a))) (sfollow-ok nt b)))
-       (implies (member-eq nt '(:shapes :shapes* :names :names1 :ranges :ixs)) (sfollow-ok nt r))
+       (implies (member-eq nt '(:shapes :shapes* :names :names1 :ranges :ixs :ios :kios)) (sfollow-ok nt r))
+       (implies (sfollow-ok :io r) (and (follow-ok :expr r) (consp r)))
+       (implies (and (sfollow-ok :io r) (not (equal (car r) (op ",")))) (equal (car r) (op ")")))
        ; what follows an initialization or a shape follows its expression
        (implies (sfollow-ok :init r) (follow-ok :expr r))
        (implies (sfollow-ok :shape r) (follow-ok :expr r))
@@ -109,6 +111,26 @@
   (implies (fg :expr x) (< 0 (len (fy :expr x))))
   :rule-classes :linear
   :hints (("Goal" :use expr-first-not :expand ((len (fy :expr x))) :in-theory (disable expr-first-not fy-first-expr))))
+
+; a statement's I/O parts: a format's token is no other punctuation and
+; no name; UNIT=, FMT= and ADVANCE= begin a keyword spec, never an expr
+(defthm fmt-tok-not
+  (implies (fmt-spec-p f) (and (not (equal (fmt-tok f) '(:op "("))) (not (equal (fmt-tok f) '(:op ",")))
+                               (not (equal (fmt-tok f) '(:op ")"))) (not (equal (car (fmt-tok f)) :name))))
+  :hints (("Goal" :in-theory (enable fmt-spec-p fmt-tok label-digits-p char-tok-p))))
+(defthm fmt-head-not-name (not (fmt-head-p (cons :name x))) :hints (("Goal" :in-theory (enable fmt-head-p char-tok-p label-int-p))))
+(defthm kw-head-p-io
+  (implies (and (consp toks) (member-equal (car toks) '((:name "unit") (:name "fmt") (:name "advance")))
+                (consp (cdr toks)) (equal (cadr toks) '(:op "=")))
+           (kw-head-p toks))
+  :hints (("Goal" :in-theory (enable kw-head-p name-tok-p member-equal))))
+
+(defthm expr-not-io-kw
+  (implies (and (equal (cadr (append (fy :expr e) r)) '(:op "=")) (fg :expr e) (follow-ok :expr r))
+           (and (not (equal (car (fy :expr e)) '(:name "unit"))) (not (equal (car (fy :expr e)) '(:name "fmt")))
+                (not (equal (car (fy :expr e)) '(:name "advance")))))
+  :hints (("Goal" :use ((:instance fp-complete (nt :expr) (x e)) (:instance kw-head-p-io (toks (append (fy :expr e) r))))
+           :in-theory (disable fp-complete kw-head-p-io))))
 
 ; the parts that may be empty, read back as empty
 (defthm fps-empty
@@ -224,7 +246,7 @@
     `(defthm ,(packn (list 'fps-complete- nt))
        (implies (and ,(complete-hyp nt 'x) (sfollow-ok ,nt r))
                 (equal ,top (mv t x r)))
-       :hints (("Goal" ,@(if (member-eq nt '(:shapes* :names1 :onames :attrs :ents :items :prefix :ranges :ixs :oitems))
+       :hints (("Goal" ,@(if (member-eq nt '(:shapes* :names1 :onames :attrs :ents :items :prefix :ranges :ixs :oitems :kios))
                               '(:induct (len x)) nil)
                 :expand (,top) :in-theory (enable member-equal))
                (top-expand-hint id ',top)))))
@@ -241,6 +263,28 @@
 (fps-complete-at :onames)
 (fps-complete-at :items)
 (fps-complete-at :oitems)
+(fps-complete-at :io)
+(defthm kios-follow                 ; a keyword spec's list begins with "," or ")"
+  (implies (fgs :kios y) (sfollow-ok :io (append (fys :kios y) r)))
+  :hints (("Goal" :expand ((fys :kios y) (fgs :kios y)) :in-theory (enable sfollow-ok scont-tok-p member-equal))))
+(fps-complete-at :kios)
+(defthm io-spelled                 ; a spec reads a token; one with its keyword begins with a name
+  (implies (fgs :io c) (and (consp (fys :io c)) (implies (not (unit-pos-p c)) (equal (car (car (fys :io c))) :name))))
+  :hints (("Goal" :expand ((fgs :io c) (fys :io c)) :use ((:instance expr-first-not (x (caddr c)))))))
+(defthm io-len-pos (implies (fgs :io c) (< 0 (len (fys :io c)))) :rule-classes :linear
+  :hints (("Goal" :use io-spelled :in-theory (disable io-spelled))))
+(defthm kios-atom (implies (not (consp y)) (equal (fys :kios y) '((:op ")")))) :hints (("Goal" :expand ((fys :kios y)))))
+(defthm kios-nil (implies (and (fgs :kios y) (not (consp y))) (equal y nil)) :rule-classes :forward-chaining
+  :hints (("Goal" :expand ((fgs :kios y)))))
+(defthm kios-second-not-fmt
+  (implies (and (fgs :kios y) (consp y)) (and (equal (car (fys :kios y)) (op ",")) (not (fmt-head-p (cadr (append (fys :kios y) r))))))
+  :hints (("Goal" :expand ((fys :kios y) (fgs :kios y)) :use ((:instance io-spelled (c (car y))))
+           :in-theory (e/d (fmt-head-p) (io-spelled)))))
+(defthm fps-complete-ios
+  (implies (and (fgs :ios x) (sfollow-ok :ios r))
+           (equal (fps :ios (append (fys :ios x) r)) (mv t x r)))
+  :hints (("Goal" :expand ((fgs :ios x) (fys :ios x)) :in-theory (disable fgs-var-open fys-var-open)
+           :cases ((and (unit-pos-p (car x)) (consp (cdr x)) (fmt-pos-p (cadr x)))))))
 ; a name is no type keyword
 (defthm name-tok-not-type-kw
   (implies (name-tok-p tk) (and (not (equal (cadr tk) "integer")) (not (equal (cadr tk) "logical")) (not (equal (cadr tk) "real"))))
@@ -334,6 +378,8 @@
 (fps-complete-kind :ldo)
 (fps-complete-kind :format)
 (fps-complete-kind :write)
+(fps-complete-kind :read)
+(fps-complete-kind :readf)
 ; last: its action statement is one of the kinds above (GO TO and WRITE among them)
 (fps-complete-kind :if)
 
@@ -347,7 +393,7 @@
              (equal (fps :stmt (append (fys :stmt x) r)) (mv t x r)))
     :hints (("Goal" :cases ,(kind-cases '(:program :module :end :contains :implicit-none :else :use :decl :assign
                                           :if-then :else-if :do :simple :call :print :function :subroutine :if
-                                          :select :case :case-default :label :goto :aif :ldo :format :write))
+                                          :select :case :case-default :label :goto :aif :ldo :format :write :read :readf))
              :in-theory (enable member-equal))
             ("Subgoal 1" :expand ((fgs :stmt x))))))
 

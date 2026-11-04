@@ -320,6 +320,10 @@
 (def prog-files (sort (map str (concat (fs/glob (str here "/cases") "*.f90") (fs/glob (str here "/cases") "*.f")))))
 
 (defn lisp-str [s] (str "\"" (-> s (str/replace "\\" "\\\\") (str/replace "\"" "\\\"")) "\""))
+;; a case's input, cases/<name>.in beside it: its records go to the model's
+;; READ and, as stdin, to the compilers'
+(defn input-of [f] (let [i (str/replace f #"\.f(90)?$" ".in")] (when (fs/exists? i) (slurp i))))
+(defn input-recs [f] (if-let [t (input-of f)] (str "'(" (str/join " " (map lisp-str (str/split-lines t))) ")") "nil"))
 
 (def prog-model
   (if (empty? prog-files) []
@@ -329,7 +333,7 @@
                      "(defun show-lines (ls) (declare (xargs :mode :program))\n"
                      "  (if (endp ls) nil (prog2$ (cw \"LINE~s0~%\" (show-toks (car ls))) (show-lines (cdr ls)))))\n"
                      (str/join (for [f prog-files]
-                                 (str "(let ((r (fortran-run-form " (lisp-str (slurp f)) (if (str/ends-with? f ".f") " t" " nil") " 100000000)))\n"
+                                 (str "(let ((r (fortran-run-in " (lisp-str (slurp f)) (if (str/ends-with? f ".f") " t " " nil ") (input-recs f) " 100000000)))\n"
                                       "  (prog2$ (cw \"~%PROG~%STATUS ~x0~%\" (car r)) (if (consp (car r)) (cw \"AT ~x0~%\" (cadr r)) (show-lines (cadr r)))))\n")))
                      "(good-bye)\n")
           r (sh! 1200 {:dir here :in input} "nice" acl2)
@@ -385,7 +389,7 @@
                (let [exe (str work "/prog-" nm "-" fc)
                      cr (apply sh! 180 {:dir work} "nice" fc (concat flags ["-o" exe f]))]
                  (if (not= 0 (:exit cr)) [fc :compile-error (:err cr)]
-                   (let [rr (sh! 60 {:dir work} exe)] [fc (:exit rr) (lines-of (:out rr))]))))
+                   (let [rr (sh! 60 (merge {:dir work} (when-let [t (input-of f)] {:in t})) exe)] [fc (:exit rr) (lines-of (:out rr))]))))
         ok-model (#{":NORMAL" ":STOP"} (:status m))]
     (when-not ok-model (fail! nm "the model stops with" (:status m) (or (:at m) "")))
     (let [agrees (for [[fc ex toks] outs]

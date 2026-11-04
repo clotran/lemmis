@@ -306,7 +306,7 @@
 ; first), the active DO variables' locations, the saved variables
 ; (8.5.16: a variable initialized in its declaration has SAVE) by key, and
 ; inside a DO CONCURRENT the trace of its accesses, (:on entry ...) newest
-; first, else nil
+; first, else nil; and the input records still to read (fio.lisp)
 
 (defun write-list (loc ds) (declare (xargs :guard t)) (if (atom ds) nil (cons (list :w loc (car ds)) (write-list loc (cdr ds)))))
 (defun read-list (loc ds) (declare (xargs :guard t)) (if (atom ds) nil (cons (list :r loc (car ds)) (read-list loc (cdr ds)))))
@@ -316,11 +316,18 @@
 (defun st-dovars (st) (declare (xargs :guard t)) (kadddr st))
 (defun st-saves (st) (declare (xargs :guard t)) (kar (kdr (kdr (kdr (kdr st))))))
 (defun st-trace (st) (declare (xargs :guard t)) (kadr (kdr (kdr (kdr (kdr st))))))
-(defun mk-st6 (store next out dovars saves trace) (declare (xargs :guard t)) (list store next out dovars saves trace))
-(defmacro mk-st (store next out dovars saves) `(mk-st6 ,store ,next ,out ,dovars ,saves (st-trace st)))
+(defun st-in (st) (declare (xargs :guard t)) (kadr (kdr (kdr (kdr (kdr (kdr st)))))))   ; the input: (records . position)
+(defun mk-st7 (store next out dovars saves trace in) (declare (xargs :guard t)) (list store next out dovars saves trace in))
+(defmacro mk-st (store next out dovars saves) `(mk-st7 ,store ,next ,out ,dovars ,saves (st-trace st) (st-in st)))
 (defun st-trace-set (tr st)
   (declare (xargs :guard t))
-  (mk-st6 (st-store st) (st-next st) (st-out st) (st-dovars st) (st-saves st) tr))
+  (mk-st7 (st-store st) (st-next st) (st-out st) (st-dovars st) (st-saves st) tr (st-in st)))
+(defun st-in-set (in st)
+  (declare (xargs :guard t))
+  (mk-st7 (st-store st) (st-next st) (st-out st) (st-dovars st) (st-saves st) (st-trace st) in))
+(defun st-out-set (out st)
+  (declare (xargs :guard t))
+  (mk-st7 (st-store st) (st-next st) out (st-dovars st) (st-saves st) (st-trace st) (st-in st)))
 ; an access (k loc off): k :r or :w, off an element's offset or :all
 (defun st-log (es st)
   (declare (xargs :guard t))

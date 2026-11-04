@@ -350,7 +350,7 @@
 (defconst *ff-keywords*              ; a statement's first word, longest first where one begins another
   '("doubleprecision" "implicitnone" "endprogram" "endsubroutine" "endfunction" "endmodule" "subroutine" "dimension"
     "continue" "function" "implicit" "integer" "logical" "program" "contains" "elseif" "endif" "enddo" "return"
-    "format" "write" "print" "character" "real" "call" "stop" "else" "then" "end" "data" "common"))
+    "format" "write" "print" "read" "character" "real" "call" "stop" "else" "then" "end" "data" "common"))
 (defun ff-kw (cs ks)                 ; the keyword cs begins with
   (declare (xargs :guard t))
   (cond ((atom ks) nil)
