@@ -145,16 +145,15 @@
            :in-theory (enable sfollow-ok scont-tok-p cont-tok-p member-equal))))
 
 ; first tokens of the parts' spellings, and their shapes
+(defthm fys-ts-first
+  (implies (fgs :ts x) (and (consp (fys :ts x)) (tok-in (car (fys :ts x)) *type-kws*)))
+  :hints (("Goal" :expand ((fys :ts x) (fgs :ts x)) :in-theory (enable tok-in))))
 (defthm fys-first
   (and (implies (not (consp x)) (and (equal (fys :items x) nil) (equal (fys :attrs x) nil) (equal (fys :prefix x) nil)
                                      (equal (fys :onames x) nil) (equal (fys :ctl x) nil) (equal (fys :init x) nil)
                                      (equal (fys :oitems x) nil)))
-       (implies (fgs :ts x) (and (consp (fys :ts x)) (tok-in (car (fys :ts x)) *type-kws*)))
        (implies (and (fgs :attrs x) (consp x)) (and (consp (fys :attrs x)) (equal (car (fys :attrs x)) (op ","))))
        (implies (and (fgs :items x) (consp x)) (and (consp (fys :items x)) (equal (car (fys :items x)) (op ","))))
-       (implies (and (fgs :prefix x) (consp x))
-                (and (consp (fys :prefix x))
-                     (or (tok-in (car (fys :prefix x)) *prefix-kws*) (tok-in (car (fys :prefix x)) *type-kws*))))
        (implies (fgs :ent x) (and (consp (fys :ent x)) (name-tok-p (car (fys :ent x)))))
        (implies (fgs :ents x) (and (consp (fys :ents x)) (name-tok-p (car (fys :ents x)))))
        (implies (and (fgs :init x) x) (and (consp (fys :init x)) (equal (car (fys :init x)) (op "="))))
@@ -174,8 +173,14 @@
        (implies (and (fgs :ctl x) x)
                 (and (consp (fys :ctl x)) (or (equal (car (fys :ctl x)) (op ",")) (name-tok-p (car (fys :ctl x)))))))
   :hints (("Goal" :in-theory (enable fgs fys names-p names-y onames-y member-equal)
-           :expand ((fgs :shapes* x) (fys :shapes* x) (fgs :ranges x) (fys :ranges x) (fgs :ixs x) (fys :ixs x) (fgs :ents x) (fys :ents x) (fgs :prefix x) (fys :prefix x)
+           :expand ((fgs :shapes* x) (fys :shapes* x) (fgs :ranges x) (fys :ranges x) (fgs :ixs x) (fys :ixs x) (fgs :ents x) (fys :ents x)
                     (onames-y x) (names-y x) (names-p x)))))
+
+(defthm fys-prefix-first
+  (implies (and (fgs :prefix x) (consp x))
+           (and (consp (fys :prefix x))
+                (or (tok-in (car (fys :prefix x)) *prefix-kws*) (tok-in (car (fys :prefix x)) *type-kws*))))
+  :hints (("Goal" :expand ((fgs :prefix x) (fys :prefix x)) :in-theory (enable tok-in))))
 
 ; each lemma expands its own call on the spelling, and nothing else of its nt
 ; what follows an item: another, or the statement's end
@@ -223,10 +228,11 @@
 ; what follows a prefix's type-spec: more prefix, or what follows the prefix
 (defthm prefix-first-not-paren
   (implies (and (fgs :prefix y) (consp y)) (not (equal (car (fys :prefix y)) '(:op "("))))
-  :hints (("Goal" :expand ((fgs :prefix y) (fys :prefix y)) :in-theory (enable fgs fys))))
+  :hints (("Goal" :use ((:instance fys-prefix-first (x y))) :in-theory (e/d (tok-in) (fys-prefix-first fgs-var-open fys-var-open)))))
 (defthm prefix-follow
   (implies (and (fgs :prefix y) (sfollow-ok :prefix r)) (sfollow-ok :ts (append (fys :prefix y) r)))
-  :hints (("Goal" :cases ((consp y)) :in-theory (enable sfollow-ok scont-tok-p))))
+  :hints (("Goal" :cases ((consp y)) :use ((:instance fys-prefix-first (x y)))
+           :in-theory (e/d (sfollow-ok scont-tok-p tok-in) (fys-prefix-first fgs-var-open fys-var-open)))))
 
 (defun top-expand-hint (id term)
   (declare (xargs :mode :program))
@@ -342,7 +348,58 @@
   (implies (and (fgs :prefix p) (consp (fys :prefix p))) (equal (stmt-nt (car (fys :prefix p))) :s-unit))
   :hints (("Goal" :expand ((fgs :prefix p) (fys :prefix p)) :in-theory (enable tok-in member-equal))))
 
+(defthm stmt-nt-ts-comma
+  (implies (ts-comma-p ts) (equal (stmt-nt (car (fys :ts ts))) :s-unit))
+  :hints (("Goal" :expand ((fys :ts ts)) :in-theory (enable ts-comma-p tok-in member-equal))))
+
 (in-theory (disable tok-in stmt-nt))
+
+; R722's comma after CHARACTER * n (C725): the declaration's type-spec is
+; read as the prefix CHARACTER * n, and the comma by :s-unit
+(defthm ts-comma-shape
+  (implies (ts-comma-p ts)
+           (and (equal (list "character" (list :len (cadr (cadr ts)) :comma)) ts)
+                (fgs :ts (list "character" (list :len (cadr (cadr ts)))))
+                (equal (fys :ts ts) (fys :ts (list "character" (list :len (cadr (cadr ts))))))))
+  :hints (("Goal" :in-theory (enable ts-comma-p tok-in member-equal)
+           :expand ((fys :ts ts) (:free (y) (fys :ts y)) (:free (y) (fgs :ts y))
+                    (len ts) (len (cdr ts)) (len (cddr ts)) (len (cadr ts)) (len (cdr (cadr ts))) (len (cddr (cadr ts)))
+                    (len (cdddr (cadr ts))) (true-listp ts) (true-listp (cdr ts)) (true-listp (cddr ts)) (true-listp (cadr ts))
+                    (true-listp (cdr (cadr ts))) (true-listp (cddr (cadr ts))) (true-listp (cdddr (cadr ts)))))))
+(defthm fps-complete-prefix-ts-comma
+  (implies (and (ts-comma-p ts) (sfollow-ok :prefix r))
+           (equal (fps :prefix (append (fys :ts ts) r))
+                  (mv t (list (list :ts (list "character" (list :len (cadr (cadr ts)))))) r)))
+  :hints (("Goal" :in-theory (union-theories '(ts-comma-shape fps-complete-prefix-ts) (theory 'minimal-theory)))))
+(defthm ents-first-name
+  (implies (fgs :ents x) (equal (car (fys :ents x)) (car (car x))))
+  :hints (("Goal" :expand ((fgs :ents x) (fys :ents x) (fgs :ent (car x)) (fys :ent (car x))))))
+(defthm decl-rest-noattr-first
+  (implies (and (fgs :decl-rest d) (not (car d)) (not (cadr d)))
+           (equal (car (fys :decl-rest d)) (car (car (caddr d)))))
+  :hints (("Goal" :expand ((fgs :decl-rest d) (fys :decl-rest d) (fys :attrs (car d))))))
+(defthm attr-first-kw
+  (implies (fgs :attr a) (attr-kw-tok-p (car (fys :attr a))))
+  :hints (("Goal" :expand ((fgs :attr a) (fys :attr a)) :in-theory (enable attr-kw-tok-p))))
+(defthm attrs-second-kw
+  (implies (and (fgs :attrs as) (consp as)) (attr-kw-tok-p (cadr (fys :attrs as))))
+  :hints (("Goal" :expand ((fgs :attrs as) (fys :attrs as) (fgs :attr (car as)) (fys :attr (car as))) :in-theory (enable attr-kw-tok-p))))
+(defthm decl-rest-comma-second
+  (implies (and (fgs :decl-rest d) (equal (car (fys :decl-rest d)) '(:op ",")))
+           (and (consp (cdr (fys :decl-rest d))) (attr-kw-tok-p (cadr (fys :decl-rest d)))))
+  :hints (("Goal" :expand ((fgs :decl-rest d) (fys :decl-rest d)) :cases ((consp (car d)))
+           :use ((:instance attrs-second-kw (as (car d)))) :in-theory (disable attrs-second-kw attr-kw-tok-p))
+          ("Subgoal 2" :expand ((fys :attrs (car d)) (fgs :attrs (car d))))))
+(defthm decl-rest-comma-second-append
+  (implies (and (fgs :decl-rest d) (equal (car (fys :decl-rest d)) '(:op ",")))
+           (and (consp (cdr (append (fys :decl-rest d) r))) (attr-kw-tok-p (cadr (append (fys :decl-rest d) r)))))
+  :hints (("Goal" :use decl-rest-comma-second :in-theory (disable decl-rest-comma-second attr-kw-tok-p))))
+(defthm name-not-attr-kw-punct (not (attr-kw-tok-p '(:op ":"))) :hints (("Goal" :in-theory (enable attr-kw-tok-p))))
+(in-theory (disable ts-comma-p attr-kw-tok-p))
+
+(defthm append-nil-left (equal (append nil x) x))
+(defthm append-cons-fs (equal (append (cons a x) y) (cons a (append x y))))
+(defthm decl-rest-ents-consp (implies (fgs :decl-rest d) (consp (caddr d))) :hints (("Goal" :expand ((fgs :decl-rest d)))))
 
 ; the statements, kind by kind: a statement is whole, nothing follows it
 (defmacro fps-complete-kind (k)

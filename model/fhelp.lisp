@@ -16,9 +16,37 @@
     (str-nat (cdr cs) (+ (* 10 (nfix acc)) (if (characterp (car cs)) (nfix (- (char-code (car cs)) 48)) 0)))))
 (defun digits-val (s) (declare (xargs :guard t)) (if (stringp s) (str-nat (coerce s 'list) 0) 0))
 
+; A character variable defined in part, by a substring (9.4.1), holds
+; the code 0 at each undefined character: the subset's programs write no
+; such character (no CHAR, ACHAR, nor a literal with one).
+(defun nul-in (s) (declare (xargs :guard t)) (and (stringp s) (member (code-char 0) (coerce s 'list)) t))
+(defun undef-es (es) (declare (xargs :guard t)) (if (atom es) nil (or (eq (car es) :u) (nul-in (car es)) (undef-es (cdr es)))))
 (defun undef-in (v)                  ; a value with an undefined part
   (declare (xargs :guard t))
-  (cond ((aval-p v) (and (member :u (a-es v)) t)) ((eq (kar v) :u) t) (t nil)))
+  (cond ((aval-p v) (undef-es (a-es v))) ((eq (kar v) :u) t) ((cval-p v) (nul-in (kaddr v))) (t nil)))
+
+; ---- substrings (9.4.1): a parent's characters lo .. hi
+(defun substr-arg-p (args)           ; name ( [lo] : [hi] ), a character scalar's substring
+  (declare (xargs :guard t))
+  (and (consp args) (null (cdr args)) (eq (kar (car args)) :tri) (null (kadddr (car args)))))
+(defun c-len (v) (declare (xargs :guard t)) (case (kar v) (:c (nfix (kadr v))) (:u (nfix (kaddr v))) (otherwise 0)))
+(defun c-str (v)                     ; the characters, an undefined value's each code 0
+  (if (cval-p v) (coerce (kaddr v) 'list) (make-list (c-len v) :initial-element (code-char 0))))
+(defun substr-of (v lo hi)
+  (cond ((not (eq (scal-ty v) :c)) (err :type))
+        ((not (and (integerp lo) (integerp hi))) (err :type))
+        ((< hi lo) (vc ""))                                      ; zero length
+        ((or (< lo 1) (< (c-len v) hi)) (err :bounds))          ; 9.4.1p2
+        (t (let ((cs (take (+ 1 (- hi lo)) (nthcdr (- lo 1) (c-str v)))))
+             (if (member (code-char 0) cs) (err :undefined) (list :c (len cs) (coerce cs 'string)))))))
+(defun substr-put (v lo hi x)        ; v with its characters lo .. hi x's, fit to them (10.2.1.3p10)
+  (cond ((not (eq (scal-ty v) :c)) (err :type))
+        ((not (cval-p x)) (if (eq (kar x) :u) (err :undefined) (err :type)))
+        ((not (and (integerp lo) (integerp hi))) (err :type))
+        ((< hi lo) v)
+        ((or (< lo 1) (< (c-len v) hi)) (err :bounds))
+        (t (let ((cs (c-str v)))
+             (list :c (c-len v) (coerce (append (take (- lo 1) cs) (c-chars (c-fit (+ 1 (- hi lo)) x)) (nthcdr hi cs)) 'string))))))
 
 (defun fresh (ty k lbs ubs)          ; a variable's undefined value: scalar when no bounds
   (declare (xargs :guard t))
@@ -210,6 +238,8 @@
            (es (if (aval-p v) (a-es v) (list (raw v))))
            (new (case (kar tg)
                   (:tuples (arr-sets old (kaddr tg) es))
+                  ; a character dummy shorter than its actual: the actual's leftmost characters
+                  (:cprefix (list :c (c-len old) (coerce (append (c-str v) (nthcdr (c-len v) (c-str old))) 'string)))
                   (:whole (if (aval-p old) (mk-arr (a-ty old) (a-k old) (a-lbs old) (a-ubs old) es) v))
                   (otherwise (if (aval-p old)
                                  (mk-arr (a-ty old) (a-k old) (a-lbs old) (a-ubs old)
@@ -286,20 +316,25 @@
 ; raw values, nil for an open end (11.1.9.2); an arm's selector is its
 ; intervals, or :default. A value lo > hi selects nothing. No value may
 ; lie in two arms' ranges (C1154): checked on every run.
+(defun cv-le (a b)                   ; integers, or characters (10.1.5.5.1)
+  (declare (xargs :guard t))
+  (cond ((and (rationalp a) (rationalp b)) (<= a b))
+        ((and (stringp a) (stringp b)) (<= (cs-cmp (coerce a 'list) (coerce b 'list)) 0))
+        (t nil)))
 (defun iv-hit (v iv)
   (declare (xargs :guard t))
   (let ((lo (kar iv)) (hi (kdr iv)))
     (if (booleanp v) (equal lo v)
-      (and (rationalp v) (or (null lo) (and (rationalp lo) (<= lo v))) (or (null hi) (and (rationalp hi) (<= v hi)))))))
+      (and (or (rationalp v) (stringp v)) (or (null lo) (cv-le lo v)) (or (null hi) (cv-le v hi))))))
 (defun ivs-hit (v ivs) (declare (xargs :guard t)) (if (atom ivs) nil (or (iv-hit v (car ivs)) (ivs-hit v (cdr ivs)))))
 (defun iv-meet (a b)                 ; two intervals share a value
   (declare (xargs :guard t))
   (let ((alo (kar a)) (ahi (kdr a)) (blo (kar b)) (bhi (kdr b)))
     (if (or (booleanp alo) (booleanp blo)) (equal alo blo)
-      (and (or (null alo) (null bhi) (and (rationalp alo) (rationalp bhi) (<= alo bhi)))
-           (or (null blo) (null ahi) (and (rationalp blo) (rationalp ahi) (<= blo ahi)))
-           (or (null alo) (null ahi) (and (rationalp alo) (rationalp ahi) (<= alo ahi)))
-           (or (null blo) (null bhi) (and (rationalp blo) (rationalp bhi) (<= blo bhi)))))))
+      (and (or (null alo) (null bhi) (cv-le alo bhi))
+           (or (null blo) (null ahi) (cv-le blo ahi))
+           (or (null alo) (null ahi) (cv-le alo ahi))
+           (or (null blo) (null bhi) (cv-le blo bhi))))))
 (defun iv-meet-any (a bs) (declare (xargs :guard t)) (if (atom bs) nil (or (iv-meet a (car bs)) (iv-meet-any a (cdr bs)))))
 (defun ivs-meet (as bs) (declare (xargs :guard t)) (if (atom as) nil (or (iv-meet-any (car as) bs) (ivs-meet (cdr as) bs))))
 (defun all-ivs (sels) (declare (xargs :guard t)) (if (atom sels) nil (append (if (eq (car sels) :default) nil (true-list-fix (car sels))) (all-ivs (cdr sels)))))
@@ -316,6 +351,7 @@
   (declare (xargs :guard t))
   (cond ((and (eq ty :i) (ival-scalar v)) (v-num v))
         ((and (eq ty :l) (lval-p v) (booleanp (v-num v))) (v-num v))
+        ((and (eq ty :c) (cval-p v)) (v-num v))
         (t :bad)))
 
 ; DO CONCURRENT (11.1.7.4.2, 11.1.7.5): the iterations may run in any

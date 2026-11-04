@@ -152,7 +152,7 @@
                          (t (mv nil nil)))))
       (if (and go (< (len r) (len toks))) (list-ind nt r) nil))))
 
-(defmacro fps-sound-at (nt)          ; a list nt inducts on list-ind
+(defmacro fps-sound-at (nt &optional use)          ; a list nt inducts on list-ind
   (if (member-eq nt '(:shapes* :names1 :onames :attrs :ents :items :prefix :ranges :ixs :oitems :kios))
       `(defthm ,(packn (list 'fps-sound- nt))
          (implies (mv-nth 0 (fps ,nt toks))
@@ -161,7 +161,7 @@
     `(defthm ,(packn (list 'fps-sound- nt))
        (implies (mv-nth 0 (fps ,nt toks))
                 ,(sound-concl nt `(mv-nth 1 (fps ,nt toks)) `(mv-nth 2 (fps ,nt toks)) 'toks))
-       :hints (("Goal" :expand ((fps ,nt toks))
+       :hints (("Goal" :expand ((fps ,nt toks)) ,@(and use `(:use ,use))
                 :in-theory ,(case nt (:init '(enable member-equal fgs fys))
                               ((:s-write :s-read :s-print :io :ios :kios) '(e/d (member-equal label-int-p-rules) (label-int-p lab-int label-digits-p)))
                               (otherwise '(enable member-equal))))))))
@@ -217,7 +217,26 @@
   :hints (("Goal" :use ((:instance prefix-just-ts (p (mv-nth 1 (fps :prefix toks))))) :in-theory (disable fps-sound-prefix))
           ("Goal'" :use fps-sound-prefix)))
 
-(fps-sound-at :s-unit)
+; a prefix's type-spec is never the comma form (R722, C725)
+(defthm ts-not-comma (implies (fgs :ts ts) (not (ts-comma-p ts)))
+  :hints (("Goal" :expand ((fgs :ts ts)) :in-theory (enable ts-comma-p))))
+
+(defthm fps-decl-rest-consp
+  (implies (mv-nth 0 (fps :decl-rest toks)) (consp (mv-nth 1 (fps :decl-rest toks))))
+  :hints (("Goal" :expand ((fps :decl-rest toks)))))
+
+(defthm parts-shape-comma
+  (and (implies (fgs :decl-rest x) (and (consp x) (consp (cdr x)) (consp (cddr x))))
+       (implies (and (fgs :ts x) (equal (car (cadr x)) :len))
+                (and (consp (cdr (cadr x))) (equal (car x) "character") (len-tok-p (cadr (cadr x))))))
+  :hints (("Goal" :expand ((fgs :decl-rest x) (fgs :ts x)))))
+
+(defthm fys-ts-comma
+  (implies (and (fgs :ts ts) (equal (car (cadr ts)) :len))
+           (equal (fys :ts (list "character" (list :len (cadr (cadr ts)) :comma))) (fys :ts ts)))
+  :hints (("Goal" :expand ((fgs :ts ts) (fys :ts ts) (:free (x) (fys :ts x))))))
+
+(fps-sound-at :s-unit (fps-prefix-just-ts (:instance fps-sound-decl-rest (toks (cdr (mv-nth 2 (fps :prefix toks)))))))
 
 ; the statements other than IF, as one
 (defthm fps-sound-flat

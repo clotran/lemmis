@@ -31,10 +31,17 @@
 ;                                   declaration-type-spec [[, attr-spec]...
 ;                                   ::] entity-decl-list; dc whether "::"
 ;                                   is written: required with an attr-spec
-;                                   (R801) or an initialization (C806)
+;                                   (R801) or an initialization (C806);
+;                                   ts ("character" (:len tk :comma)) for
+;                                   R722's * char-length "," (C724, C725:
+;                                   no attrs, no "::"; the first entity's
+;                                   name not an attr-spec keyword)
 ;         (:assign n refp args e)   R1033 assignment-stmt: variable = expr;
 ;                                   R902 variable, R901 designator: a name
-;                                   or a part-ref with its subscripts (R912)
+;                                   or a part-ref with its subscripts (R912);
+;                                   refp t, or the R910 substring-range
+;                                   (:tri lo hi nil) of R908's substring
+;                                   name ( args ) ( range )
 ;         (:if-then e)              R1137 if-then-stmt: IF ( expr ) THEN
 ;         (:else-if e)              R1138 else-if-stmt: ELSE IF ( expr ) THEN
 ;         (:else)                   R1139 else-stmt: ELSE
@@ -111,7 +118,8 @@
 ;                                   nil, (kwp e) for ( [LEN =] type-param-value )
 ;                                   (R701: e an expr, or :star for *), or
 ;                                   (:len tk) for * char-length (R723, an
-;                                   int-literal-constant tk)
+;                                   int-literal-constant tk), (:plen e) for
+;                                   * ( type-param-value ), e an expr or :star
 ;  :attrs (attr ...)                each written ", attr-spec" (R802):
 ;                                   (:parameter) PARAMETER, (:value) VALUE,
 ;                                   (:intent i) INTENT ( intent-spec ) R828
@@ -187,8 +195,12 @@
                        (name-tok-p (caddr x)) (booleanp (cadddr x))
                        (names-p (car (cddddr x)))
                        (or (cadddr x) (null (car (cddddr x))))))
-            (:decl (and (= (len x) 5) (fgs :ts (cadr x)) (fgs :decl-rest (cddr x))))
-            (:assign (and (= (len x) 5) (name-tok-p (cadr x)) (booleanp (caddr x))
+            (:decl (and (= (len x) 5)
+                        (or (fgs :ts (cadr x))
+                            (and (ts-comma-p (cadr x)) (null (caddr x)) (null (cadddr x))
+                                 (not (attr-kw-tok-p (kar (kar (car (cddddr x))))))))
+                        (fgs :decl-rest (cddr x))))
+            (:assign (and (= (len x) 5) (name-tok-p (cadr x)) (or (booleanp (caddr x)) (substr-rng-p (caddr x)))
                           (if (caddr x) (and (fg :args (cadddr x)) (no-kw-args (cadddr x))) (null (cadddr x)))
                           (fg :expr (car (cddddr x)))))
             ((:if-then :else-if) (and (= (len x) 2) (fg :expr (cadr x))))
@@ -225,11 +237,14 @@
               (or (null (cadr x))
                   (and (not (equal (car x) "double"))
                        (true-listp (cadr x)) (= (len (cadr x)) 2)
-                       (if (eq (car (cadr x)) :len)
-                           (and (equal (car x) "character") (len-tok-p (cadr (cadr x))))
-                         (and (booleanp (car (cadr x)))
+                       (case (car (cadr x))
+                         (:len (and (equal (car x) "character") (len-tok-p (cadr (cadr x)))))
+                         (:plen (and (equal (car x) "character")
+                                     (or (eq (cadr (cadr x)) :star) (fg :expr (cadr (cadr x))))))
+                         (otherwise
+                          (and (booleanp (car (cadr x)))
                               (if (eq (cadr (cadr x)) :star) (equal (car x) "character")
-                                (fg :expr (cadr (cadr x))))))))))
+                                (fg :expr (cadr (cadr x)))))))))))
     (:attrs (if (atom x) (null x) (and (fgs :attr (car x)) (fgs :attrs (cdr x)))))
     (:attr (and (true-listp x)
                 (case (car x)
@@ -320,8 +335,9 @@
                              (t (list* (op ",") (kw (kadr x)) (dcolon))))
                        (list (kaddr x))
                        (if (kadddr x) (list* (op ",") (kw "only") (op ":") (onames-y (kar (kdr (kdr (kdr (kdr x))))))) nil)))
-         (:decl (append (fys :ts (kadr x)) (fys :decl-rest (kdr (kdr x)))))
+         (:decl (append (fys :ts (kadr x)) (if (ts-comma-p (kadr x)) (list (op ",")) nil) (fys :decl-rest (kdr (kdr x)))))
          (:assign (append (list (kadr x)) (if (kaddr x) (cons (op "(") (fy :args (kadddr x))) nil)
+                          (if (consp (kaddr x)) (cons (op "(") (append (fy :arg (kaddr x)) (list (op ")")))) nil)
                           (cons (op "=") (fy :expr (kar (kdr (kdr (kdr (kdr x)))))))))
          (:if-then (list* (kw "if") (op "(") (append (fy :expr (kadr x)) (list (op ")") (kw "then")))))
          (:else-if (list* (kw "else") (kw "if") (op "(") (append (fy :expr (kadr x)) (list (op ")") (kw "then")))))
@@ -354,6 +370,9 @@
                  (cond ((equal (car x) "double") (list (kw "precision")))
                        ((not (kadr x)) nil)
                        ((eq (kar (kadr x)) :len) (list (op "*") (kadr (kadr x))))
+                       ((eq (kar (kadr x)) :plen)
+                        (list* (op "*") (op "(") (append (if (eq (kadr (kadr x)) :star) (list (op "*")) (fy :expr (kadr (kadr x))))
+                                                         (list (op ")")))))
                        (t (cons (op "(") (append (if (kar (kadr x)) (list (kw (if (equal (car x) "character") "len" "kind")) (op "=")) nil)
                                                  (if (eq (kadr (kadr x)) :star) (list (op "*")) (fy :expr (kadr (kadr x))))
                                                  (list (op ")"))))))))
@@ -563,10 +582,18 @@
       (:s-assign (if (not (name-tok-p tk)) (fail)
                  (if (equal (kadr toks) (op "("))
                      (mv-let (ok as r) (fp :args (kdr (kdr toks)))
-                       (if (and ok (no-kw-args as) (equal (kar r) (op "=")))
-                           (mv-let (ok2 e r2) (fp :expr (kdr r))
-                             (if ok2 (mv t (list :assign tk t as e) r2) (fail)))
-                         (fail)))
+                       (cond ((not (and ok (no-kw-args as))) (fail))
+                             ((equal (kar r) (op "="))
+                              (mv-let (ok2 e r2) (fp :expr (kdr r))
+                                (if ok2 (mv t (list :assign tk t as e) r2) (fail))))
+                             ; R908: the variable an array element's substring
+                             ((equal (kar r) (op "("))
+                              (mv-let (ok2 g r2) (fp :arg (kdr r))
+                                (if (and ok2 (substr-rng-p g) (equal (kar r2) (op ")")) (equal (kadr r2) (op "=")))
+                                    (mv-let (ok3 e r3) (fp :expr (kdr (kdr r2)))
+                                      (if ok3 (mv t (list :assign tk g as e) r3) (fail)))
+                                  (fail))))
+                             (t (fail))))
                    (if (equal (kadr toks) (op "="))
                        (mv-let (ok e r) (fp :expr (kdr (kdr toks)))
                          (if ok (mv t (list :assign tk nil nil e) r) (fail)))
@@ -618,7 +645,14 @@
            (if (assoc-eq :ts pre) (fail)
              (mv-let (ok2 sr r2) (fps :sub-rest r) (if ok2 (mv t (list* :subroutine pre sr) r2) (fail)))))
           ((and (consp pre) (null (cdr pre)) (eq (kar (car pre)) :ts))
-           (mv-let (ok2 dr r2) (fps :decl-rest r) (if ok2 (mv t (list* :decl (kadr (car pre)) dr) r2) (fail))))
+           (let* ((ts (kadr (car pre)))
+                  (c (and (eq (kar (kadr ts)) :len) (equal (kar r) (op ",")) (not (attr-kw-tok-p (kadr r))))))
+             (mv-let (ok2 dr r2) (fps :decl-rest (if c (kdr r) r))
+               (cond ((not ok2) (fail))
+                     ((not c) (mv t (list* :decl ts dr) r2))
+                     ((and (null (kar dr)) (null (kadr dr)) (not (attr-kw-tok-p (kar (kar (kaddr dr))))))
+                      (mv t (list* :decl (list "character" (list :len (kadr (kadr ts)) :comma)) dr) r2))
+                     (t (fail))))))
           (t (fail)))))
       (:fn-rest (if (and (equal tk (kw "function")) (name-tok-p (kadr toks)) (equal (kaddr toks) (op "(")))
                     (mv-let (ok ds r) (fps :names (kdr (kdr (kdr toks))))
@@ -655,7 +689,15 @@
                             (mv t (list (kadr tk) (list kwp e)) (kdr r))
                           (fail))))))
                  ((and (equal tk (kw "character")) (equal (kadr toks) (op "*")))
-                  (if (len-tok-p (kaddr toks)) (mv t (list "character" (list :len (kaddr toks))) (kdr (kdr (kdr toks)))) (fail)))
+                  (cond ((len-tok-p (kaddr toks)) (mv t (list "character" (list :len (kaddr toks))) (kdr (kdr (kdr toks)))))
+                        ; R723 char-length: ( type-param-value )
+                        ((equal (kaddr toks) (op "("))
+                         (let ((t1 (kdr (kdr (kdr toks)))))
+                           (if (equal (kar t1) (op "*"))
+                               (if (equal (kadr t1) (op ")")) (mv t (list "character" (list :plen :star)) (kdr (kdr t1))) (fail))
+                             (mv-let (ok e r) (fp :expr t1)
+                               (if (and ok (equal (kar r) (op ")"))) (mv t (list "character" (list :plen e)) (kdr r)) (fail))))))
+                        (t (fail))))
                  (t (mv t (list (kadr tk) nil) (kdr toks)))))
       (:attrs (if (equal tk (op ","))
                   (mv-let (ok a r) (fps :attr (kdr toks))

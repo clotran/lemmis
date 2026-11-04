@@ -281,21 +281,37 @@
         (declare (ignorable ok as r))
         (let
          ((c24 (fp-steps :args (kdr (kdr toks)))))
-         (if
-          (and ok (no-kw-args as) (equal (kar r) (op "=")))
-          (mv-let
-           (ok2 e r2)
-           (fp :expr (kdr r))
-           (declare (ignorable ok2 e r2))
-           (let ((c25 (fp-steps :expr (kdr r)))) (if ok2 (+ 1 c25 c24) (+ 1 c25 c24))))
-          (+ 1 c24))))
+         (cond
+          ((not (and ok (no-kw-args as))) (+ 1 c24))
+          ((equal (kar r) (op "="))
+           (mv-let
+            (ok2 e r2)
+            (fp :expr (kdr r))
+            (declare (ignorable ok2 e r2))
+            (let ((c26 (fp-steps :expr (kdr r)))) (if ok2 (+ 1 c26 c24) (+ 1 c26 c24)))))
+          ((equal (kar r) (op "("))
+           (mv-let
+            (ok2 g r2)
+            (fp :arg (kdr r))
+            (declare (ignorable ok2 g r2))
+            (let
+             ((c27 (fp-steps :arg (kdr r))))
+             (if
+              (and ok2 (substr-rng-p g) (equal (kar r2) (op ")")) (equal (kadr r2) (op "=")))
+              (mv-let
+               (ok3 e r3)
+               (fp :expr (kdr (kdr r2)))
+               (declare (ignorable ok3 e r3))
+               (let ((c28 (fp-steps :expr (kdr (kdr r2))))) (if ok3 (+ 1 c28 c27 c24) (+ 1 c28 c27 c24))))
+              (+ 1 c27 c24)))))
+          (t (+ 1 c24)))))
        (if
         (equal (kadr toks) (op "="))
         (mv-let
          (ok e r)
          (fp :expr (kdr (kdr toks)))
          (declare (ignorable ok e r))
-         (let ((c26 (fp-steps :expr (kdr (kdr toks))))) (if ok (+ 1 c26) (+ 1 c26))))
+         (let ((c25 (fp-steps :expr (kdr (kdr toks))))) (if ok (+ 1 c25) (+ 1 c25))))
         (+ 1)))))
     (:s-select
      (if
@@ -305,8 +321,8 @@
        (fp :expr (kdr (kdr (kdr toks))))
        (declare (ignorable ok e r))
        (let
-        ((c27 (fp-steps :expr (kdr (kdr (kdr toks))))))
-        (if (and ok (equal (kar r) (op ")"))) (+ 1 c27) (+ 1 c27))))
+        ((c29 (fp-steps :expr (kdr (kdr (kdr toks))))))
+        (if (and ok (equal (kar r) (op ")"))) (+ 1 c29) (+ 1 c29))))
       (+ 1)))
     (:s-case
      (cond
@@ -317,7 +333,7 @@
         (ok rs r)
         (fps :ranges (kdr (kdr toks)))
         (declare (ignorable ok rs r))
-        (let ((c28 (fps-steps :ranges (kdr (kdr toks))))) (if ok (+ 1 c28) (+ 1 c28)))))
+        (let ((c30 (fps-steps :ranges (kdr (kdr toks))))) (if ok (+ 1 c30) (+ 1 c30)))))
       (t (+ 1))))
     (:ranges
      (mv-let
@@ -325,34 +341,34 @@
       (fps :range toks)
       (declare (ignorable ok s r))
       (let
-       ((c29 (fps-steps :range toks)))
-       (cond
-        ((not (and ok (<= (len r) (len toks)))) (+ 1 c29))
-        ((equal (kar r) (op ")")) (+ 1 c29))
-        ((equal (kar r) (op ","))
-         (mv-let
-          (ok2 ss r2)
-          (fps :ranges (kdr r))
-          (declare (ignorable ok2 ss r2))
-          (let ((c30 (fps-steps :ranges (kdr r)))) (if ok2 (+ 1 c30 c29) (+ 1 c30 c29)))))
-        (t (+ 1 c29))))))
-    (:ixs
-     (mv-let
-      (ok s r)
-      (fps :ix toks)
-      (declare (ignorable ok s r))
-      (let
-       ((c31 (fps-steps :ix toks)))
+       ((c31 (fps-steps :range toks)))
        (cond
         ((not (and ok (<= (len r) (len toks)))) (+ 1 c31))
         ((equal (kar r) (op ")")) (+ 1 c31))
         ((equal (kar r) (op ","))
          (mv-let
           (ok2 ss r2)
+          (fps :ranges (kdr r))
+          (declare (ignorable ok2 ss r2))
+          (let ((c32 (fps-steps :ranges (kdr r)))) (if ok2 (+ 1 c32 c31) (+ 1 c32 c31)))))
+        (t (+ 1 c31))))))
+    (:ixs
+     (mv-let
+      (ok s r)
+      (fps :ix toks)
+      (declare (ignorable ok s r))
+      (let
+       ((c33 (fps-steps :ix toks)))
+       (cond
+        ((not (and ok (<= (len r) (len toks)))) (+ 1 c33))
+        ((equal (kar r) (op ")")) (+ 1 c33))
+        ((equal (kar r) (op ","))
+         (mv-let
+          (ok2 ss r2)
           (fps :ixs (kdr r))
           (declare (ignorable ok2 ss r2))
-          (let ((c32 (fps-steps :ixs (kdr r)))) (if ok2 (+ 1 c32 c31) (+ 1 c32 c31)))))
-        (t (+ 1 c31))))))
+          (let ((c34 (fps-steps :ixs (kdr r)))) (if ok2 (+ 1 c34 c33) (+ 1 c34 c33)))))
+        (t (+ 1 c33))))))
     (:ix
      (if
       (and (name-tok-p tk) (equal (kadr toks) (op "=")))
@@ -361,25 +377,25 @@
        (fp :expr (kdr (kdr toks)))
        (declare (ignorable ok lo r))
        (let
-        ((c33 (fp-steps :expr (kdr (kdr toks)))))
+        ((c35 (fp-steps :expr (kdr (kdr toks)))))
         (if
          (not (and ok (equal (kar r) (op ":"))))
-         (+ 1 c33)
+         (+ 1 c35)
          (mv-let
           (ok2 hi r2)
           (fp :expr (kdr r))
           (declare (ignorable ok2 hi r2))
           (let
-           ((c34 (fp-steps :expr (kdr r))))
+           ((c36 (fp-steps :expr (kdr r))))
            (cond
-            ((not ok2) (+ 1 c34 c33))
+            ((not ok2) (+ 1 c36 c35))
             ((equal (kar r2) (op ":"))
              (mv-let
               (ok3 st r3)
               (fp :expr (kdr r2))
               (declare (ignorable ok3 st r3))
-              (let ((c35 (fp-steps :expr (kdr r2)))) (if ok3 (+ 1 c35 c34 c33) (+ 1 c35 c34 c33)))))
-            (t (+ 1 c34 c33))))))))
+              (let ((c37 (fp-steps :expr (kdr r2)))) (if ok3 (+ 1 c37 c36 c35) (+ 1 c37 c36 c35)))))
+            (t (+ 1 c36 c35))))))))
       (+ 1)))
     (:range
      (if
@@ -388,54 +404,64 @@
        (ok e r)
        (fp :expr (kdr toks))
        (declare (ignorable ok e r))
-       (let ((c36 (fp-steps :expr (kdr toks)))) (if ok (+ 1 c36) (+ 1 c36))))
+       (let ((c38 (fp-steps :expr (kdr toks)))) (if ok (+ 1 c38) (+ 1 c38))))
       (mv-let
        (ok e r)
        (fp :expr toks)
        (declare (ignorable ok e r))
        (let
-        ((c37 (fp-steps :expr toks)))
+        ((c39 (fp-steps :expr toks)))
         (cond
-         ((not (and ok (<= (len r) (len toks)))) (+ 1 c37))
-         ((not (equal (kar r) (op ":"))) (+ 1 c37))
-         ((or (equal (kadr r) (op ",")) (equal (kadr r) (op ")"))) (+ 1 c37))
+         ((not (and ok (<= (len r) (len toks)))) (+ 1 c39))
+         ((not (equal (kar r) (op ":"))) (+ 1 c39))
+         ((or (equal (kadr r) (op ",")) (equal (kadr r) (op ")"))) (+ 1 c39))
          (t
           (mv-let
            (ok2 b r2)
            (fp :expr (kdr r))
            (declare (ignorable ok2 b r2))
-           (let ((c38 (fp-steps :expr (kdr r)))) (if ok2 (+ 1 c38 c37) (+ 1 c38 c37))))))))))
+           (let ((c40 (fp-steps :expr (kdr r)))) (if ok2 (+ 1 c40 c39) (+ 1 c40 c39))))))))))
     (:s-unit
      (mv-let
       (ok pre r)
       (fps :prefix toks)
       (declare (ignorable ok pre r))
       (let
-       ((c39 (fps-steps :prefix toks)))
+       ((c41 (fps-steps :prefix toks)))
        (cond
-        ((not (and ok (<= (len r) (len toks)))) (+ 1 c39))
+        ((not (and ok (<= (len r) (len toks)))) (+ 1 c41))
         ((equal (kar r) (kw "function"))
          (mv-let
           (ok2 fr r2)
           (fps :fn-rest r)
           (declare (ignorable ok2 fr r2))
-          (let ((c40 (fps-steps :fn-rest r))) (if ok2 (+ 1 c40 c39) (+ 1 c40 c39)))))
+          (let ((c42 (fps-steps :fn-rest r))) (if ok2 (+ 1 c42 c41) (+ 1 c42 c41)))))
         ((equal (kar r) (kw "subroutine"))
          (if
           (assoc-eq :ts pre)
-          (+ 1 c39)
+          (+ 1 c41)
           (mv-let
            (ok2 sr r2)
            (fps :sub-rest r)
            (declare (ignorable ok2 sr r2))
-           (let ((c41 (fps-steps :sub-rest r))) (if ok2 (+ 1 c41 c39) (+ 1 c41 c39))))))
+           (let ((c43 (fps-steps :sub-rest r))) (if ok2 (+ 1 c43 c41) (+ 1 c43 c41))))))
         ((and (consp pre) (null (cdr pre)) (eq (kar (car pre)) :ts))
-         (mv-let
-          (ok2 dr r2)
-          (fps :decl-rest r)
-          (declare (ignorable ok2 dr r2))
-          (let ((c42 (fps-steps :decl-rest r))) (if ok2 (+ 1 c42 c39) (+ 1 c42 c39)))))
-        (t (+ 1 c39))))))
+         (let*
+          ((ts (kadr (car pre)))
+           (c (and (eq (kar (kadr ts)) :len) (equal (kar r) (op ",")) (not (attr-kw-tok-p (kadr r))))))
+          (mv-let
+           (ok2 dr r2)
+           (fps :decl-rest (if c (kdr r) r))
+           (declare (ignorable ok2 dr r2))
+           (let
+            ((c44 (fps-steps :decl-rest (if c (kdr r) r))))
+            (cond
+             ((not ok2) (+ 1 c44 c41))
+             ((not c) (+ 1 c44 c41))
+             ((and (null (kar dr)) (null (kadr dr)) (not (attr-kw-tok-p (kar (kar (kaddr dr))))))
+              (+ 1 c44 c41))
+             (t (+ 1 c44 c41)))))))
+        (t (+ 1 c41))))))
     (:fn-rest
      (if
       (and (equal tk (kw "function")) (name-tok-p (kadr toks)) (equal (kaddr toks) (op "(")))
@@ -444,16 +470,16 @@
        (fps :names (kdr (kdr (kdr toks))))
        (declare (ignorable ok ds r))
        (let
-        ((c43 (fps-steps :names (kdr (kdr (kdr toks))))))
+        ((c45 (fps-steps :names (kdr (kdr (kdr toks))))))
         (cond
-         ((not ok) (+ 1 c43))
+         ((not ok) (+ 1 c45))
          ((and
            (equal (kar r) (kw "result"))
            (equal (kadr r) (op "("))
            (name-tok-p (kaddr r))
            (equal (kadddr r) (op ")")))
-          (+ 1 c43))
-         (t (+ 1 c43)))))
+          (+ 1 c45))
+         (t (+ 1 c45)))))
       (+ 1)))
     (:sub-rest
      (cond
@@ -463,7 +489,7 @@
         (ok ds r)
         (fps :names (kdr (kdr (kdr toks))))
         (declare (ignorable ok ds r))
-        (let ((c44 (fps-steps :names (kdr (kdr (kdr toks)))))) (if ok (+ 1 c44) (+ 1 c44)))))
+        (let ((c46 (fps-steps :names (kdr (kdr (kdr toks)))))) (if ok (+ 1 c46) (+ 1 c46)))))
       (t (+ 1))))
     (:decl-rest
      (mv-let
@@ -471,10 +497,10 @@
       (fps :attrs toks)
       (declare (ignorable ok as r))
       (let
-       ((c45 (fps-steps :attrs toks)))
+       ((c47 (fps-steps :attrs toks)))
        (if
         (not (and ok (<= (len r) (len toks))))
-        (+ 1 c45)
+        (+ 1 c47)
         (let*
          ((dc (and (equal (kar r) (op ":")) (equal (kadr r) (op ":")))) (r1 (if dc (kdr (kdr r)) r)))
          (mv-let
@@ -482,11 +508,11 @@
           (fps :ents r1)
           (declare (ignorable ok2 es r2))
           (let
-           ((c46 (fps-steps :ents r1)))
+           ((c48 (fps-steps :ents r1)))
            (if
             (and ok2 (consp es) (implies (or (consp as) (ents-init-p es)) dc))
-            (+ 1 c46 c45)
-            (+ 1 c46 c45)))))))))
+            (+ 1 c48 c47)
+            (+ 1 c48 c47)))))))))
     (:ts
      (cond
       ((not (tok-in tk *type-kws*)) (+ 1))
@@ -503,9 +529,22 @@
           (ok e r)
           (fp :expr t1)
           (declare (ignorable ok e r))
-          (let ((c47 (fp-steps :expr t1))) (if (and ok (equal (kar r) (op ")"))) (+ 1 c47) (+ 1 c47)))))))
+          (let ((c49 (fp-steps :expr t1))) (if (and ok (equal (kar r) (op ")"))) (+ 1 c49) (+ 1 c49)))))))
       ((and (equal tk (kw "character")) (equal (kadr toks) (op "*")))
-       (if (len-tok-p (kaddr toks)) (+ 1) (+ 1)))
+       (cond
+        ((len-tok-p (kaddr toks)) (+ 1))
+        ((equal (kaddr toks) (op "("))
+         (let
+          ((t1 (kdr (kdr (kdr toks)))))
+          (if
+           (equal (kar t1) (op "*"))
+           (if (equal (kadr t1) (op ")")) (+ 1) (+ 1))
+           (mv-let
+            (ok e r)
+            (fp :expr t1)
+            (declare (ignorable ok e r))
+            (let ((c50 (fp-steps :expr t1))) (if (and ok (equal (kar r) (op ")"))) (+ 1 c50) (+ 1 c50)))))))
+        (t (+ 1))))
       (t (+ 1))))
     (:attrs
      (if
@@ -515,15 +554,15 @@
        (fps :attr (kdr toks))
        (declare (ignorable ok a r))
        (let
-        ((c48 (fps-steps :attr (kdr toks))))
+        ((c51 (fps-steps :attr (kdr toks))))
         (if
          (not (and ok (<= (len r) (len (kdr toks)))))
-         (+ 1 c48)
+         (+ 1 c51)
          (mv-let
           (ok2 as r2)
           (fps :attrs r)
           (declare (ignorable ok2 as r2))
-          (let ((c49 (fps-steps :attrs r))) (if ok2 (+ 1 c49 c48) (+ 1 c49 c48)))))))
+          (let ((c52 (fps-steps :attrs r))) (if ok2 (+ 1 c52 c51) (+ 1 c52 c51)))))))
       (+ 1)))
     (:attr
      (cond
@@ -543,7 +582,7 @@
         (ok ss r)
         (fps :shapes (kdr (kdr toks)))
         (declare (ignorable ok ss r))
-        (let ((c50 (fps-steps :shapes (kdr (kdr toks))))) (if ok (+ 1 c50) (+ 1 c50)))))
+        (let ((c53 (fps-steps :shapes (kdr (kdr toks))))) (if ok (+ 1 c53) (+ 1 c53)))))
       (t (+ 1))))
     (:shapes
      (mv-let
@@ -551,25 +590,25 @@
       (fps :shapes* toks)
       (declare (ignorable ok ss r))
       (let
-       ((c51 (fps-steps :shapes* toks)))
-       (if (and ok (consp ss) (shapes-same ss (shape-kind (car ss)))) (+ 1 c51) (+ 1 c51)))))
+       ((c54 (fps-steps :shapes* toks)))
+       (if (and ok (consp ss) (shapes-same ss (shape-kind (car ss)))) (+ 1 c54) (+ 1 c54)))))
     (:shapes*
      (mv-let
       (ok s r)
       (fps :shape toks)
       (declare (ignorable ok s r))
       (let
-       ((c52 (fps-steps :shape toks)))
+       ((c55 (fps-steps :shape toks)))
        (cond
-        ((not (and ok (<= (len r) (len toks)))) (+ 1 c52))
-        ((equal (kar r) (op ")")) (+ 1 c52))
+        ((not (and ok (<= (len r) (len toks)))) (+ 1 c55))
+        ((equal (kar r) (op ")")) (+ 1 c55))
         ((equal (kar r) (op ","))
          (mv-let
           (ok2 ss r2)
           (fps :shapes* (kdr r))
           (declare (ignorable ok2 ss r2))
-          (let ((c53 (fps-steps :shapes* (kdr r)))) (if ok2 (+ 1 c53 c52) (+ 1 c53 c52)))))
-        (t (+ 1 c52))))))
+          (let ((c56 (fps-steps :shapes* (kdr r)))) (if ok2 (+ 1 c56 c55) (+ 1 c56 c55)))))
+        (t (+ 1 c55))))))
     (:shape
      (if
       (equal tk (op ":"))
@@ -579,33 +618,33 @@
        (fp :expr toks)
        (declare (ignorable ok e r))
        (let
-        ((c54 (fp-steps :expr toks)))
+        ((c57 (fp-steps :expr toks)))
         (cond
-         ((not (and ok (<= (len r) (len toks)))) (+ 1 c54))
-         ((not (equal (kar r) (op ":"))) (+ 1 c54))
-         ((or (equal (kadr r) (op ",")) (equal (kadr r) (op ")"))) (+ 1 c54))
+         ((not (and ok (<= (len r) (len toks)))) (+ 1 c57))
+         ((not (equal (kar r) (op ":"))) (+ 1 c57))
+         ((or (equal (kadr r) (op ",")) (equal (kadr r) (op ")"))) (+ 1 c57))
          (t
           (mv-let
            (ok2 hi r2)
            (fp :expr (kdr r))
            (declare (ignorable ok2 hi r2))
-           (let ((c55 (fp-steps :expr (kdr r)))) (if ok2 (+ 1 c55 c54) (+ 1 c55 c54))))))))))
+           (let ((c58 (fp-steps :expr (kdr r)))) (if ok2 (+ 1 c58 c57) (+ 1 c58 c57))))))))))
     (:ents
      (mv-let
       (ok e r)
       (fps :ent toks)
       (declare (ignorable ok e r))
       (let
-       ((c56 (fps-steps :ent toks)))
+       ((c59 (fps-steps :ent toks)))
        (cond
-        ((not (and ok (<= (len r) (len toks)))) (+ 1 c56))
+        ((not (and ok (<= (len r) (len toks)))) (+ 1 c59))
         ((equal (kar r) (op ","))
          (mv-let
           (ok2 es r2)
           (fps :ents (kdr r))
           (declare (ignorable ok2 es r2))
-          (let ((c57 (fps-steps :ents (kdr r)))) (if ok2 (+ 1 c57 c56) (+ 1 c57 c56)))))
-        (t (+ 1 c56))))))
+          (let ((c60 (fps-steps :ents (kdr r)))) (if ok2 (+ 1 c60 c59) (+ 1 c60 c59)))))
+        (t (+ 1 c59))))))
     (:ent
      (cond
       ((not (name-tok-p tk)) (+ 1))
@@ -615,21 +654,21 @@
         (fps :shapes (kdr (kdr toks)))
         (declare (ignorable ok ss r))
         (let
-         ((c58 (fps-steps :shapes (kdr (kdr toks)))))
+         ((c61 (fps-steps :shapes (kdr (kdr toks)))))
          (if
           (not (and ok (<= (len r) (len toks))))
-          (+ 1 c58)
+          (+ 1 c61)
           (mv-let
            (ok2 i r2)
            (fps :init r)
            (declare (ignorable ok2 i r2))
-           (let ((c59 (fps-steps :init r))) (if ok2 (+ 1 c59 c58) (+ 1 c59 c58))))))))
+           (let ((c62 (fps-steps :init r))) (if ok2 (+ 1 c62 c61) (+ 1 c62 c61))))))))
       (t
        (mv-let
         (ok2 i r2)
         (fps :init (kdr toks))
         (declare (ignorable ok2 i r2))
-        (let ((c60 (fps-steps :init (kdr toks)))) (if ok2 (+ 1 c60) (+ 1 c60)))))))
+        (let ((c63 (fps-steps :init (kdr toks)))) (if ok2 (+ 1 c63) (+ 1 c63)))))))
     (:init
      (if
       (equal tk (op "="))
@@ -637,9 +676,9 @@
        (ok e r)
        (fp :expr (kdr toks))
        (declare (ignorable ok e r))
-       (let ((c61 (fp-steps :expr (kdr toks)))) (if ok (+ 1 c61) (+ 1 c61))))
+       (let ((c64 (fp-steps :expr (kdr toks)))) (if ok (+ 1 c64) (+ 1 c64))))
       (+ 1)))
-    (:names (if (equal tk (op ")")) (+ 1) (let ((c62 (fps-steps :names1 toks))) (+ 1 c62))))
+    (:names (if (equal tk (op ")")) (+ 1) (let ((c65 (fps-steps :names1 toks))) (+ 1 c65))))
     (:names1
      (cond
       ((not (name-tok-p tk)) (+ 1))
@@ -649,7 +688,7 @@
         (ok ns r)
         (fps :names1 (kdr (kdr toks)))
         (declare (ignorable ok ns r))
-        (let ((c63 (fps-steps :names1 (kdr (kdr toks))))) (if ok (+ 1 c63) (+ 1 c63)))))
+        (let ((c66 (fps-steps :names1 (kdr (kdr toks))))) (if ok (+ 1 c66) (+ 1 c66)))))
       (t (+ 1))))
     (:onames
      (cond
@@ -659,7 +698,7 @@
         (ok ns r)
         (fps :onames (kdr (kdr toks)))
         (declare (ignorable ok ns r))
-        (let ((c64 (fps-steps :onames (kdr (kdr toks))))) (if (and ok (consp ns)) (+ 1 c64) (+ 1 c64)))))
+        (let ((c67 (fps-steps :onames (kdr (kdr toks))))) (if (and ok (consp ns)) (+ 1 c67) (+ 1 c67)))))
       (t (+ 1))))
     (:items
      (if
@@ -669,15 +708,15 @@
        (fp :expr (kdr toks))
        (declare (ignorable ok e r))
        (let
-        ((c65 (fp-steps :expr (kdr toks))))
+        ((c68 (fp-steps :expr (kdr toks))))
         (if
          (not (and ok (< (len r) (len toks))))
-         (+ 1 c65)
+         (+ 1 c68)
          (mv-let
           (ok2 es r2)
           (fps :items r)
           (declare (ignorable ok2 es r2))
-          (let ((c66 (fps-steps :items r))) (if ok2 (+ 1 c66 c65) (+ 1 c66 c65)))))))
+          (let ((c69 (fps-steps :items r))) (if ok2 (+ 1 c69 c68) (+ 1 c69 c68)))))))
       (+ 1)))
     (:ctl
      (if
@@ -692,8 +731,8 @@
           (fp :expr (kdr (kdr t1)))
           (declare (ignorable ok e r))
           (let
-           ((c67 (fp-steps :expr (kdr (kdr t1)))))
-           (if (and ok (equal (kar r) (op ")"))) (+ 1 c67) (+ 1 c67)))))
+           ((c70 (fp-steps :expr (kdr (kdr t1)))))
+           (if (and ok (equal (kar r) (op ")"))) (+ 1 c70) (+ 1 c70)))))
         ((and (equal (kar t1) (kw "concurrent")) (equal (kadr t1) (op "(")))
          (let
           ((t2 (kdr (kdr t1))))
@@ -702,46 +741,46 @@
            (if (tok-in (kar t2) *type-kws*) (fps :ts t2) (mv t nil t2))
            (declare (ignorable ok ts r))
            (let
-            ((c68 (if (tok-in (kar t2) *type-kws*) (fps-steps :ts t2) 0)))
+            ((c71 (if (tok-in (kar t2) *type-kws*) (fps-steps :ts t2) 0)))
             (cond
-             ((not (and ok (<= (len r) (len t2)))) (+ 1 c68))
+             ((not (and ok (<= (len r) (len t2)))) (+ 1 c71))
              ((and
                ts
                (not (and (equal (kar ts) "integer") (equal (kar r) (op ":")) (equal (kadr r) (op ":")))))
-              (+ 1 c68))
+              (+ 1 c71))
              (t
               (mv-let
                (ok2 ixs r2)
                (fps :ixs (if ts (kdr (kdr r)) r))
                (declare (ignorable ok2 ixs r2))
                (let
-                ((c69 (fps-steps :ixs (if ts (kdr (kdr r)) r))))
-                (if ok2 (+ 1 c69 c68) (+ 1 c69 c68))))))))))
+                ((c72 (fps-steps :ixs (if ts (kdr (kdr r)) r))))
+                (if ok2 (+ 1 c72 c71) (+ 1 c72 c71))))))))))
         ((and (name-tok-p (kar t1)) (equal (kadr t1) (op "=")))
          (mv-let
           (ok e1 r)
           (fp :expr (kdr (kdr t1)))
           (declare (ignorable ok e1 r))
           (let
-           ((c70 (fp-steps :expr (kdr (kdr t1)))))
+           ((c73 (fp-steps :expr (kdr (kdr t1)))))
            (if
             (not (and ok (equal (kar r) (op ","))))
-            (+ 1 c70)
+            (+ 1 c73)
             (mv-let
              (ok2 e2 r2)
              (fp :expr (kdr r))
              (declare (ignorable ok2 e2 r2))
              (let
-              ((c71 (fp-steps :expr (kdr r))))
+              ((c74 (fp-steps :expr (kdr r))))
               (cond
-               ((not ok2) (+ 1 c71 c70))
+               ((not ok2) (+ 1 c74 c73))
                ((equal (kar r2) (op ","))
                 (mv-let
                  (ok3 e3 r3)
                  (fp :expr (kdr r2))
                  (declare (ignorable ok3 e3 r3))
-                 (let ((c72 (fp-steps :expr (kdr r2)))) (if ok3 (+ 1 c72 c71 c70) (+ 1 c72 c71 c70)))))
-               (t (+ 1 c71 c70)))))))))
+                 (let ((c75 (fp-steps :expr (kdr r2)))) (if ok3 (+ 1 c75 c74 c73) (+ 1 c75 c74 c73)))))
+               (t (+ 1 c74 c73)))))))))
         (t (+ 1))))))
     (:prefix
      (cond
@@ -750,22 +789,22 @@
         (ok ps r)
         (fps :prefix (kdr toks))
         (declare (ignorable ok ps r))
-        (let ((c73 (fps-steps :prefix (kdr toks)))) (if ok (+ 1 c73) (+ 1 c73)))))
+        (let ((c76 (fps-steps :prefix (kdr toks)))) (if ok (+ 1 c76) (+ 1 c76)))))
       ((tok-in tk *type-kws*)
        (mv-let
         (ok ts r)
         (fps :ts toks)
         (declare (ignorable ok ts r))
         (let
-         ((c74 (fps-steps :ts toks)))
+         ((c77 (fps-steps :ts toks)))
          (if
           (not (and ok (< (len r) (len toks))))
-          (+ 1 c74)
+          (+ 1 c77)
           (mv-let
            (ok2 ps r2)
            (fps :prefix r)
            (declare (ignorable ok2 ps r2))
-           (let ((c75 (fps-steps :prefix r))) (if ok2 (+ 1 c75 c74) (+ 1 c75 c74))))))))
+           (let ((c78 (fps-steps :prefix r))) (if ok2 (+ 1 c78 c77) (+ 1 c78 c77))))))))
       (t (+ 1))))
     (otherwise (+ 1)))))))
 

@@ -327,7 +327,7 @@
 
 (def prog-model
   (if (empty? prog-files) []
-    (let [input (str "(include-book \"fmean\")\n(set-iprint nil)\n(set-fmt-hard-right-margin 100000 state)\n(set-fmt-soft-right-margin 100000 state)\n"
+    (let [input (str "(include-book \"frun\")\n(set-iprint nil)\n(set-fmt-hard-right-margin 100000 state)\n(set-fmt-soft-right-margin 100000 state)\n"
                      "(defun show-toks (ts) (declare (xargs :mode :program))\n"
                      "  (if (endp ts) \"\" (concatenate 'string \" \" (car ts) (show-toks (cdr ts)))))\n"
                      "(defun show-lines (ls) (declare (xargs :mode :program))\n"
@@ -422,7 +422,7 @@
 
 (def fcvs-model
   (if (empty? fcvs-files) []
-    (let [input (str "(include-book \"fmean\")\n(set-iprint nil)\n(set-fmt-hard-right-margin 100000 state)\n(set-fmt-soft-right-margin 100000 state)\n"
+    (let [input (str "(include-book \"frun\")\n(set-iprint nil)\n(set-fmt-hard-right-margin 100000 state)\n(set-fmt-soft-right-margin 100000 state)\n"
                      "(defun show-recs (ls) (declare (xargs :mode :program))\n"
                      "  (if (endp ls) nil (prog2$ (cw \"REC~s0~%\" (car (car ls))) (show-recs (cdr ls)))))\n"
                      (str/join (for [f fcvs-files]

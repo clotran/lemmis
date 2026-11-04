@@ -65,7 +65,8 @@
 (defconst *lx-pairs*
   '(("enddo" "end" "do") ("endif" "end" "if") ("elseif" "else" "if") ("endprogram" "end" "program")
     ("endmodule" "end" "module") ("endfunction" "end" "function") ("endsubroutine" "end" "subroutine")
-    ("endselect" "end" "select") ("selectcase" "select" "case") ("goto" "go" "to")))
+    ("endselect" "end" "select") ("selectcase" "select" "case") ("goto" "go" "to")
+    ("doubleprecision" "double" "precision")))
 
 ; a kind-param after "_" (R708, R709): digits or a name
 (defun lx-kind (cs)                 ; (mv kind rest)

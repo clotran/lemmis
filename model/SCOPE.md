@@ -11,7 +11,7 @@ proved to accept exactly that grammar (`fp-`, `fps-`, `fpu-sound` and
 `-complete`), for every alternative the Scope uses; **part** when only
 some alternatives are in; **no** otherwise.
 
-Score: **122 of 152** Scope rules proved (80%); 30 more in part; none not yet in.
+Score: **126 of 155** Scope rules proved (81%); 29 more in part; none not yet in.
 
 ## The books
 
@@ -61,10 +61,13 @@ Score: **122 of 152** Scope rules proved (80%); 30 more in part; none not yet in
   reserved words; with this, each statement's kind is known from its
   first tokens.
 - Character is of the default kind only (no KIND= in R721, no kind-param
-  on a literal), and scalar or an array element by element: no substrings
-  (R908), no character input (READ), no character SELECT CASE. A character
-  dummy's length is `*` or its actual's (15.5.2.4 also lets the actual be
-  longer); a run where it is not stops with `:type`.
+  on a literal), and scalar or an array element by element. A substring's
+  parent is a variable or a named constant (not a literal), and a READ's
+  input item is not a substring. A character variable defined only in part
+  (by substrings) holds the code 0 at its undefined characters, so a
+  program of the subset writes no such character. After `CHARACTER*n,`
+  (R722's comma) the first entity is not named `parameter`, `value`,
+  `intent` or `dimension`.
 - No defined operators (R1003, R1023 have no defined-unary-op or
   defined-binary-op), no conditional expressions (R1002), no derived
   types, no labels, no construct names, no `(/ ... /)` constructors.
@@ -104,12 +107,12 @@ Score: **122 of 152** Scope rules proved (80%); 30 more in part; none not yet in
 | R725 | logical-literal-constant | proved | |
 | R701 | type-param-value | part | scalar-int-expr, `*` (a dummy's or a named constant's length); no `:` |
 | R703 | declaration-type-spec | proved | intrinsic-type-spec |
-| R704 | intrinsic-type-spec | part | INTEGER, REAL, DOUBLE PRECISION (two words), CHARACTER, LOGICAL; no COMPLEX |
+| R704 | intrinsic-type-spec | part | INTEGER, REAL, DOUBLE PRECISION (`doubleprecision` split by flex), CHARACTER, LOGICAL; no COMPLEX |
 | R705 | integer-type-spec | proved |  |
 | R706 | kind-selector | proved |  |
 | R721 | char-selector | part | length-selector; no KIND= |
-| R722 | length-selector | part | ( [LEN =] type-param-value ), * char-length; no "," after it |
-| R723 | char-length | part | int-literal-constant; no ( type-param-value ) |
+| R722 | length-selector | proved | ( [LEN =] type-param-value ), * char-length [,] (C724, C725) |
+| R723 | char-length | proved | ( type-param-value ), int-literal-constant |
 | R777 | array-constructor | part | lbracket ac-spec rbracket |
 | R778 | ac-spec | part | ac-value-list |
 | R779 | lbracket | proved | |
@@ -129,6 +132,9 @@ Score: **122 of 152** Scope rules proved (80%); 30 more in part; none not yet in
 | R866 | implicit-stmt | proved | IMPLICIT NONE |
 | R901 | designator | proved | object-name, array-element, array-section |
 | R902 | variable | proved | in assignment-stmt |
+| R908 | substring | proved | parent-string ( substring-range ); a scalar name's is a part-ref of one triplet, told apart by its type |
+| R909 | parent-string | part | scalar-variable-name, array-element, a named constant; no literal constant |
+| R910 | substring-range | proved | [ scalar-int-expr ] : [ scalar-int-expr ] |
 | R911 | data-ref | proved | one part-ref (no derived types) |
 | R912 | part-ref | proved | |
 | R917 | array-element | proved | |

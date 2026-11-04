@@ -401,6 +401,11 @@
 
 ; formatted input: the reader rs = (:fmt ds rev md lim taken), taken the
 ; data edit descriptors this pass has used; one descriptor at a time
+; A input (13.7.4p3): of a field of w characters, the rightmost len when
+; w >= len, else the field and blanks after it
+(defun fi-a (fld k)
+  (let ((k (nfix k)) (w (len fld)))
+    (coerce (make-character-list (if (<= k w) (nthcdr (- w k) fld) (append fld (make-list (- k w) :initial-element #\Space)))) 'string)))
 (defun fi-take1 (rs in ty k fuel)    ; the next value: (mv raw rs in)
   (declare (xargs :measure (nfix fuel) :hints (("Goal" :in-theory (disable in-next rec-move fi-field fd-has-data in-chars)))))
   (let ((ds (kadr rs)) (rev (kaddr rs)) (md (kadddr rs)) (lim (nfix (kar (cddddr rs)))) (tk (nfix (kadr (cddddr rs)))))
@@ -417,11 +422,13 @@
                  ((:sign :colon) (fi-take1 rs1 in ty k (1- fuel)))
                  (:str (mv (err :format) rs in))           ; no character string edit descriptor on input (13.9p1)
                  (otherwise
-                  (let* ((w (nfix (kadr it))) (cs (in-chars in))
+                  (let* ((a (eq (kar it) :a))
+                         (w (if (and a (null (kadr it))) (nfix k) (nfix (kadr it))))   ; A without w: the item's length (13.7.4p1)
+                         (cs (in-chars in))
                          (fld (append (take (min w (max 0 (- (len cs) pos))) (nthcdr pos cs))   ; PAD=YES: blanks past the end (12.5.6.15)
                                       (make-list (- w (min w (max 0 (- (len cs) pos)))) :initial-element #\Space)))
-                         (v (if (and (member-eq (kar it) '(:a)) t) (err :type) (fi-field it fld ty k md))))
-                    (if (or (eql (kadr it) 0) (null (kadr it))) (mv (err :format) rs in)   ; w shall not be zero on input
+                         (v (cond (a (if (eq ty :c) (fi-a fld k) (err :type))) ((eq ty :c) (err :type)) (t (fi-field it fld ty k md)))))
+                    (if (or (eql (kadr it) 0) (and (null (kadr it)) (not a))) (mv (err :format) rs in)   ; w shall not be zero on input
                       (mv v (list :fmt (cdr ds) rev md lim (+ 1 tk)) (cons (in-recs in) (+ pos w))))))))))))
 (in-theory (disable fi-take1))
 ; after the last item, the descriptors up to the next data edit
@@ -445,10 +452,17 @@
   (declare (xargs :measure (nfix (- (len cs) (nfix pos)))))
   (if (or (not (natp pos)) (<= (len cs) pos) (member (nth pos cs) '(#\Space #\Tab #\, #\/))) (mv (reverse acc) pos)
     (li-word cs (+ 1 pos) (cons (nth pos cs) acc))))
+(defun fi-a-fit (cs k)
+  (let ((k (nfix k)))
+    (coerce (make-character-list (take k (append cs (make-list k :initial-element #\Space)))) 'string)))
 (defun li-conv (cs ty k)             ; a value's characters as ty k: a raw value, or an error
   (cond ((eq ty :i) (let ((n (fi-int cs))) (if (and (integerp n) (in-kind k n)) n (err :input))))
         ((eq ty :r) (mv-let (sg q) (fi-real cs 0 0) (if (and q (consp cs)) (fi-real-val k sg q) (err :input))))
         ((eq ty :l) (let ((b (fi-logical cs))) (if (eq b :bad) (err :input) b)))
+        ; a character value, delimited or not (13.10.3.1p5), as if assigned
+        ; to the item: truncated or padded with blanks (10.2.1.3p10)
+        ((eq ty :c) (let ((cs (if (and (consp cs) (member (car cs) '(#\' #\"))) (mv-nth 0 (fd-str (cdr cs) (car cs) nil)) cs)))
+                      (fi-a-fit cs k)))
         (t (err :type))))
 (defun li-split-rep (cs)             ; r*c: (mv r c), r nil when no repeat
   (let ((m (member #\* cs)))
@@ -466,6 +480,12 @@
                    (cond ((eql c #\/) (mv :null (list :list nil 0 nil t) in))
                          ((eql c #\,)
                           (mv :null (list :list nil 0 nil nil) (cons (in-recs in) (+ 1 pos))))
+                         ; a delimited character value: blanks, commas, slashes in it (13.10.3.1p5)
+                         ((and (eq ty :c) (member c '(#\' #\")))
+                          (mv-let (q rest) (fd-str (nthcdr (+ 1 pos) cs) c nil)
+                            (declare (ignore q))
+                            (let ((p2 (- (len cs) (len rest))))
+                              (mv (li-conv (take (nfix (- p2 pos)) (nthcdr pos cs)) ty k) (list :list t 0 nil nil) (cons (in-recs in) p2)))))
                          (t (mv-let (w p2) (li-word cs pos nil)
                               (mv-let (r c) (li-split-rep w)
                                 (let ((in (cons (in-recs in) p2)))

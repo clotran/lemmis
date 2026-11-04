@@ -4,7 +4,7 @@
 
 (in-package "ACL2")
 
-(include-book "fparse")
+(include-book "fparse-cost")
 
 (defun kw (s) (declare (xargs :guard t)) (list :name s))
 
@@ -33,6 +33,19 @@
 (defun no-kw-args (as)            ; a designator's subscripts: no keyword (R912)
   (declare (xargs :guard t))
   (if (atom as) t (and (not (eq (kar (car as)) :kw)) (no-kw-args (cdr as)))))
+
+; R910 substring-range [e] : [e], read as an argument (:tri lo hi nil)
+(defun substr-rng-p (g) (declare (xargs :guard t)) (and (fg :arg g) (eq (kar g) :tri) (null (kadddr g))))
+
+; R722's "*" char-length "," (C724, C725: in a type-declaration-stmt with
+; no "::"), the ts ("character" (:len tk :comma)); the subset tells it from
+; an attr-spec's "," by the word after it, never an attr-spec's keyword
+(defconst *attr-kws* '("parameter" "value" "intent" "dimension"))
+(defun attr-kw-tok-p (tk) (declare (xargs :guard t)) (and (eq (kar tk) :name) (member-equal (kadr tk) *attr-kws*) t))
+(defun ts-comma-p (ts)
+  (declare (xargs :guard t))
+  (and (true-listp ts) (= (len ts) 2) (equal (car ts) "character") (true-listp (cadr ts)) (= (len (cadr ts)) 3)
+       (eq (car (cadr ts)) :len) (len-tok-p (cadr (cadr ts))) (eq (caddr (cadr ts)) :comma)))
 
 (defun action-kind-p (k)          ; R515, C1143
   (declare (xargs :guard t))
@@ -76,7 +89,7 @@
          (mult (kar add)) (prim (kar mult)))
     (and (null (kadr e)) (null (kadr eq1)) (null (kadr or1)) (null (kar and1))
          (null (kadr l4)) (null (kadr l3)) (null (kar l2)) (null (kaddr l2)) (null (kadr add)) (null (kadr mult))
-         (member-eq (kar prim) '(:name :ref)) prim)))
+         (member-eq (kar prim) '(:name :ref :sref)) prim)))
 (defun all-lone (es) (declare (xargs :guard t)) (if (atom es) t (and (lone-prim (car es)) (all-lone (cdr es)))))
 ; the three labels of an arithmetic IF after its ( expr ), and the statement's end
 (defun aif-labs-p (r)

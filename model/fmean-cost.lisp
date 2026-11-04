@@ -3,7 +3,7 @@
 
 (in-package "ACL2")
 
-(include-book "fmean")
+(include-book "frun")
 
 (set-verify-guards-eagerness 0)
 

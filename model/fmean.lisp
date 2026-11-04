@@ -51,6 +51,9 @@
                      ((nil) (mv (err :undeclared) st))
                      (otherwise (mv (err :type) st)))))
           (:ref (me-ref (kadr x) (kaddr x) env st cx (1- fuel)))
+          (:sref (with-v (v st) (me-ref (kadr x) (kaddr x) env st cx (1- fuel))    ; R908: an element's substring
+                   (with-v (r st) (me-rng (kadddr x) (c-len v) env st cx (1- fuel))
+                     (mv (substr-of v (car r) (cadr r)) st))))
           (otherwise (mv (err :syntax) st))))
        (otherwise (mv (err :syntax) st)))))
 
@@ -124,6 +127,16 @@
                              (if (errp ds) (mv ds nil st) (mv (cons is ds) (cons nil sc) st))))))))))
          (t (mv (err :type) nil st))))
 
+ ; R910 substring-range: (mv (lo hi) st), lo 1 and hi n when omitted
+ (defun me-rng (g n env st cx fuel)
+   (declare (xargs :guard t :measure (nfix fuel)))
+   (if (not (posp fuel)) (mv (err :fuel) st)
+     (mv-let (lo st) (if (kadr g) (me-ev :expr (kadr g) env st cx (1- fuel)) (mv (vi 4 1) st))
+       (mv-let (hi st) (if (kaddr g) (me-ev :expr (kaddr g) env st cx (1- fuel)) (mv (vi 4 n) st))
+         (cond ((errp lo) (mv lo st)) ((errp hi) (mv hi st))
+               ((not (and (ival-scalar lo) (ival-scalar hi))) (mv (err :type) st))
+               (t (mv (list (v-num lo) (v-num hi)) st)))))))
+
  ; name(args): an array element or section, a function reference, or an intrinsic
  (defun me-ref (tk args env st cx fuel)
    (declare (xargs :guard t :measure (nfix fuel)))
@@ -133,13 +146,16 @@
        (case (kar b)
          ((:var :const)
           (let ((a (if (eq (kar b) :var) (st-get (kadr b) st) (kadr b))))
-            (if (not (aval-p a)) (mv (err :type) st)
+            (if (not (aval-p a))
+                (if (not (substr-arg-p args)) (mv (err :type) st)
+                  (with-v (r st) (me-rng (car args) (c-len a) env st cx (1- fuel))     ; R908: a scalar's substring
+                    (mv (substr-of a (car r) (cadr r)) (if (eq (kar b) :var) (st-log (list (list :r (kadr b) :all)) st) st))))
               (mv-let (ds sc st) (me-subs args (a-lbs a) (a-ubs a) env st cx (1- fuel))
                 (if (errp ds) (mv ds st)
                   (let ((es (arr-gets a (tuples ds)))
                         (st (if (eq (kar b) :var) (st-log (read-list (kadr b) (tuple-offs a (tuples ds))) st) st)))
                     (cond ((errp es) (mv es st))
-                          ((member :u es) (mv (err :undefined) st))
+                          ((undef-es es) (mv (err :undefined) st))
                           ((not (member nil sc)) (mv (wrap (a-ty a) (a-k a) (car es)) st))
                           (t (let ((sh (section-shape ds sc)))
                                (mv (mk-arr (a-ty a) (a-k a) (ones (len sh)) sh es) st))))))))))
@@ -335,14 +351,21 @@
    (declare (xargs :guard t :measure (nfix fuel)))
    (if (not (posp fuel)) (mv (err :fuel) nil nil st)
      (let* ((b (cdr (alk n fr))) (loc (kadr b)) (v (st-get loc st)) (int (decl-intent attrs))
-            ; a character dummy of assumed length takes its actual's (8.5.13); the
-            ; subset: any other one has its actual's length (15.5.2.4 allows a longer actual)
-            (k (if (and (eq ty :c) (eq k :star)) (if (aval-p v) (a-k v) (scal-k v)) k)))
+            ; a character dummy of assumed length takes its actual's (8.5.13); a
+            ; scalar one shorter than its actual, the actual's leftmost characters (15.5.2.4p2)
+            (k (if (and (eq ty :c) (eq k :star)) (if (aval-p v) (a-k v) (scal-k v)) k))
+            (short (and (eq ty :c) (not ss) (natp k) (not (aval-p v)) (eq (scal-ty v) :c)
+                        (integerp (scal-k v)) (< k (scal-k v)))))
        (cond
-        ((not (equal (list (if (aval-p v) (a-ty v) (scal-ty v)) (if (aval-p v) (a-k v) (scal-k v))) (list ty k)))
+        ((and (not short) (not (equal (list (if (aval-p v) (a-ty v) (scal-ty v)) (if (aval-p v) (a-k v) (scal-k v))) (list ty k))))
          (mv (err :type) nil nil st))
         ((if ss (not (aval-p v)) (aval-p v)) (mv (err :type) nil nil st))
         ((and (member-equal int '(("out") ("inout") ("in" "out"))) (eq (kaddr b) :in)) (mv (err :intent) nil nil st))
+        (short
+         (mv-let (l2 st) (st-new (if (or (equal int '("out")) (eq (kar v) :u)) (list :u :c k) (c-fit k v)) st)
+           (cond ((decl-has :value attrs) (mv nil (cons (cons n (list :var l2 :rw)) fr) (drop-copies n copies) st))
+                 ((equal int '("in")) (mv nil (cons (cons n (list :var l2 :in)) fr) (drop-copies n copies) st))
+                 (t (mv nil (cons (cons n (list :var l2 (kaddr b))) fr) (cons (list n l2 (list :cprefix loc)) copies) st)))))
         (t
          (mv-let (ls us st)
            (cond ((not ss) (mv nil nil st))
@@ -411,7 +434,7 @@
                      (t (me-eifs (kadddr c) (kar (kdr (kdr (kdr (kdr c))))) env st cx (1- fuel))))))
        (:doc (me-do (kadr c) (kaddr c) env st cx (1- fuel)))
        (:casec (with-v (v st) (me-ev :expr (kadr c) env st cx (1- fuel))
-                 (let ((ty (cond ((ival-scalar v) :i) ((and (lval-p v) (booleanp (v-num v))) :l) (t nil))))
+                 (let ((ty (cond ((ival-scalar v) :i) ((and (lval-p v) (booleanp (v-num v))) :l) ((and (cval-p v) (not (nul-in (v-num v)))) :c) (t nil))))
                    (if (not ty) (mv (cond-err v) st)            ; C1150: integer, logical (or character)
                      (mv-let (sels st) (me-sels (kaddr c) ty env st cx (1- fuel))
                        (cond ((errp sels) (mv sels st))
@@ -675,104 +698,33 @@
                   (let ((n (assign-val (st-get loc st) v)))
                     (if (errp n) (mv n st) (mv :normal (st-put loc n (st-log (list (list :w loc :all)) st))))))
                  (t (let ((a (st-get loc st)))
-                      (if (not (aval-p a)) (mv (err :type) st)
+                      (cond
+                       ((and (not (aval-p a)) (eq (kaddr s) t) (substr-arg-p (kadddr s)))   ; R908: a scalar's substring
+                        (with-v (r st) (me-rng (car (kadddr s)) (c-len a) env st cx (1- fuel))
+                          (let ((n (substr-put a (car r) (cadr r) v)))
+                            (if (errp n) (mv n st) (mv :normal (st-put loc n (st-log (list (list :w loc :all)) st)))))))
+                       ((not (aval-p a)) (mv (err :type) st))
+                       (t
                         (mv-let (ds sc st) (me-subs (kadddr s) (a-lbs a) (a-ubs a) env st cx (1- fuel))
-                          (if (errp ds) (mv ds st)
+                          (cond
+                           ((errp ds) (mv ds st))
+                           ((consp (kaddr s))                                  ; an element's substring
+                            (let* ((ts (tuples ds)) (old (arr-gets a ts)))
+                              (cond ((member nil sc) (mv (err :type) st)) ((errp old) (mv old st))
+                                    (t (with-v (r st) (me-rng (kaddr s) (a-k a) env st cx (1- fuel))
+                                         (let* ((n (substr-put (wrap (a-ty a) (a-k a) (car old)) (car r) (cadr r) v))
+                                                (n2 (if (errp n) n (arr-sets (st-get loc st) ts (list (raw n))))))
+                                           (if (errp n2) (mv n2 st)
+                                             (mv :normal (st-put loc n2 (st-log (write-list loc (tuple-offs a ts)) st))))))))))
+                           (t
                             (let* ((ts (tuples ds))
                                    (sh (section-shape ds sc))
                                    (tgt (fresh (a-ty a) (a-k a) (ones (len sh)) sh))
                                    (c (if (member nil sc) (assign-val tgt v) (conv1 (a-ty a) (a-k a) v))))
                               (if (errp c) (mv c st)
                                 (let ((n (arr-sets (st-get loc st) ts (if (aval-p c) (a-es c) (list (raw c))))))
-                                  (if (errp n) (mv n st) (mv :normal (st-put loc n (st-log (write-list loc (tuple-offs a ts)) st))))))))))))))))))
+                                  (if (errp n) (mv n st) (mv :normal (st-put loc n (st-log (write-list loc (tuple-offs a ts)) st))))))))))))))))))))
 )
 ; the interpreter stays closed: a proof about it opens the one case it needs
-(in-theory (disable me-ev me-fold me-list me-iargs me-subs me-ref me-elem me-call me-bind me-kind me-bounds me-decls me-ents me-dummy me-lowers me-blk me-seq me-c me-sels me-ranges me-eifs me-do me-conc me-conc-lims me-conc-iters me-iter me-while me-forever me-act me-ritems me-assign))
+(in-theory (disable me-ev me-fold me-list me-iargs me-subs me-rng me-ref me-elem me-call me-bind me-kind me-bounds me-decls me-ents me-dummy me-lowers me-blk me-seq me-c me-sels me-ranges me-eifs me-do me-conc me-conc-lims me-conc-iters me-iter me-while me-forever me-act me-ritems me-assign))
 
-; ---- a program: the modules elaborated in order, then the main program
-
-(defun ext-frame (units)             ; the external procedures (R503)
-  (declare (xargs :guard t))
-  (if (atom units) nil
-    (if (eq (kar (car units)) :proc)
-        (cons (cons (tok-name (hd-name (unit-hd (car units)))) (list :proc (car units) :ext)) (ext-frame (cdr units)))
-      (ext-frame (cdr units)))))
-
-(defun me-modules (units mods modenvs gframe st fuel)   ; (mv err mods modenvs st)
-  (declare (xargs :guard t :measure (len units) :verify-guards nil))
-  (cond ((atom units) (mv nil mods modenvs st))
-        ((not (eq (kar (car units)) :module)) (me-modules (cdr units) mods modenvs gframe st fuel))
-        (t (let* ((u (car units)) (m (tok-name (hd-name (unit-hd u)))) (spec (unit-spec u))
-                  (ufr (use-frames (kar spec) mods)) (env0 (append ufr (list gframe)))
-                  (pfr (proc-frame (kadr (unit-int u)) (list :mod m))))
-             (mv-let (e fr copies st) (me-decls (kaddr spec) env0 st (list (list mods modenvs gframe) nil) fuel pfr nil m nil)
-               (declare (ignore copies))
-               (if e (mv e nil nil st)
-                 (me-modules (cdr units) (cons (cons m fr) mods) (cons (cons m (cons fr env0)) modenvs) gframe st fuel)))))))
-(in-theory (disable me-modules))
-
-(defun find-main (units)
-  (declare (xargs :guard t))
-  (if (atom units) nil (if (eq (kar (car units)) :main) (car units) (find-main (cdr units)))))
-
-(defun me-program (units in fuel)    ; (mv status lines): in the input's records
-  (declare (xargs :guard t :verify-guards nil))
-  (let ((gframe (ext-frame units)) (st (mk-st7 nil 0 nil nil nil nil (cons in nil))) (main (find-main units)))
-    (mv-let (e mods modenvs st) (me-modules units nil nil gframe st fuel)
-      (cond (e (mv e (close-lines (reverse (true-list-fix (st-out st))))))
-            ((not main) (mv (err :syntax) nil))
-            (t (let* ((g (list mods modenvs gframe)) (cx (list g nil (unit-formats main))) (spec (unit-spec main))
-                      (ufr (use-frames (kar spec) mods)) (env0 (append ufr (list gframe)))
-                      (pfr (proc-frame (kadr (unit-int main)) :host)))
-                 (mv-let (e fr copies st) (me-decls (kaddr spec) env0 st cx fuel pfr nil (unit-key main) nil)
-                   (declare (ignore copies))
-                   (if e (mv e (close-lines (reverse (true-list-fix (st-out st)))))
-                     (mv-let (fr st) (if (kadr spec) (mv fr st)          ; IMPLICIT NONE, or implicit typing (8.7)
-                                       (implicit-vars (used-names (unit-exec main)) fr env0 st))
-                       (mv-let (s st) (me-blk (unit-exec main) (cons fr env0) st cx fuel)
-                         (mv (cond ((equal s (err :stop)) :stop) ((eq s :normal) :normal)
-                                   ((errp s) s) ((goto-p s) (err :label)) (t (err :syntax)))
-                             (close-lines (reverse (true-list-fix (st-out st)))))))))))))))
-(in-theory (disable me-program))
-
-; ---- the text to its answer
-
-(defun parse-stmts (ss)              ; each statement parsed whole, or nil
-  (declare (xargs :guard t :verify-guards nil))
-  (if (atom ss) (mv t nil)
-    (mv-let (ok s r) (fps :stmt (car ss))
-      (if (not (and ok (null r))) (mv nil (car ss))
-        (mv-let (ok2 rest) (parse-stmts (cdr ss)) (if ok2 (mv t (cons s rest)) (mv nil rest)))))))
-
-(defun fortran-parse (text fixed)    ; (mv ok units-or-the-bad-statement); fixed: fixed source form
-  (declare (xargs :guard (stringp text) :verify-guards nil))
-  (mv-let (ok ss) (parse-stmts (if fixed (flex-fixed text) (flex text)))
-    (if (not ok) (mv nil ss)
-      (mv-let (ok2 us r) (fpu :program (ldo-sugar ss nil nil))
-        (if (and ok2 (null r)) (mv t us) (mv nil (kar r)))))))
-
-(defun fortran-run-in (text fixed in fuel)  ; (list status lines), or (list (:error :parse) stmt); in the input's records (strings)
-  (declare (xargs :guard (stringp text) :verify-guards nil))
-  (mv-let (ok us) (fortran-parse text fixed)
-    (if (not ok) (list (err :parse) us)
-      (mv-let (s lines) (me-program us in fuel) (list s lines)))))
-(defun fortran-run-form (text fixed fuel) (declare (xargs :guard (stringp text) :verify-guards nil)) (fortran-run-in text fixed nil fuel))
-(defun fortran-run (text fuel) (declare (xargs :guard (stringp text) :verify-guards nil)) (fortran-run-form text nil fuel))
-
-; what fortran-parse accepts is a program of the grammar: each statement
-; one fps read whole (fps-sound), the units fpu read from them (fpu-sound)
-(defthm parse-stmts-sound
-  (implies (mv-nth 0 (parse-stmts ss)) (stmts-p (mv-nth 1 (parse-stmts ss))))
-  :hints (("Goal" :induct (parse-stmts ss))
-          ("Subgoal *1/2" :use ((:instance fps-sound (nt :stmt) (toks (car ss)))) :in-theory (disable fps-sound))))
-
-; a label DO rewritten keeps every statement one of the grammar
-(defthm ldo-sugar-stmts
-  (implies (stmts-p ss) (stmts-p (ldo-sugar ss stack term)))
-  :hints (("Goal" :induct (ldo-sugar ss stack term) :in-theory (enable fgs))))
-
-(defthm fortran-parse-sound
-  (implies (mv-nth 0 (fortran-parse text fixed)) (fgu :program (mv-nth 1 (fortran-parse text fixed))))
-  :hints (("Goal" :use ((:instance fpu-sound (nt :program)
-                                     (toks (ldo-sugar (mv-nth 1 (parse-stmts (if fixed (flex-fixed text) (flex text)))) nil nil))))
-           :in-theory (disable fpu-sound flex flex-fixed parse-stmts ldo-sugar fpu))))

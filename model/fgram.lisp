@@ -35,7 +35,7 @@
     "double" "character" "complex" "type" "if" "else" "elseif" "endif" "do" "enddo"
     "select" "case" "cycle" "exit" "return" "stop" "continue" "call" "print"
     "function" "subroutine" "pure" "elemental" "impure" "recursive" "non_recursive"
-    "endprogram" "endmodule" "endfunction" "endsubroutine" "endselect" "selectcase" "go" "goto" "write" "format" "read"))
+    "endprogram" "endmodule" "endfunction" "endsubroutine" "endselect" "selectcase" "go" "goto" "write" "format" "read" "doubleprecision"))
 
 (defconst *fops*
   '("+" "-" "*" "/" "**" "==" "/=" "<" "<=" ">" ">=" "(" ")" "," "=" ":" "::" "[" "]" "%" "//"
@@ -157,6 +157,11 @@
 ;                               element or section, R917, R918) or R1520
 ;                               function-reference -- one form in the text,
 ;                               told apart by the declarations
+;          (:sref tok args rng) R908 substring: parent-string ( substring-range ),
+;                               R909 parent-string an array-element (a
+;                               scalar-variable-name's substring is a :ref of
+;                               one triplet), R910 substring-range: [e] : [e],
+;                               rng an :arg (:tri lo hi nil)
 ;          (:paren e)           R1001 ( expr )
 ;          (:acons es)          R777 array-constructor: lbracket ac-spec rbracket
 ;                               (R779, R780), R778 ac-spec: ac-value-list, R781
@@ -202,6 +207,8 @@
                   (:lit (and (= (len x) 2) (lit-tok-p (cadr x))))
                   (:name (and (= (len x) 2) (xname-tok-p (cadr x))))
                   (:ref (and (= (len x) 3) (xname-tok-p (cadr x)) (fg :args (caddr x))))
+                  (:sref (and (= (len x) 4) (xname-tok-p (cadr x)) (fg :args (caddr x))
+                              (fg :arg (cadddr x)) (eq (kar (cadddr x)) :tri) (null (kadddr (cadddr x)))))
                   (:paren (and (= (len x) 2) (fg :expr (cadr x))))
                   (:acons (and (= (len x) 2) (consp (cadr x)) (fg :elist (cadr x))))
                   (otherwise nil))))
@@ -250,6 +257,7 @@
     (:prim (case (kar x)
              ((:lit :name) (list (kadr x)))
              (:ref (list* (kadr x) (op "(") (fy :args (kaddr x))))
+             (:sref (list* (kadr x) (op "(") (append (fy :args (kaddr x)) (cons (op "(") (append (fy :arg (kadddr x)) (list (op ")")))))))
              (:paren (cons (op "(") (append (fy :expr (kadr x)) (list (op ")")))))
              (otherwise (cons (op "[") (fy :elist (kadr x))))))
     (:args (if (atom x) (list (op ")")) (append (fy :arg (car x)) (fy :args* (cdr x)))))
