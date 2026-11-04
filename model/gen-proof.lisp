@@ -129,7 +129,7 @@
     (declare (ignore cnt2))
     (mv-let (ae vs) (a-ev-list xs env defs n)
       (implies (and (not e) (not ae) (no-calls :list xs sigs) (em-ok em env fr) (decl-ok locs2 fr)
-                    (no-prim-defs defs) (no-duplicatesp-equal vars) (equal (len vars) (len xs)))
+                    (no-prim-defs defs) (symbol-listp vars) (no-duplicatesp-equal vars) (equal (len vars) (len xs)))
                (mv-let (st fr2) (fx-list s fr)
                  (and (equal st :normal) (subsetp-equal (strip-cars binds) vars)
                       (em-ok em env fr2) (em-ok (append binds em) (pairlis$ vars vs) fr2)))))))
