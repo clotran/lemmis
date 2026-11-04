@@ -130,8 +130,9 @@ The proof is planned in three layers:
    (sequencing), and what code touches: `fv-agree` (an expression reads
    only its `ev-names`), `fx-list-keeps` (a statement list changes only
    its `asg` names, and no name's declared type), `fx-list-agree`.
-2. **The translation, per term** (gen-names.lisp proved; gen-proof.lisp
-   in part). The induction runs
+2. **The translation, per term** (gen-names, gen-proof, gen-proof2,
+   gen-cfout, gen-ret: proved for g-expr and g-ret; the function-level
+   step remains). The induction runs
    on g-expr's structure with a custom induction function. That function
    threads the frame, the source env and the a-ev fuel, because each
    sibling's statements start from the frame its predecessor left.
@@ -176,28 +177,53 @@ is how `fx-is-f-ex` went through after two monolithic attempts ran out.
   code = a-ev's value, of the inferred type) for the cases `ge-sym`,
   `ge-atom`, `ge-quote`, `ge-the-check`, `ge-big`, `ge-call`, and the
   argument lists `ge-args-nil`, `ge-args-cons`, plus `ge-binds-nil`.
+- **gen-proof2.lisp, proved:** the remaining cases `ge-if`, `ge-implies`
+  (g-if's temporary gets the branch's value; for implies, a-ev runs both
+  arguments while the code runs the second only when the first holds),
+  `ge-binds-self`, `ge-binds-cons` (each temporary holds its argument's
+  value; em-ok over the lambda's env `(pairlis$ vars vs)`), `ge-lambda`,
+  and the dispatching induction **`ge-sem-thm`** over `g-ind`: for every
+  term, g-expr's statements answer :normal and its code evaluates (fv) to
+  a-ev's value, of the inferred type (and likewise for g-args, g-binds).
+  Each case uses its parts through `ge-sem-use`/`gb-sem-use`
+  (backchaining), so no case splits on its parts' hypotheses.
+- **gen-cfout.lisp, proved:** `g-expr-cf` (by `gc-ok-thm`, its own
+  induction over `g-ind`): under `no-calls`, g-expr's statements are
+  `cf-stmts` and its code `cf-expr`, so `fx-list-is-f-ex-list` applies.
+- **gen-ret.lisp, proved:** `g-ret-locs`/`g-select-locs` (temporaries
+  only grow, via `g-tail-locs` too), and **`gr-sem-thm`** by induction
+  over `gr-ind` (g-ret/g-select's recursion with env, fuel and frame): on
+  call-free source, g-ret's statements answer :return with `"r"` holding
+  `(type . a-ev's value)`; g-select's arms, run by fsem's SELECT on the
+  tested variable's value, do what the if chain does. The arms all test
+  one variable (`chain-on`, from g-chain via `g-chain-on`); the keys need
+  not be distinct, SELECT and the chain both taking the first match.
 - **Hypotheses added, explicit:** the source calls no translated function
   (`no-calls`, the "call-free" slice stated on the source, not the
-  output), and ACL2 defines none of the primitives (`no-prim-defs`).
-  g-expr now refuses a lambda with duplicate formals, as ACL2's translated
-  terms never have; the check-gen texts are unchanged.
+  output), and ACL2 defines none of the primitives (`no-prim-defs`; `=`
+  added to the list, since g-case-key accepts it and a-ev has no `=`
+  primitive). g-binds' run assumes the lambda's formals are symbols (g-expr
+  checks it). g-ret's run assumes the function's name is a symbol other
+  than `quote` and has a signature (`consp (lkp self sigs)`), and that
+  `"r"` is declared with the result type. g-expr now refuses a lambda with
+  duplicate formals, as ACL2's translated terms never have; the check-gen
+  texts are unchanged.
 
 ## What remains, in order (estimated in lanes)
 
-1. Layer 2, the rest. In gen-proof2.lisp (gen-proof.lisp certifies in
-   about 160 s of CPU; keep the next lemmas in their own book):
-   `ge-if` and `ge-implies` (g-if: the temporary's type from decl-ok, its
-   value surviving the other branch), `ge-binds-self` and
-   `ge-binds-cons` (em-ok over the lambda's env: `(pairlis$ vars vs)`,
-   needs the formals distinct), `ge-lambda`; the dispatching induction
-   over `g-ind` (`gkind` enabled, `kadr kaddr kadddr` disabled, as in
-   `gs-ok-thm`); a separate induction that the output is call-free
-   (`no-calls` => `cf-stmts`/`cf-expr`; `g-unop-cf`, `g-binop-cf` are
-   proved); then `g-ret` and `g-select` (the select against the if chain
-   needs `g-chain`'s invariant that every arm tests the same variable;
-   the keys need not be distinct, as lkp and the chain both take the first
-   match); then the function-level theorem with `fx-list-is-f-ex-list`.
-   This covers 10 of the 12 checked functions. One lane.
+1. Layer 2, the rest. g-expr (`ge-sem-thm`, `g-expr-cf`) and g-ret
+   (`gr-sem-thm`) are proved. Left: g-ret's output call-free (`cf-stmts`)
+   and without `(:cycle)` under `no-calls` (an induction over `gr-ind`
+   like `gc-ok-thm`; g-has on cf-stmts is false), then the function-level
+   theorem: for `(g-fn fn defs sigs) = (mv nil proc)`, call-free body,
+   int64 args, `f-invoke proc (g-lits args)` answers a-ev's value. Its
+   pieces: f-bind of `:value` dummies gives the formals' frame (em-ok for
+   `(g-em formals)` over `(pairlis$ formals args)`); undef-locals of
+   `("r" rtype)` and `(g-locals locs)` gives `decl-ok locs` and
+   `dty "r"` (the names distinct: g-fresh's check, `"r"` excluded);
+   `fx-list-is-f-ex-list` with fuel past `(acl2-count body)`; then
+   `gr-sem-thm`. This covers 10 of the 12 checked functions. Under one
+   lane.
 2. Layer 3: calls (the frame-agreement lemma over fsem's clique, and the
    fuel bound), then tail-recursive loops; the whole theorem for the slice.
    One to two lanes.

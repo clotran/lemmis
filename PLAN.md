@@ -264,11 +264,15 @@ hold, before any extension.
    by kind); `gen-names.lisp`, what g-expr's statements write and its code
    reads (`gs-ok-thm`); `gen-proof.lisp`, the invariants (em-ok, decl-ok)
    and g-expr's run proved for its symbol, quote, the-check, `<`-against-
-   a-big-literal, primitive-call and argument-list cases. g-expr now
-   refuses a lambda with duplicate formals.
-   Left, in order: g-expr's if/implies, lambda and binding cases, the
-   call-free (cf) induction, the dispatching induction, then g-ret and
-   g-select, then the per-function theorem for call-free, loop-free
+   a-big-literal, primitive-call and argument-list cases; `gen-proof2.lisp`,
+   the rest of g-expr's cases (if, implies, a lambda and its bindings) and
+   the induction `ge-sem-thm`: every g-expr output runs (fx) to a-ev's
+   value; `gen-cfout.lisp`, its output call-free (`g-expr-cf`);
+   `gen-ret.lisp`, `gr-sem-thm`: g-ret's statements run to :return with
+   "r" = a-ev's value, a case chain's SELECT taking the if chain's arm.
+   g-expr now refuses a lambda with duplicate formals.
+   Left, in order: g-ret's output call-free and without CYCLE, then the
+   per-function theorem for call-free, loop-free
    functions; calls (frame agreement over fsem's clique, the fuel
    bound) and loops; per function, clotran's definition = a-ev and its
    guard => no int64 overflow (guard verification alone does not give
