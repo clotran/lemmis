@@ -5,7 +5,7 @@ CERT_SECS ?= 1800
 BOOKS := $(basename $(notdir $(wildcard model/*.lisp)))
 
 model: $(BOOKS:%=model/%.cert)
-.PHONY: model check
+.PHONY: model check check-gen
 
 model/%.cert: model/%.lisp
 	@mkdir -p build; rm -f $@
@@ -16,6 +16,12 @@ model/%.cert: model/%.lisp
 
 check: model
 	@cd model && ACL2="$(ACL2)" bb check-fsem.bb
+
+# gen.lisp's translation against clotran's acl2-fortran, on clotran's functions
+# (model/check-gen.bb; reads clotran's certified books, writes nothing there)
+CLOTRAN ?= /Users/james/clotran/clotran
+check-gen: model/gen.cert
+	@cd model && ACL2="$(ACL2)" CLOTRAN="$(CLOTRAN)" bb check-gen.bb
 
 build/deps.mk: $(BOOKS:%=model/%.lisp)
 	@mkdir -p build

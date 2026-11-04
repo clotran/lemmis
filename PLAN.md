@@ -252,6 +252,22 @@ hold, before any extension.
    its Fortran text, and only gfortran/flang are trusted. Each construct
    the generator learns later (a new shim, a stobj field) lands with its
    case of this theorem. This is where the two projects meet.
+   Done (lane-m2-generator, model/GEN.md): the inventory of what
+   acl2-fortran translates; `gen.lisp`, the translation as an ACL2
+   function (`g-module`) for the integer slice -- arithmetic, comparisons,
+   if, lambda, calls, select, tail recursion as a loop -- and the source's
+   meaning `a-ev`; `make check-gen`, which agrees with acl2-fortran's text
+   on all 12 such functions of heapgn, vmfg and vmicg (345 lines); and
+   `gen-cf.lisp`, fsem without fuel on call-free code (`fv-is-f-ev`,
+   `fx-list-append`). The theorem is stated in GEN.md, not yet proved.
+   Left, in order: `fx-is-f-ex` and the per-term proof for call-free,
+   loop-free functions; calls (frame agreement over fsem's clique, the fuel
+   bound) and loops; per function, clotran's definition = a-ev and its
+   guard => no int64 overflow (guard verification alone does not give
+   it); stobjs (fields, arrays and the bounds error, subroutines, mv);
+   values and the runtime shims; then acl2-fortran prints g-module's
+   output (and its lambda scoping, which leaks a binding to later
+   siblings, fixed or shown harmless). About 8-9 lanes.
 3. Theorem 4, the extended grammar's conservativity: every program the
    Fortran grammar accepts parses identically under Lemmis's. This is
    "any Fortran program is valid Lemmis", proved, not tested.
