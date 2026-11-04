@@ -124,6 +124,7 @@
                    (t (list :pd :r k)))))
           ((and (fl-neg-p x) (not (fl-zero-p x))) (err :domain))
           (t (list :pd :r k)))))
+(in-theory (disable real-pow))
 
 ; + - * / ** and the relations when an operand is real: the other is
 ; converted to the real's kind, the greater precision when both are
@@ -145,6 +146,7 @@
                 ((member-equal op '(">" ".gt.")) (vl 4 (fl-less y x)))
                 ((member-equal op '(">=" ".ge.")) (vl 4 (or (fl-less y x) (fl-eql x y))))
                 (t (err :type))))))))
+(in-theory (disable real-op))
 
 (defun pd-result (op a b)            ; an operation on a processor-dependent value
   (declare (xargs :guard t))
@@ -182,6 +184,7 @@
             (t (err :type)))))
    ((or (and (consp a) (eq (car a) :u)) (and (consp b) (eq (car b) :u))) (err :undefined))
    (t (err :type))))
+(in-theory (disable scalar-op))
 
 (defun scalar-neg (a)
   (declare (xargs :guard t))
@@ -279,6 +282,7 @@
                          ((not (posp n)) (mk-arr (if (member-equal op '("==" "/=" "<" "<=" ">" ">=" ".eq." ".ne." ".lt." ".le." ".gt." ".ge." :not)) :l ty1)
                                          (if (member-eq op '(:neg :not)) k1 (kmax k1 k2)) (ones (len sh)) sh nil))
                          (t (mk-arr ty k (ones (len sh)) sh rs))))))))))
+(in-theory (disable val-op))
 
 ; intrinsic assignment's conversion (10.2.1.3): value v into a variable of
 ; type ty and kind k; integer to another integer kind keeps the value or
@@ -450,6 +454,7 @@
              (vr (v-kind a) (fl-sqrt (v-kind a) x)))))
         ((member-equal name *pd-real-fns*) (list :pd :r (v-kind a)))
         (t (err :type))))
+(in-theory (disable el1))
 
 (defun real-el2 (name a p)           ; MAX MIN MOD MODULO SIGN of two reals of one kind
   (declare (xargs :guard t))
@@ -470,6 +475,7 @@
              (let ((r (- (fl-val x) (* (floor (/ (fl-val x) (fl-val y)) 1) (fl-val y)))))
                (vr k (if (= r 0) (fl-signed-zero (fl-neg-p x)) (fl-round k r))))))
           (t (err :type)))))
+(in-theory (disable real-el2))
 
 (defun el2 (name a p)                ; MOD, MODULO (16.9.145, 16.9.146), MAX, MIN, SIGN of two
   (declare (xargs :guard t))
@@ -616,4 +622,5 @@
               ((not (equal (list (kar ts) (kadr ts)) (list (kar fs) (kadr fs)))) (err :type))
               (t (if (v-num m) ts fs)))))
      (t (err :undeclared)))))
+(in-theory (disable intrinsic))
 

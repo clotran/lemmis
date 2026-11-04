@@ -670,6 +670,8 @@
                                 (let ((n (arr-sets (st-get loc st) ts (if (aval-p c) (a-es c) (list (raw c))))))
                                   (if (errp n) (mv n st) (mv :normal (st-put loc n (st-log (write-list loc (tuple-offs a ts)) st))))))))))))))))))
 )
+; the interpreter stays closed: a proof about it opens the one case it needs
+(in-theory (disable me-ev me-fold me-list me-iargs me-subs me-ref me-elem me-call me-bind me-kind me-bounds me-decls me-ents me-dummy me-lowers me-blk me-seq me-c me-sels me-ranges me-eifs me-do me-conc me-conc-lims me-conc-iters me-iter me-while me-forever me-act me-ritems me-assign))
 
 ; ---- a program: the modules elaborated in order, then the main program
 
@@ -691,6 +693,7 @@
                (declare (ignore copies))
                (if e (mv e nil nil st)
                  (me-modules (cdr units) (cons (cons m fr) mods) (cons (cons m (cons fr env0)) modenvs) gframe st fuel)))))))
+(in-theory (disable me-modules))
 
 (defun find-main (units)
   (declare (xargs :guard t))
@@ -714,6 +717,7 @@
                          (mv (cond ((equal s (err :stop)) :stop) ((eq s :normal) :normal)
                                    ((errp s) s) ((goto-p s) (err :label)) (t (err :syntax)))
                              (close-lines (reverse (true-list-fix (st-out st)))))))))))))))
+(in-theory (disable me-program))
 
 ; ---- the text to its answer
 

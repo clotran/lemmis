@@ -24,7 +24,19 @@ reads left sitting in the context.
   step, or any definition with many cases is disabled right after it's
   defined, and opened only through small lemmas, one per case. A theorem
   enables exactly what it needs. Adding a case then touches its own lemma
-  instead of blowing up every proof above it.
+  instead of blowing up every proof above it. Prove an opener in the
+  minimal theory (`:in-theory (union-theories '(booleanp) (theory
+  'minimal-theory))`, plus the `:expand`), and give a `defun` whose
+  measure or guard proof opens its helpers a `:hints`/`:guard-hints`
+  that disables them.
+- **Useless-runes:** `make model` exports `ACL2_USELESS_RUNES=read?`, so
+  each book reads `model/.sys/<book>@useless-runes.lsp` (committed) and
+  keeps disabled, per event, the rules its last proof didn't use (about
+  3.5x faster). Stale files are safe: a renamed rule is ignored, and an
+  event without an entry just runs in the full theory. After changing a
+  book's proofs, or if a proof fails only with the file, run `make runes`
+  (recertifies everything writing the files; slower) and commit
+  `model/.sys/`.
 - **Keep books small:** under ~800 lines. Split a book before it grows past
   that, so a change re-certifies only its own part.
 - **Read files by section** (`sed -n A,Bp`, `grep -n`), and don't re-read

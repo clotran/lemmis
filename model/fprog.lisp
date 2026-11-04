@@ -77,8 +77,10 @@
   (declare (xargs :guard t))
   (+ (* 4 (acl2-count x)) (case nt (:program 2) (:unit 1) (otherwise 0))))
 
-(defun fgu (nt x)
-  (declare (xargs :guard t :measure (fgu-measure nt x)))
+(defun fgu (nt x)                  ; its measure needs no statement opened
+  (declare (xargs :guard t :measure (fgu-measure nt x)
+                  :hints (("Goal" :in-theory (disable fgs fgs-cons-open fgs-var-open fys-cons-open fys-var-open
+                                                      action-stmt-p end-ok fg count-defaults)))))
   (case nt
     (:program (and (consp x) (fgu :units x)))
     (:units (if (atom x) (null x) (and (fgu :unit (car x)) (fgu :units (cdr x)))))
@@ -756,3 +758,6 @@
                (+ (* 32 (len toks)) (fpu-d nt))))
   :hints (("Goal" :induct (fpu-steps nt toks) :in-theory (enable member-equal len-cdr-consp))
           (fpu-step-hint id clause '((fpu nt toks) (fpu-steps nt toks)))))
+
+; the openers stay closed past here
+(in-theory (disable fgu-cons-open fyu-cons-open fpu-open))
