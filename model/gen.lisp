@@ -207,9 +207,10 @@
              (mv nil s (if (if big (< big *int64-min*) (> (g-big (kaddr x)) *int64-max*)) '(:true) '(:false))
                  :logical cnt locs)))))
       ((consp (car x))
-       ; ((lambda vars body) . args): each var bound to a different term gets a temporary
+       ; ((lambda vars body) . args): each var bound to a different term gets a
+       ; temporary; the vars distinct, as in any translated ACL2 term
        (let ((vars (kadr (car x))) (body (kaddr (car x))))
-         (if (not (and (true-listp (car x)) (= (len (car x)) 3) (eq (caar x) 'lambda) (symbol-listp vars)
+         (if (not (and (true-listp (car x)) (= (len (car x)) 3) (eq (caar x) 'lambda) (symbol-listp vars) (no-duplicatesp-eq vars)
                        (true-listp x) (= (len vars) (len (cdr x)))))
              (mv :syntax nil nil nil cnt locs)
            (mv-let (e s binds cnt locs) (g-binds vars (cdr x) em cnt locs sigs fnames)

@@ -121,12 +121,17 @@ The assumptions, explicitly:
 
 The proof is planned in three layers:
 
-1. **Fuel out of the way** (gen-cf.lisp, certified in part). `fv` and `fx`
-   are f-ev and f-ex without the fuel, on call-free and loop-free code.
-   `fv-is-f-ev` is proved: f-ev with any fuel past `(acl2-count e)` is `fv`.
-   Also proved: the per-kind openers of f-ex, and `fx-list-append`
-   (sequencing). Not yet proved: `fx-is-f-ex`, its statement twin.
-2. **The translation, per term** (gen-proof.lisp, next). The induction runs
+1. **Fuel out of the way** (gen-cf.lisp, proved). `fv` and `fx` are f-ev
+   and f-ex without the fuel, on call-free and loop-free code.
+   `fv-is-f-ev`: f-ev with any fuel past `(acl2-count e)` is `fv`.
+   `fx-is-f-ex` / `fx-list-is-f-ex-list`: likewise for statements, the heap
+   unchanged (one lemma per statement kind, then an induction that only
+   dispatches; under a second of CPU). Also `fx-list-append`
+   (sequencing), and what code touches: `fv-agree` (an expression reads
+   only its `ev-names`), `fx-list-keeps` (a statement list changes only
+   its `asg` names, and no name's declared type), `fx-list-agree`.
+2. **The translation, per term** (gen-names.lisp proved; gen-proof.lisp
+   in part). The induction runs
    on g-expr's structure with a custom induction function. That function
    threads the frame, the source env and the a-ev fuel, because each
    sibling's statements start from the frame its predecessor left.
@@ -150,10 +155,49 @@ The proof is planned in three layers:
    - A loop iteration is a tail call in the source, and costs one `:do`
      level in the target.
 
+## Where layer 2 stands
+
+The induction is `g-ind` (gen-names.lisp), g-expr's recursion over its
+three flags (`:expr`, `:args`, `:binds`), carrying a-ev's env and fuel and
+the frame each part starts from. Each case is its own lemma, taking its
+parts' results as hypotheses; the induction then only dispatches. That
+is how `fx-is-f-ex` went through after two monolithic attempts ran out.
+
+- **gen-names.lisp, proved:** `gs-ok-thm`. When g-expr (g-args, g-binds)
+  succeeds, its temporaries only grow (`locs` within `locs2`), every name
+  its statements assign is a temporary it made, new against the formals,
+  the names in scope and every earlier temporary, and its code reads only
+  names in scope and its own temporaries. As rewrite rules:
+  `g-expr-names`, `g-args-names`, `g-binds-names`.
+- **gen-proof.lisp, proved:** the invariants and their preservation
+  (`em-ok-after`, `em-ok-put`, `decl-ok-after`, `decl-ok-subset`), the
+  primitives (`g-unop-sem`, `g-binop-sem`: fsem's operator on the code is
+  a-prim on the values), and g-expr's run (`ge-sem`: statements :normal,
+  code = a-ev's value, of the inferred type) for the cases `ge-sym`,
+  `ge-atom`, `ge-quote`, `ge-the-check`, `ge-big`, `ge-call`, and the
+  argument lists `ge-args-nil`, `ge-args-cons`, plus `ge-binds-nil`.
+- **Hypotheses added, explicit:** the source calls no translated function
+  (`no-calls`, the "call-free" slice stated on the source, not the
+  output), and ACL2 defines none of the primitives (`no-prim-defs`).
+  g-expr now refuses a lambda with duplicate formals, as ACL2's translated
+  terms never have; the check-gen texts are unchanged.
+
 ## What remains, in order (estimated in lanes)
 
-1. `fx-is-f-ex` (split by statement kind), then layer 2 for the call-free,
-   loop-free slice: 10 of the 12 checked functions. One lane.
+1. Layer 2, the rest. In gen-proof2.lisp (gen-proof.lisp certifies in
+   about 160 s of CPU; keep the next lemmas in their own book):
+   `ge-if` and `ge-implies` (g-if: the temporary's type from decl-ok, its
+   value surviving the other branch), `ge-binds-self` and
+   `ge-binds-cons` (em-ok over the lambda's env: `(pairlis$ vars vs)`,
+   needs the formals distinct), `ge-lambda`; the dispatching induction
+   over `g-ind` (`gkind` enabled, `kadr kaddr kadddr` disabled, as in
+   `gs-ok-thm`); a separate induction that the output is call-free
+   (`no-calls` => `cf-stmts`/`cf-expr`; `g-unop-cf`, `g-binop-cf` are
+   proved); then `g-ret` and `g-select` (the select against the if chain
+   needs `g-chain`'s invariant that every arm tests the same variable;
+   the keys need not be distinct, as lkp and the chain both take the first
+   match); then the function-level theorem with `fx-list-is-f-ex-list`.
+   This covers 10 of the 12 checked functions. One lane.
 2. Layer 3: calls (the frame-agreement lemma over fsem's clique, and the
    fuel bound), then tail-recursive loops; the whole theorem for the slice.
    One to two lanes.
@@ -167,4 +211,4 @@ The proof is planned in three layers:
 6. Switch acl2-fortran to print g-module's output, and fix or confirm the
    lambda scoping. One lane.
 
-Total: about 8 to 9 lanes.
+Total: about 8 lanes.

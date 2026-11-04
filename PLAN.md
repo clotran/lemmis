@@ -259,9 +259,17 @@ hold, before any extension.
    meaning `a-ev`; `make check-gen`, which agrees with acl2-fortran's text
    on all 12 such functions of heapgn, vmfg and vmicg (345 lines); and
    `gen-cf.lisp`, fsem without fuel on call-free code (`fv-is-f-ev`,
-   `fx-list-append`). The theorem is stated in GEN.md, not yet proved.
-   Left, in order: `fx-is-f-ex` and the per-term proof for call-free,
-   loop-free functions; calls (frame agreement over fsem's clique, the fuel
+   `fx-list-append`, `fx-is-f-ex`). The theorem is stated in GEN.md, not
+   yet proved end to end. Proved toward it: `fx-is-f-ex` (statements, split
+   by kind); `gen-names.lisp`, what g-expr's statements write and its code
+   reads (`gs-ok-thm`); `gen-proof.lisp`, the invariants (em-ok, decl-ok)
+   and g-expr's run proved for its symbol, quote, the-check, `<`-against-
+   a-big-literal, primitive-call and argument-list cases. g-expr now
+   refuses a lambda with duplicate formals.
+   Left, in order: g-expr's if/implies, lambda and binding cases, the
+   call-free (cf) induction, the dispatching induction, then g-ret and
+   g-select, then the per-function theorem for call-free, loop-free
+   functions; calls (frame agreement over fsem's clique, the fuel
    bound) and loops; per function, clotran's definition = a-ev and its
    guard => no int64 overflow (guard verification alone does not give
    it); stobjs (fields, arrays and the bounds error, subroutines, mv);
