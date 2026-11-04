@@ -11,7 +11,7 @@ proved to accept exactly that grammar (`fp-`, `fps-`, `fpu-sound` and
 `-complete`), for every alternative the Scope uses; **part** when only
 some alternatives are in; **no** otherwise.
 
-Score: **114 of 138** Scope rules proved (83%); 22 more in part; 2 not yet in.
+Score: **120 of 148** Scope rules proved (81%); 26 more in part; 2 not yet in.
 
 ## The books
 
@@ -33,14 +33,18 @@ Score: **114 of 138** Scope rules proved (83%); 22 more in part; 2 not yet in.
   `fps-sound`; `fstmt-complete.lisp`: `fps-complete` (followed by nothing:
   a statement is whole);
   `fstmt-cost.lisp`: `fps-cost`: at most 64 calls per token read, fp's among them, plus
-  `fps-d` (at most 48). About 8 minutes.
+  `fps-d` (at most 48), over `fps-steps` (generated, `fstmt-steps.lisp`); the
+  I/O control list's nonterminals and READ and WRITE are bounded first, on
+  their own. The tokens and predicates the grammar uses (labels, formats,
+  the control list's constraints) are `fstmt-base.lisp`'s. About 8 minutes.
 - `fprog.lisp`: program units over statement trees: `fgu`, `fyu`, the
   parser `fpu`, `fpu-sound` (on statement trees), `fpu-complete` and
   `fpu-cost`: at most 32 calls per statement, plus `fpu-d` (at most 12).
   About 5 minutes.
-- `fval.lisp`, `fhelp.lisp`, `fmean.lisp`: the meaning (item 2): the
-  values, state and intrinsics; the helpers, labels and FORMAT; the
-  evaluation itself. `fortran-parse` is flex, then fps
+- `fval.lisp`, `fhelp.lisp`, `fio.lisp`, `fmean.lisp`: the meaning (item 2): the
+  values, state and intrinsics; the helpers and labels; formatted and
+  list-directed I/O on the unit * (13); the evaluation itself
+  (`fmean-cost.lisp`: its data operations' cost, and tests). `fortran-parse` is flex, then fps
   on each statement, then fpu; `fortran-parse-sound`: what it accepts is
   a program of the grammar.
 - `freal.lisp`: the binary32 and binary64 formats of ISO/IEC 60559 for
@@ -83,6 +87,7 @@ Score: **114 of 138** Scope rules proved (83%); 22 more in part; 2 not yet in.
 | R516 | keyword | proved | as an actual-arg-spec's keyword |
 | R601 | alphanumeric-character | proved | in R603 |
 | R603 | name | proved | lower case (flex); not a statement keyword |
+| R611 | label | proved | one to five digits, not all zero (C613) |
 | R604 | constant | part | literal-constant; named-constant as a designator |
 | R605 | literal-constant | part | int, real, logical, char; no complex, boz |
 | R708 | int-literal-constant | proved | |
@@ -149,7 +154,8 @@ Score: **114 of 138** Scope rules proved (83%); 22 more in part; 2 not yet in.
 | R1033 | assignment-stmt | proved |  |
 | R1101 | block | proved |  |
 | R1119 | do-construct | proved |  |
-| R1120 | do-stmt | proved | nonlabel-do-stmt |
+| R1120 | do-stmt | proved | both forms |
+| R1121 | label-do-stmt | proved | rewritten as a nonlabel DO before the units are read |
 | R1122 | nonlabel-do-stmt | proved |  |
 | R1123 | loop-control | part | do-variable = e, e [, e]; WHILE; CONCURRENT without concurrent-locality |
 | R1124 | do-variable | proved |  |
@@ -172,12 +178,20 @@ Score: **114 of 138** Scope rules proved (83%); 22 more in part; 2 not yet in.
 | R1147 | case-selector | proved | ( case-value-range-list ), DEFAULT |
 | R1148 | case-value-range | proved | all four forms |
 | R1149 | case-value | proved |  |
+| R1157 | goto-stmt | proved |  |
 | R1158 | exit-stmt | proved |  |
 | R1161 | continue-stmt | proved |  |
 | R1162 | stop-stmt | part | no stop-code |
+| R1201 | io-unit | part | *, file-unit-number; no internal-file-variable (the unit * only, 5 or 6, in the meaning) |
+| R1202 | file-unit-number | proved | |
+| R1210 | read-stmt | proved | both forms |
+| R1211 | write-stmt | proved | |
 | R1212 | print-stmt | proved |  |
-| R1215 | format | part | * only |
+| R1213 | io-control-spec | part | [UNIT=], [FMT=], ADVANCE= (a literal); C1210, C1211, C1218, C1223; a format required (no unformatted I/O) |
+| R1215 | format | part | *, a label, a char-literal-constant; no other default-char-expr |
+| R1216 | input-item | part | variable (a designator); no io-implied-do |
 | R1217 | output-item | part | expr; no io-implied-do |
+| R1301 | format-stmt | part | its format-specification one token (flex); read into edit descriptors by fio.lisp's parse-format, not proved |
 | R1401 | main-program | proved | the program-stmt required |
 | R1402 | program-stmt | proved |  |
 | R1403 | end-program-stmt | proved |  |

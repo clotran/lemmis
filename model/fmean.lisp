@@ -2,11 +2,11 @@
 ; an executable ACL2 model over fprog.lisp's parse trees. fortran-run
 ; reads the text (flex), parses it (fps, fpu), and runs the main program,
 ; answering what it prints and how it stops. The values, the state and the
-; intrinsics are fval.lisp's; the helpers, labels and FORMAT, fhelp.lisp's.
+; intrinsics are fval.lisp's; the helpers and labels fhelp.lisp's; I/O fio.lisp's.
 
 (in-package "ACL2")
 
-(include-book "fhelp")
+(include-book "fio")
 
 (set-verify-guards-eagerness 0)
 
@@ -575,16 +575,25 @@
                                (t nil))))
                  (if (not sg) (mv (cond-err v) st)
                    (mv (list :goto (case sg (-1 (kaddr s)) (0 (kadddr s)) (otherwise (kar (kdr (kdr (kdr (kdr s)))))))) st)))))
-       (:write (cond ((cx-pure cx) (mv (err :pure) st))            ; C1599
-                     ((st-trace st) (mv (err :pd) st))
-                     (t (with-v (u st) (if (eq (kadr s) :star) (mv (vi 4 6) st) (me-ev :expr (kadr s) env st cx (1- fuel)))
-                          ; unit 6 is the one PRINT writes, OUTPUT_UNIT, for both compilers (16.10.2.23)
-                          (if (not (and (ival-scalar u) (equal (v-num u) 6))) (mv (err :unit) st)
-                            (with-v (vs st) (me-list (kadddr s) env st cx (1- fuel))
-                              (if (eq (kaddr s) :star) (mv :normal (st-print (render vs) st))
-                                (let ((fm (cdr (assoc-equal (kaddr s) (alist-fix (cx-formats cx))))))
-                                  (if (not (stringp fm)) (mv (err :label) st)
-                                    (mv :normal (st-print-all (rec-lines (fd-records fm vs)) st)))))))))))
+       ((:write :print :read :readf)
+        (cond ((cx-pure cx) (mv (err :pure) st))            ; C1599: no I/O in a pure procedure
+              ((st-trace st) (mv (err :pd) st))             ; in an order the processor picks (11.1.7.4.2)
+              (t (let* ((ctl (member-eq (kar s) '(:write :read))) (ios (if ctl (kadr s) nil))
+                        (u (if ctl (kaddr (io-spec :unit ios)) :star))
+                        (fm (io-fmt (if ctl (kaddr (io-spec :fmt ios)) (kadr s)) cx)) (adv (io-adv ios)))
+                   (with-v (u st) (if (eq u :star) (mv (vi 4 (if (member-eq (kar s) '(:write :print)) 6 5)) st)
+                                    (me-ev :expr u env st cx (1- fuel)))
+                     ; the unit * is OUTPUT_UNIT, 6, or INPUT_UNIT, 5, for both compilers (16.10.2.23, .13)
+                     (cond ((not (and (ival-scalar u) (equal (v-num u) (if (member-eq (kar s) '(:write :print)) 6 5)))) (mv (err :unit) st))
+                           ((errp fm) (mv fm st)) ((errp adv) (mv adv st))
+                           ((member-eq (kar s) '(:write :print))
+                            (with-v (vs st) (me-list (kaddr s) env st cx (1- fuel)) (io-write fm vs adv st)))
+                           (t (mv-let (rs in) (rd-begin fm (st-in st))
+                                (if (errp rs) (mv rs st)
+                                  (mv-let (e rs st) (me-ritems (kaddr s) rs env (st-in-set in st) cx (1- fuel))
+                                    (if (errp e) (mv e st)
+                                      (mv-let (e in) (rd-end rs (st-in st) adv)
+                                        (if e (mv e st) (mv :normal (st-in-set in st)))))))))))))))
        (:simple (let ((k (kadr s)))
                   (cond ((equal k "cycle") (mv :cycle st)) ((equal k "exit") (mv :exit st))
                         ((equal k "return") (mv :return st)) ((equal k "continue") (mv :normal st))
@@ -594,10 +603,6 @@
                 (if (and (eq (kar b) :proc) (eq (kar (unit-hd (kadr b))) :subroutine))
                     (me-call (kadr b) (proc-host (kaddr b) suf cx) (kadddr s) env st cx (1- fuel))
                   (mv (err (if b :type :undeclared)) st))))
-       (:print (if (cx-pure cx) (mv (err :pure) st)          ; C1599: no I/O in a pure procedure
-               (if (st-trace st) (mv (err :pd) st)     ; output in an order the processor picks (11.1.7.4.2)
-                 (with-v (vs st) (me-list (kadr s) env st cx (1- fuel))
-                   (mv :normal (st-print (render vs) st))))))
        (:if (with-v (v st) (me-ev :expr (kadr s) env st cx (1- fuel))
               (cond ((not (and (lval-p v) (booleanp (v-num v)))) (mv (cond-err v) st))
                     ((v-num v) (me-act (kaddr s) env st cx (1- fuel)))
@@ -605,6 +610,40 @@
        (otherwise (mv (err :syntax) st)))))
 
  ; R1033: the expression, then the variable (10.2.1.3)
+ ; READ's input items (12.6.4.5), each in turn: its values read, then
+ ; defined; a whole array or a section takes as many values as it has
+ ; elements (9.5.3.2); (mv status rs st)
+ (defun me-ritems (items rs env st cx fuel)
+   (declare (xargs :guard t :measure (nfix fuel)))
+   (if (not (posp fuel)) (mv (err :fuel) rs st)
+     (if (atom items) (mv :normal rs st)
+       (let* ((p (lone-prim (car items))) (tk (kadr p)))
+         (mv-let (b suf d) (env-lookup (tok-name tk) env)
+           (declare (ignore suf))
+           (let* ((loc (kadr b)) (a (st-get loc st)))
+             (cond ((not (eq (kar b) :var)) (mv (err (if b :type :undeclared)) rs st))
+                   ((eq (kaddr b) :in) (mv (err :intent) rs st))
+                   ((member loc (st-dovars st)) (mv (err :do-var) rs st))
+                   ((and (cx-pure cx) (not (equal d 0))) (mv (err :pure) rs st))
+                   ((not (eq (kar p) :ref))
+                    (let ((ar (aval-p a)))
+                      (mv-let (vs rs in) (rd-take rs (st-in st) (if ar (len (a-es a)) 1) (if ar (a-ty a) (scal-ty a)) (if ar (a-k a) (scal-k a)))
+                        (if (errp vs) (mv vs rs st)
+                          (let ((n (if ar (mk-arr (a-ty a) (a-k a) (a-lbs a) (a-ubs a) (merge-null vs (a-es a)))
+                                     (if (eq (car vs) :null) a (wrap (scal-ty a) (scal-k a) (car vs))))))
+                            (me-ritems (cdr items) rs env (st-in-set in (st-put loc n (st-log (list (list :w loc :all)) st))) cx (1- fuel)))))))
+                   ((not (aval-p a)) (mv (err :type) rs st))
+                   (t (mv-let (ds sc st) (me-subs (kaddr p) (a-lbs a) (a-ubs a) env st cx (1- fuel))
+                        (declare (ignore sc))
+                        (if (errp ds) (mv ds rs st)
+                          (let* ((ts (tuples ds)) (old (arr-gets a ts)))
+                            (mv-let (vs rs in) (rd-take rs (st-in st) (len ts) (a-ty a) (a-k a))
+                              (cond ((errp vs) (mv vs rs st)) ((errp old) (mv old rs st))
+                                    (t (let ((n (arr-sets a ts (merge-null vs old))))
+                                         (if (errp n) (mv n rs st)
+                                           (me-ritems (cdr items) rs env (st-in-set in (st-put loc n (st-log (write-list loc (tuple-offs a ts)) st)))
+                                                      cx (1- fuel))))))))))))))))))
+
  (defun me-assign (s env st cx fuel)
    (declare (xargs :guard t :measure (nfix fuel)))
    (if (not (posp fuel)) (mv (err :fuel) st)
@@ -657,24 +696,24 @@
   (declare (xargs :guard t))
   (if (atom units) nil (if (eq (kar (car units)) :main) (car units) (find-main (cdr units)))))
 
-(defun me-program (units fuel)       ; (mv status lines)
+(defun me-program (units in fuel)    ; (mv status lines): in the input's records
   (declare (xargs :guard t :verify-guards nil))
-  (let ((gframe (ext-frame units)) (st (mk-st6 nil 0 nil nil nil nil)) (main (find-main units)))
+  (let ((gframe (ext-frame units)) (st (mk-st7 nil 0 nil nil nil nil (cons in nil))) (main (find-main units)))
     (mv-let (e mods modenvs st) (me-modules units nil nil gframe st fuel)
-      (cond (e (mv e (reverse (true-list-fix (st-out st)))))
+      (cond (e (mv e (close-lines (reverse (true-list-fix (st-out st))))))
             ((not main) (mv (err :syntax) nil))
             (t (let* ((g (list mods modenvs gframe)) (cx (list g nil (unit-formats main))) (spec (unit-spec main))
                       (ufr (use-frames (kar spec) mods)) (env0 (append ufr (list gframe)))
                       (pfr (proc-frame (kadr (unit-int main)) :host)))
                  (mv-let (e fr copies st) (me-decls (kaddr spec) env0 st cx fuel pfr nil (unit-key main) nil)
                    (declare (ignore copies))
-                   (if e (mv e (reverse (true-list-fix (st-out st))))
+                   (if e (mv e (close-lines (reverse (true-list-fix (st-out st)))))
                      (mv-let (fr st) (if (kadr spec) (mv fr st)          ; IMPLICIT NONE, or implicit typing (8.7)
                                        (implicit-vars (used-names (unit-exec main)) fr env0 st))
                        (mv-let (s st) (me-blk (unit-exec main) (cons fr env0) st cx fuel)
                          (mv (cond ((equal s (err :stop)) :stop) ((eq s :normal) :normal)
                                    ((errp s) s) ((goto-p s) (err :label)) (t (err :syntax)))
-                             (reverse (true-list-fix (st-out st))))))))))))))
+                             (close-lines (reverse (true-list-fix (st-out st)))))))))))))))
 
 ; ---- the text to its answer
 
@@ -692,11 +731,12 @@
       (mv-let (ok2 us r) (fpu :program (ldo-sugar ss nil nil))
         (if (and ok2 (null r)) (mv t us) (mv nil (kar r)))))))
 
-(defun fortran-run-form (text fixed fuel)   ; (list status lines), or (list (:error :parse) stmt)
+(defun fortran-run-in (text fixed in fuel)  ; (list status lines), or (list (:error :parse) stmt); in the input's records (strings)
   (declare (xargs :guard (stringp text) :verify-guards nil))
   (mv-let (ok us) (fortran-parse text fixed)
     (if (not ok) (list (err :parse) us)
-      (mv-let (s lines) (me-program us fuel) (list s lines)))))
+      (mv-let (s lines) (me-program us in fuel) (list s lines)))))
+(defun fortran-run-form (text fixed fuel) (declare (xargs :guard (stringp text) :verify-guards nil)) (fortran-run-in text fixed nil fuel))
 (defun fortran-run (text fuel) (declare (xargs :guard (stringp text) :verify-guards nil)) (fortran-run-form text nil fuel))
 
 ; what fortran-parse accepts is a program of the grammar: each statement
@@ -716,82 +756,3 @@
   :hints (("Goal" :use ((:instance fpu-sound (nt :program)
                                      (toks (ldo-sugar (mv-nth 1 (parse-stmts (if fixed (flex-fixed text) (flex text)))) nil nil))))
            :in-theory (disable fpu-sound flex flex-fixed parse-stmts ldo-sugar fpu))))
-
-; ---- cost: the runtime's data operations
-;
-; Evaluation's depth is bounded by fuel (each me-* call passes 1- fuel,
-; the mutual recursion's measure). Under it, the operations a run repeats
-; are linear: a variable's lookup in the store, an array element's offset
-; in array element order (9.5.3.2) and its fetch or update. (A processor
-; does these in constant time; the model keeps lists.)
-
-(defun alk-steps (k al)
-  (declare (xargs :guard t))
-  (cond ((atom al) 1) ((and (consp (car al)) (equal (caar al) k)) 1) (t (+ 1 (alk-steps k (cdr al))))))
-(defthm alk-cost (<= (alk-steps k al) (+ 1 (len al))) :rule-classes :linear)
-
-(defun aput-steps (k al)
-  (declare (xargs :guard t))
-  (cond ((atom al) 1) ((and (consp (car al)) (equal (caar al) k)) 1) (t (+ 1 (aput-steps k (cdr al))))))
-(defthm aput-cost (<= (aput-steps k al) (+ 1 (len al))) :rule-classes :linear)
-
-(defun arr-offset-steps (idx lbs ubs)
-  (declare (xargs :guard t))
-  (cond ((and (atom idx) (atom lbs)) 1)
-        ((or (atom idx) (atom lbs) (atom ubs)) 1)
-        ((not (and (integerp (car idx)) (integerp (car lbs)) (integerp (car ubs))
-                   (<= (car lbs) (car idx)) (<= (car idx) (car ubs)))) 1)
-        (t (+ 1 (arr-offset-steps (cdr idx) (cdr lbs) (cdr ubs))))))
-(defthm arr-offset-cost (<= (arr-offset-steps idx lbs ubs) (+ 1 (len idx))) :rule-classes :linear)
-
-(defun nth-safe-steps (n xs)
-  (declare (xargs :guard t))
-  (if (atom xs) 1 (if (not (posp n)) 1 (+ 1 (nth-safe-steps (1- n) (cdr xs))))))
-(defthm nth-safe-cost (<= (nth-safe-steps n xs) (+ 1 (len xs))) :rule-classes :linear)
-
-(defun upd-safe-steps (n xs)
-  (declare (xargs :guard t))
-  (if (atom xs) 1 (if (not (posp n)) 1 (+ 1 (upd-safe-steps (1- n) (cdr xs))))))
-(defthm upd-safe-cost (<= (upd-safe-steps n xs) (+ 1 (len xs))) :rule-classes :linear)
-
-; an element's fetch or update: linear in the rank and the element count
-(defun arr-get-steps (a idx)
-  (declare (xargs :guard t))
-  (+ (arr-offset-steps idx (a-lbs a) (a-ubs a)) (nth-safe-steps (arr-offset idx (a-lbs a) (a-ubs a)) (a-es a))))
-(defthm arr-get-cost (<= (arr-get-steps a idx) (+ 2 (len idx) (len (a-es a)))) :rule-classes :linear)
-(defun arr-set-steps (a idx)
-  (declare (xargs :guard t))
-  (+ (arr-offset-steps idx (a-lbs a) (a-ubs a)) (upd-safe-steps (arr-offset idx (a-lbs a) (a-ubs a)) (a-es a))))
-(defthm arr-set-cost (<= (arr-set-steps a idx) (+ 2 (len idx) (len (a-es a)))) :rule-classes :linear)
-
-; ---- tests: DO CONCURRENT's rules (11.1.7.5), each broken once
-
-(defun lines-text (ls)              ; a program's text, one string per line
-  (declare (xargs :guard t))
-  (if (atom ls) "" (concatenate 'string (if (stringp (car ls)) (car ls) "") (string #\Newline) (lines-text (cdr ls)))))
-(defmacro prog-lines (&rest ls) `(lines-text (list ,@ls)))
-(defun run-status (text) (declare (xargs :mode :program)) (car (fortran-run text 1000000)))
-
-; s referred to in every iteration and defined in the others: a reduction
-; without REDUCE locality
-(assert-event (equal (run-status (prog-lines "program p" "implicit none" "integer :: i, s" "s = 0"
-                                             "do concurrent (i = 1:3)" "s = s + i" "end do" "print *, s" "end program p"))
-                     '(:error :concurrent)))
-; a(i) referred to in iteration i and defined in iteration i - 1
-(assert-event (equal (run-status (prog-lines "program p" "implicit none" "integer :: i, a(4)" "a = 1"
-                                             "do concurrent (i = 1:3)" "a(i + 1) = a(i)" "end do" "print *, a" "end program p"))
-                     '(:error :concurrent)))
-; EXIT out of the construct (C1172)
-(assert-event (equal (run-status (prog-lines "program p" "implicit none" "integer :: i" 
-                                             "do concurrent (i = 1:3)" "exit" "end do" "end program p"))
-                     '(:error :concurrent)))
-; each element its own iteration's: conforming
-(assert-event (equal (fortran-run (prog-lines "program p" "implicit none" "integer :: i, a(3)" "a = 1"
-                                              "do concurrent (i = 1:3)" "a(i) = a(i) + i" "end do" "print *, a" "end program p")
-                                  1000000)
-                     '(:normal (("2" "3" "4")))))
-; an operand the value does not need, and its error (10.1.7)
-(assert-event (equal (fortran-run (prog-lines "program p" "implicit none" "logical :: l" "integer :: z" "z = 0"
-                                              "l = (z > 1) .and. (1 / z > 0)" "print *, l" "end program p")
-                                  1000000)
-                     '(:normal (("~PD")))))

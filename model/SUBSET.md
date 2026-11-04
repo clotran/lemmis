@@ -149,7 +149,17 @@ check-fsem records what each compiler printed:
 | DO CONCURRENT: a variable referred to in one iteration and defined in another; EXIT or RETURN out of it; an impure reference in it | 11.1.7.5p7, C1172, C1140, C1143 | `:concurrent` |
 | a PRINT inside DO CONCURRENT (its lines in the order the processor runs the iterations) | 11.1.7.4.2 | `:pd` |
 | an error in an operand the value does not need (.AND. after false, .OR. after true) | 10.1.7 | `:pd` |
-| a formatted real exactly halfway between two outputs (Fw.d, Ew.d) | 13.7.2.3.8: the I/O rounding mode is processor dependent | to nearest, ties to even: what gfortran and flang both do (cases/format.f90) |
+| a formatted real exactly halfway between two outputs (F, E, D, ES, EN, G) | 13.7.2.3.8: the I/O rounding mode is processor dependent | to nearest, ties to even: what gfortran and flang both do (cases/format.f90) |
+| a real read from a formatted or list-directed field | 13.7.2.3.8 | the nearest value of the kind, ties to even (cases/ioread.f90) |
+| the optional zero before a decimal point (F, E, D, G output) | 13.7.2.3.1; LZ, 13.8.5 | written when the field has room, else dropped: gfortran and flang (0.5 F3.2 is .50) |
+| the exponent letter of Dw.d | 13.7.2.3.3, Table 13.1: D or E | D, as both compilers |
+| B, O, Z of a negative integer | 13.7.2.4: the internal value's bits | the two's complement bits of the kind's width (Z9 of -1_4 is FFFFFFFF); on input, digits with the sign bit set read back negative |
+| G0, G0.d of a real | 13.7.5.2.3p3: reasonable processor-dependent w, d, e | `:pd`: gfortran writes 1234.5000000000000, flang 1234.5 |
+| the default sign mode | 12.5.6.18 (SIGN=, processor dependent) | SS: no plus sign, as both compilers |
+| a list-directed PRINT after a nonadvancing WRITE | 12.3.4.2, 13.10.4: the layout is the processor's | the open record continued; its words then the values (gfortran `x           1`, flang `x 1`) |
+| a READ past the last record | 12.11.3: an end-of-file condition, no END= or IOSTAT= | `:end`, the program stops |
+| an input field that is not a value of the item's type | 13.7.2.1, 13.7.3: an error condition | `:input` |
+| a data edit descriptor for an item of another type | 13.7.1p1 | `:type` |
 
 A control decision on a :pd value (IF, DO WHILE, SELECT) stops with `:pd`.
 
@@ -174,7 +184,14 @@ A control decision on a :pd value (IF, DO WHILE, SELECT) stops with `:pd`.
    the abstract tree is the parse and the order of evaluation inside an
    expression cannot change a defined result.
 
-3. **flang -O2 fuses a multiply and an add.** `(a*b) + c` is one
+3. **gfortran rejects `WRITE (FMT=f, UNIT=*)`.** gfortran 16.2 stops with
+   "Missing format with default unit" when FMT= is written before UNIT=*;
+   C1211 needs the UNIT= keyword only for the unit not written first, and
+   C1210, C1218 allow keyword specifiers in any order, so the statement is
+   conforming (flang accepts it). `UNIT=*, FMT=f`, and FMT= before `UNIT=6`,
+   are accepted by both; cases/iofmt.f90 writes the latter.
+
+4. **flang -O2 fuses a multiply and an add.** `(a*b) + c` is one
    fused multiply-add under flang -O2 by default, the parentheses
    notwithstanding (10.1.5.2.4p2 allows a mathematically equivalent form):
    with a = 1 + 2^-52, b = 1 - 2^-52, c = -1 it prints -4.93E-32 where
@@ -221,6 +238,16 @@ A control decision on a :pd value (IF, DO WHILE, SELECT) stops with `:pd`.
   and runs it; `fortran-parse-sound` proves what it accepts is a
   program of the grammar. Each error the standard leaves undefined stops
   the run, as in fsem. Guards are not yet verified.
+- `fio.lisp`: data transfer on the unit * (12.6, 13): a format, from a
+  FORMAT statement or a character literal, read into edit descriptors
+  (string, nX, T, TL, TR, /, :, kP, S, SP, SS, BN, BZ, I, B, O, Z, F, E,
+  D, ES, EN, G, A, L, groups, reversion to the last group, 13.4p8),
+  records written under it with a position that edits may move back
+  over (13.8.1), a record a nonadvancing WRITE leaves open (12.3.4.2),
+  and READ, formatted (an implied point, the scale factor, PAD=YES) and
+  list-directed (separators, null values, r*c, a slash, 13.10.3). The
+  run's input is a list of records; check-fsem gives the compilers the
+  same records on stdin (`cases/<name>.in`).
 - `check-fsem.bb` then runs the programs in `model/cases/` (kinds,
   loops, arrays, procedures, host association, elemental) through
   fortran-run, gfortran and flang (reals and select too): **8 of 8** agree with the model under

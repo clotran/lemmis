@@ -14,11 +14,14 @@
   (implies (mv-nth 0 (fp :expr toks)) (mv-nth 1 (fp :expr toks)))
   :hints (("Goal" :use ((:instance fp-sound (nt :expr))) :in-theory (disable fp-sound))))
 
+(defthm fp-expr-consp
+  (implies (mv-nth 0 (fp :expr toks)) (and (consp (mv-nth 1 (fp :expr toks))) (not (equal (mv-nth 1 (fp :expr toks)) :star))))
+  :hints (("Goal" :use ((:instance fp-sound (nt :expr))) :in-theory (disable fp-sound))))
 ; fps opens only where a proof says so
 (in-theory (disable fps))
 
 ; the tree nt answers: an :s-* answers a statement
-(defun gnt (nt) (declare (xargs :guard t)) (if (member-eq nt '(:s-head :s-end :s-other :s-use :s-else :s-if :s-do :s-call :s-print :s-assign :s-unit :s-select :s-case :s-label :s-goto :s-format :s-write)) :stmt nt))
+(defun gnt (nt) (declare (xargs :guard t)) (if (member-eq nt '(:s-head :s-end :s-other :s-use :s-else :s-if :s-do :s-call :s-print :s-assign :s-unit :s-select :s-case :s-label :s-goto :s-format :s-write :s-read)) :stmt nt))
 
 ; the parts' shapes, and fgs and fys opened only on a tree being built
 ; (a cons): a subtree a hypothesis speaks of stays closed
@@ -57,9 +60,19 @@
          (implies (syntaxp (and (quotep nt) (consp x) (member-eq (car x) '(cons quote))))
                   (equal ,',call ,(body fn nil (w state))))
          :hints (("Goal" :expand (,',call)))))))
+; a format as the parser reads it from its token, and back
+(defthm fmt-head-facts
+  (and (implies (fmt-head-p tk) (and (fmt-spec-p (fmt-of tk)) (equal (fmt-tok (fmt-of tk)) tk)))
+       (implies (fmt-spec-p f) (and (fmt-head-p (fmt-tok f)) (equal (fmt-of (fmt-tok f)) f))))
+  :hints (("Goal" :in-theory (enable label-int-p-rules))))
+(in-theory (disable fmt-head-p fmt-of fmt-tok fmt-spec-p ios-ok all-lone))
 (def-cons-opener fgs-cons-open (fgs nt x))
 (def-cons-opener fys-cons-open (fys nt x))
 (in-theory (disable fgs fys shape-kind))
+; a spec written with its keyword is never the format written without
+(defthm kios-not-fmt-pos
+  (implies (and (fgs :kios cs) (consp cs)) (not (fmt-pos-p (car cs))))
+  :hints (("Goal" :expand ((fgs :kios cs) (fgs :io (car cs))))))
 
 ; the nonterminals that only rename a recognizer or a spelling
 (defthm fgs-fys-aliases
@@ -94,7 +107,7 @@
   (let ((g (gnt nt)))
    (append
     ; the trees never nil
-    (if (member-eq g '(:stmt :shapes :shapes* :ents :ent :names1 :ts :attr :shape :decl-rest :fn-rest :sub-rest :ranges :range :ixs :ix))
+    (if (member-eq g '(:stmt :shapes :shapes* :ents :ent :names1 :ts :attr :shape :decl-rest :fn-rest :sub-rest :ranges :range :ixs :ix :io :ios))
         `(and ,x) '(and))
     (list
     (case g
@@ -126,6 +139,9 @@
                   (mv nil nil)))
         (:ents (mv-let (ok e r) (fps :ent toks) (declare (ignore e))
                  (if (and ok (equal (kar r) (op ","))) (mv t (kdr r)) (mv nil nil))))
+        (:kios (if (equal (kar toks) (op ","))
+                   (mv-let (ok c r) (fps :io (kdr toks)) (declare (ignore c)) (if ok (mv t r) (mv nil nil)))
+                 (mv nil nil)))
         (:items (if (equal (kar toks) (op ","))
                     (mv-let (ok e r) (fp :expr (kdr toks)) (declare (ignore e)) (if ok (mv t r) (mv nil nil)))
                   (mv nil nil)))
@@ -136,7 +152,7 @@
       (if (and go (< (len r) (len toks))) (list-ind nt r) nil))))
 
 (defmacro fps-sound-at (nt)          ; a list nt inducts on list-ind
-  (if (member-eq nt '(:shapes* :names1 :onames :attrs :ents :items :prefix :ranges :ixs :oitems))
+  (if (member-eq nt '(:shapes* :names1 :onames :attrs :ents :items :prefix :ranges :ixs :oitems :kios))
       `(defthm ,(packn (list 'fps-sound- nt))
          (implies (mv-nth 0 (fps ,nt toks))
                   ,(sound-concl nt `(mv-nth 1 (fps ,nt toks)) `(mv-nth 2 (fps ,nt toks)) 'toks))
@@ -146,7 +162,7 @@
                 ,(sound-concl nt `(mv-nth 1 (fps ,nt toks)) `(mv-nth 2 (fps ,nt toks)) 'toks))
        :hints (("Goal" :expand ((fps ,nt toks))
                 :in-theory ,(case nt (:init '(enable member-equal fgs fys))
-                              (:s-write '(e/d (member-equal label-int-p-rules) (label-int-p lab-int label-digits-p)))
+                              ((:s-write :s-read :s-print :io :ios :kios) '(e/d (member-equal label-int-p-rules) (label-int-p lab-int label-digits-p)))
                               (otherwise '(enable member-equal))))))))
 
 (fps-sound-at :init)
@@ -155,6 +171,9 @@
 (fps-sound-at :range)
 (fps-sound-at :items)
 (fps-sound-at :oitems)
+(fps-sound-at :io)
+(fps-sound-at :kios)
+(fps-sound-at :ios)
 (fps-sound-at :ix)
 (fps-sound-at :ixs)
 (fps-sound-at :ctl)
@@ -187,6 +206,7 @@
 (fps-sound-at :s-goto)
 (fps-sound-at :s-format)
 (fps-sound-at :s-write)
+(fps-sound-at :s-read)
 ; a declaration's type-spec, read as a prefix of one type-spec
 (defthm fps-prefix-just-ts
   (let ((p (mv-nth 1 (fps :prefix toks))))
@@ -200,7 +220,7 @@
 
 ; the statements other than IF, as one
 (defthm fps-sound-flat
-  (implies (and (member-eq nt '(:s-head :s-end :s-other :s-use :s-else :s-do :s-call :s-print :s-assign :s-unit :s-select :s-case :s-label :s-goto :s-format :s-write))
+  (implies (and (member-eq nt '(:s-head :s-end :s-other :s-use :s-else :s-do :s-call :s-print :s-assign :s-unit :s-select :s-case :s-label :s-goto :s-format :s-write :s-read))
                 (mv-nth 0 (fps nt toks)))
            (and (fgs :stmt (mv-nth 1 (fps nt toks)))
                 (equal (append (fys :stmt (mv-nth 1 (fps nt toks))) (mv-nth 2 (fps nt toks))) toks)))
@@ -219,7 +239,7 @@
 ; the statement kinds other than IF's, as fps-sound-flat names them
 (defthm stmt-nt-flat
   (implies (not (equal (stmt-nt tk) :s-if))
-           (member-equal (stmt-nt tk) (quote (:s-head :s-end :s-other :s-use :s-else :s-do :s-call :s-print :s-assign :s-unit :s-select :s-case :s-label :s-goto :s-format :s-write))))
+           (member-equal (stmt-nt tk) (quote (:s-head :s-end :s-other :s-use :s-else :s-do :s-call :s-print :s-assign :s-unit :s-select :s-case :s-label :s-goto :s-format :s-write :s-read))))
   :hints (("Goal" :in-theory (enable stmt-nt))))
 
 ; a statement of a kind other than IF's
@@ -266,7 +286,7 @@
 
 (defconst *fps-nts*
   '(:stmt :s-head :s-end :s-other :s-use :s-else :s-if :s-do :s-call :s-print :s-assign :s-unit :s-select :s-case
-    :s-label :s-goto :s-format :s-write :oitems
+    :s-label :s-goto :s-format :s-write :s-read :oitems :ios :kios :io
     :fn-rest :sub-rest :decl-rest :ts :attrs :attr :shapes :shapes* :shape :ranges :range :ixs :ix :ents :ent :init
     :names :names1 :onames :items :ctl :prefix))
 

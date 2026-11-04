@@ -48,9 +48,12 @@
 ;                                   value or stop-code in the subset)
 ;         (:call n parens args)     R1521 call-stmt: CALL procedure-designator
 ;                                   [( [actual-arg-spec-list] )], R1522
-;         (:print items)            R1212 print-stmt: PRINT format [,
-;                                   output-item-list]; R1215 format *;
-;                                   R1217 output-item: expr
+;         (:print f items)          R1212 print-stmt: PRINT format [,
+;                                   output-item-list]; R1215 format: *
+;                                   (f :star), a label (f its digits) or a
+;                                   char-literal-constant (f its token: a
+;                                   default-char-expr, a literal in the
+;                                   subset); R1217 output-item: expr
 ;         (:function pre n ds res)  R1533 function-stmt: [prefix] FUNCTION
 ;                                   function-name ( [dummy-arg-name-list] )
 ;                                   [suffix]; R1534; R1535 suffix: RESULT (
@@ -77,10 +80,25 @@
 ;         (:ldo l ctl)              R1121 label-do-stmt: DO label [loop-control]
 ;         (:format s)               R1301 format-stmt: FORMAT format-specification,
 ;                                   the token (:fmt s) its text from "(" to ")"
-;         (:write u f items)        R1211 write-stmt: WRITE ( io-unit ,
-;                                   format ) [output-item-list]; R1201
-;                                   io-unit * or an expr (u :star), R1215
-;                                   format * or a label (f :star)
+;         (:write ios items)        R1211 write-stmt: WRITE ( io-control-spec-list )
+;                                   [output-item-list]
+;         (:read ios items)         R1210 read-stmt: READ ( io-control-spec-list )
+;                                   [input-item-list], R1216 input-item:
+;                                   variable, a designator (lone-prim)
+;         (:readf f items)          R1210 READ format [, input-item-list]
+;  :ios  (io ...) ")" included      R1213 io-control-spec-list: io-unit first
+;                                   when UNIT= is omitted (C1211), format
+;                                   second when FMT= is (C1218), each at
+;                                   most once (C1210), an ADVANCE= only with
+;                                   a format other than * (C1223); exactly
+;                                   one format in the subset (formatted I/O)
+;  :kios (io ...) ")" included      the specs written with their keyword, each ", io"
+;  :io   (:unit kwp u)              [UNIT =] io-unit: R1201 io-unit * (u
+;                                   :star) or R1202 file-unit-number, an expr
+;        (:fmt kwp f)               [FMT =] format (as PRINT's f); kwp nil
+;                                   only as the list's second item
+;        (:adv tk)                  ADVANCE = scalar-default-char-expr, a
+;                                   char-literal-constant in the subset
 ;  :oitems (e ...)                  R1216 output-item-list, e {, e}, to the end
 ;  :ts    (k ks)                    R703/R704 declaration-type-spec,
 ;                                   intrinsic-type-spec: R705 INTEGER
@@ -128,60 +146,7 @@
 
 (in-package "ACL2")
 
-(include-book "fparse")
-
-(defun kw (s) (declare (xargs :guard t)) (list :name s))
-
-(defconst *end-kinds* '("program" "module" "function" "subroutine" "do" "if" "select"))
-(defconst *unit-ends* '("program" "module" "function" "subroutine"))
-(defconst *simple-kinds* '("cycle" "exit" "return" "continue" "stop"))
-(defconst *prefix-kws* '("pure" "elemental" "impure" "recursive" "non_recursive"))
-(defconst *type-kws* '("integer" "logical" "real"))
-(defconst *intents* '(("in") ("out") ("inout") ("in" "out")))
-
-(defun fg-expr (e) (declare (xargs :guard t)) (fg :expr e))
-
-(defun names-p (ns)
-  (declare (xargs :guard t))
-  (if (atom ns) (null ns) (and (name-tok-p (car ns)) (names-p (cdr ns)))))
-
-(defun shape-kind (s) (declare (xargs :guard t)) (kar s))
-(defun shapes-same (ss k)
-  (declare (xargs :guard t))
-  (if (atom ss) t (and (equal (shape-kind (car ss)) k) (shapes-same (cdr ss) k))))
-
-(defun no-kw-args (as)            ; a designator's subscripts: no keyword (R912)
-  (declare (xargs :guard t))
-  (if (atom as) t (and (not (eq (kar (car as)) :kw)) (no-kw-args (cdr as)))))
-
-(defun action-kind-p (k)          ; R515, C1143
-  (declare (xargs :guard t))
-  (and (member-eq k '(:assign :simple :call :print :goto :write)) t))
-
-(defun nonzero-digit-p (cs)
-  (declare (xargs :guard t))
-  (and (consp cs) (or (and (characterp (car cs)) (digit-char-p (car cs)) (not (eql (car cs) #\0)) t) (nonzero-digit-p (cdr cs)))))
-(defun label-digits-p (d)         ; R611: one to five digits, one of them not zero (C613)
-  (declare (xargs :guard t))
-  (and (digit-string-p d) (<= (len (coerce d 'list)) 5) (nonzero-digit-p (coerce d 'list))))
-(defun label-int-p (tk)           ; a label written as a number (GO TO 10)
-  (declare (xargs :guard t))
-  (and (true-listp tk) (= (len tk) 3) (eq (car tk) :int) (label-digits-p (cadr tk)) (null (caddr tk))))
-(defun label-tok-p (tk)           ; a statement's label, as the lexers write it
-  (declare (xargs :guard t))
-  (and (true-listp tk) (= (len tk) 2) (eq (car tk) :lab) (label-digits-p (cadr tk))))
-(defun fmt-tok-p (tk) (declare (xargs :guard t)) (and (true-listp tk) (= (len tk) 2) (eq (car tk) :fmt) (stringp (cadr tk))))
-(defun lab-int (d) (declare (xargs :guard t)) (list :int d nil))
-; the three labels of an arithmetic IF after its ( expr ), and the statement's end
-(defun aif-labs-p (r)
-  (declare (xargs :guard t))
-  (and (label-int-p (kar r)) (equal (kadr r) (op ",")) (label-int-p (kaddr r)) (equal (kadddr r) (op ","))
-       (label-int-p (kar (kdr (kdr (kdr (kdr r))))))))
-
-(defun ents-init-p (ents)
-  (declare (xargs :guard t))
-  (if (atom ents) nil (or (and (consp (car ents)) (kaddr (car ents)) t) (ents-init-p (cdr ents)))))
-
+(include-book "fstmt-base")
 
 (defun kw-list (ss)
   (declare (xargs :guard t))
@@ -227,7 +192,8 @@
             (:simple (and (= (len x) 2) (member-equal (cadr x) *simple-kinds*) t))
             (:call (and (= (len x) 4) (name-tok-p (cadr x)) (booleanp (caddr x))
                         (if (caddr x) (fg :args (cadddr x)) (null (cadddr x)))))
-            (:print (and (= (len x) 2) (fgs :items (cadr x))))
+            (:print (and (= (len x) 3) (fmt-spec-p (cadr x)) (fgs :items (caddr x))))
+            (:readf (and (= (len x) 3) (fmt-spec-p (cadr x)) (fgs :items (caddr x)) (all-lone (caddr x))))
             (:select (and (= (len x) 2) (fg :expr (cadr x))))
             (:case (and (= (len x) 2) (fgs :ranges (cadr x))))
             (:case-default (= (len x) 1))
@@ -236,8 +202,8 @@
                        (label-digits-p (car (cddddr x)))))
             (:ldo (and (= (len x) 3) (label-digits-p (cadr x)) (fgs :ctl (caddr x))))
             (:format (and (= (len x) 2) (stringp (cadr x))))
-            (:write (and (= (len x) 4) (or (eq (cadr x) :star) (fg :expr (cadr x)))
-                         (or (eq (caddr x) :star) (label-digits-p (caddr x))) (fgs :oitems (cadddr x))))
+            (:write (and (= (len x) 3) (fgs :ios (cadr x)) (fgs :oitems (caddr x))))
+            (:read (and (= (len x) 3) (fgs :ios (cadr x)) (fgs :oitems (caddr x)) (all-lone (caddr x))))
             (:function (and (= (len x) 5) (fgs :prefix (cadr x)) (fgs :fn-rest (cddr x))))
             (:subroutine (and (= (len x) 5) (fgs :prefix (cadr x)) (not (assoc-eq :ts (cadr x)))
                               (fgs :sub-rest (cddr x))))
@@ -283,6 +249,15 @@
     (:init (or (null x) (fg :expr x)))
     (:items (if (atom x) (null x) (and (fg :expr (car x)) (fgs :items (cdr x)))))
     (:oitems (if (atom x) (null x) (and (fg :expr (car x)) (fgs :oitems (cdr x)))))
+    (:ios (and (consp x) (fgs :io (car x)) (ios-ok x)
+               (if (and (unit-pos-p (car x)) (consp (cdr x)) (fmt-pos-p (cadr x))) (fgs :kios (cddr x)) (fgs :kios (cdr x)))))
+    (:kios (if (atom x) (null x) (and (fgs :io (car x)) (not (unit-pos-p (car x))) (fgs :kios (cdr x)))))
+    (:io (and (true-listp x)
+              (case (car x)
+                (:unit (and (= (len x) 3) (booleanp (cadr x)) (or (eq (caddr x) :star) (fg :expr (caddr x)))))
+                (:fmt (and (= (len x) 3) (eq (cadr x) t) (fmt-spec-p (caddr x))))
+                (:adv (and (= (len x) 2) (char-tok-p (cadr x))))
+                (otherwise nil))))
     (:ctl (or (null x)
               (and (true-listp x)
                    (case (car x)
@@ -319,7 +294,7 @@
 (defun fys (nt x)
   (declare (xargs :guard t :measure (fgs-measure nt x)))
   (if (atom x)
-      (case nt ((:shapes :shapes* :names :names1 :ranges :ixs) (list (op ")"))) (otherwise nil))
+      (case nt ((:shapes :shapes* :names :names1 :ranges :ixs :kios) (list (op ")"))) (otherwise nil))
     (case nt
       (:stmt
        (case (car x)
@@ -343,7 +318,8 @@
          (:do (cons (kw "do") (fys :ctl (kadr x))))
          (:simple (list (kw (kadr x))))
          (:call (list* (kw "call") (kadr x) (if (kaddr x) (cons (op "(") (fy :args (kadddr x))) nil)))
-         (:print (list* (kw "print") (op "*") (fys :items (kadr x))))
+         (:print (list* (kw "print") (fmt-tok (kadr x)) (fys :items (kaddr x))))
+         (:readf (list* (kw "read") (fmt-tok (kadr x)) (fys :items (kaddr x))))
          (:select (list* (kw "select") (kw "case") (op "(") (append (fy :expr (kadr x)) (list (op ")")))))
          (:case (list* (kw "case") (op "(") (fys :ranges (kadr x))))
          (:case-default (list (kw "case") (kw "default")))
@@ -354,9 +330,8 @@
                                                       (lab-int (kar (kdr (kdr (kdr (kdr x))))))))))
          (:ldo (list* (kw "do") (lab-int (kadr x)) (fys :ctl (kaddr x))))
          (:format (list (kw "format") (list :fmt (kadr x))))
-         (:write (append (list (kw "write") (op "(")) (if (eq (kadr x) :star) (list (op "*")) (fy :expr (kadr x)))
-                         (list (op ",") (if (eq (kaddr x) :star) (op "*") (lab-int (kaddr x))) (op ")"))
-                         (fys :oitems (kadddr x))))
+         (:write (list* (kw "write") (op "(") (append (fys :ios (kadr x)) (fys :oitems (kaddr x)))))
+         (:read (list* (kw "read") (op "(") (append (fys :ios (kadr x)) (fys :oitems (kaddr x)))))
          (:function (append (fys :prefix (kadr x)) (fys :fn-rest (kdr (kdr x)))))
          (:subroutine (append (fys :prefix (kadr x)) (fys :sub-rest (kdr (kdr x)))))
          (otherwise nil)))
@@ -394,6 +369,15 @@
       (:init (cons (op "=") (fy :expr x)))
       (:items (cons (op ",") (append (fy :expr (car x)) (fys :items (cdr x)))))
       (:oitems (append (fy :expr (car x)) (if (consp (cdr x)) (cons (op ",") (fys :oitems (cdr x))) nil)))
+      (:ios (append (fys :io (car x))
+                    (if (and (unit-pos-p (car x)) (consp (cdr x)) (fmt-pos-p (cadr x)))
+                        (list* (op ",") (fmt-tok (kaddr (cadr x))) (fys :kios (cddr x)))
+                      (fys :kios (cdr x)))))
+      (:kios (cons (op ",") (append (fys :io (car x)) (fys :kios (cdr x)))))
+      (:io (case (car x)
+             (:unit (append (if (kadr x) (list (kw "unit") (op "=")) nil) (if (eq (kaddr x) :star) (list (op "*")) (fy :expr (kaddr x)))))
+             (:fmt (list (kw "fmt") (op "=") (fmt-tok (kaddr x))))
+             (otherwise (list (kw "advance") (op "=") (kadr x)))))
       (:ctl (case (car x)
               (:range (append (if (kadr x) (list (op ",")) nil) (list (kaddr x) (op "="))
                               (fy :expr (kadddr x)) (cons (op ",") (fy :expr (kar (kdr (kdr (kdr (kdr x)))))))
@@ -419,7 +403,7 @@
 (defun fps-rank (nt)
   (declare (xargs :guard t))
   (case nt (:stmt 12) (:s-unit 11) (:prefix 10) (:decl-rest 9) (:attrs 8) (:ents 7) (:ent 6) (:shapes 6)
-    (:shapes* 5) (:shape 4) (:ranges 5) (:range 4) (:ixs 5) (:ix 4) (:names 3) (:names1 2) (otherwise 1)))
+    (:shapes* 5) (:shape 4) (:ranges 5) (:range 4) (:ixs 5) (:ix 4) (:names 3) (:names1 2) (:ios 2) (otherwise 1)))
 
 (defun tok-in (tk ss)               ; tk is the keyword name of one of ss
   (declare (xargs :guard (true-listp ss)))
@@ -440,6 +424,7 @@
         ((eq (kar tk) :lab) :s-label)
         ((equal tk (kw "go")) :s-goto)
         ((equal tk (kw "write")) :s-write)
+        ((equal tk (kw "read")) :s-read)
         ((equal tk (kw "format")) :s-format)
         ((equal tk (kw "select")) :s-select)
         ((equal tk (kw "case")) :s-case)
@@ -512,11 +497,41 @@
                    (fail)))
       (:s-write
        (if (not (and (equal tk (kw "write")) (equal (kadr toks) (op "(")))) (fail)
-         (mv-let (ok u r) (if (equal (kaddr toks) (op "*")) (mv t :star (kdr (kdr (kdr toks)))) (fp :expr (kdr (kdr toks))))
-           (cond ((not (and ok (equal (kar r) (op ",")) (equal (kaddr r) (op ")")) (< (len r) (len toks)))) (fail))
-                 ((not (or (equal (kadr r) (op "*")) (label-int-p (kadr r)))) (fail))
-                 (t (mv-let (ok2 is r2) (fps :oitems (kdr (kdr (kdr r))))
-                      (if ok2 (mv t (list :write u (if (equal (kadr r) (op "*")) :star (kadr (kadr r))) is) r2) (fail))))))))
+         (mv-let (ok cs r) (fps :ios (kdr (kdr toks)))
+           (if (not (and ok (< (len r) (len toks)))) (fail)
+             (mv-let (ok2 is r2) (fps :oitems r) (if ok2 (mv t (list :write cs is) r2) (fail)))))))
+      (:s-read
+       (cond ((not (equal tk (kw "read"))) (fail))
+             ((equal (kadr toks) (op "("))
+              (mv-let (ok cs r) (fps :ios (kdr (kdr toks)))
+                (if (not (and ok (< (len r) (len toks)))) (fail)
+                  (mv-let (ok2 is r2) (fps :oitems r) (if (and ok2 (all-lone is)) (mv t (list :read cs is) r2) (fail))))))
+             ((fmt-head-p (kadr toks))
+              (mv-let (ok is r) (fps :items (kdr (kdr toks)))
+                (if (and ok (all-lone is)) (mv t (list :readf (fmt-of (kadr toks)) is) r) (fail))))
+             (t (fail))))
+      (:ios (mv-let (ok c r) (fps :io toks)
+              (cond ((not (and ok (< (len r) (len toks)))) (fail))
+                    ((and (unit-pos-p c) (equal (kar r) (op ",")) (fmt-head-p (kadr r)))
+                     (mv-let (ok2 cs r2) (fps :kios (kdr (kdr r)))
+                       (let ((x (list* c (list :fmt nil (fmt-of (kadr r))) cs))) (if (and ok2 (ios-ok x)) (mv t x r2) (fail)))))
+                    (t (mv-let (ok2 cs r2) (fps :kios r)
+                         (let ((x (cons c cs))) (if (and ok2 (ios-ok x)) (mv t x r2) (fail))))))))
+      (:kios (cond ((equal tk (op ")")) (mv t nil (kdr toks)))
+                   ((equal tk (op ","))
+                    (mv-let (ok c r) (fps :io (kdr toks))
+                      (if (not (and ok (not (unit-pos-p c)) (< (len r) (len toks)))) (fail)
+                        (mv-let (ok2 cs r2) (fps :kios r) (if ok2 (mv t (cons c cs) r2) (fail))))))
+                   (t (fail))))
+      (:io (cond ((and (equal tk (kw "unit")) (equal (kadr toks) (op "=")))
+                  (if (equal (kaddr toks) (op "*")) (mv t (list :unit t :star) (kdr (kdr (kdr toks))))
+                    (mv-let (ok e r) (fp :expr (kdr (kdr toks))) (if ok (mv t (list :unit t e) r) (fail)))))
+                 ((and (equal tk (kw "fmt")) (equal (kadr toks) (op "=")))
+                  (if (fmt-head-p (kaddr toks)) (mv t (list :fmt t (fmt-of (kaddr toks))) (kdr (kdr (kdr toks)))) (fail)))
+                 ((and (equal tk (kw "advance")) (equal (kadr toks) (op "=")))
+                  (if (char-tok-p (kaddr toks)) (mv t (list :adv (kaddr toks)) (kdr (kdr (kdr toks)))) (fail)))
+                 ((equal tk (op "*")) (mv t (list :unit nil :star) (kdr toks)))
+                 (t (mv-let (ok e r) (fp :expr toks) (if ok (mv t (list :unit nil e) r) (fail))))))
       (:oitems (if (atom toks) (mv t nil toks)
                  (mv-let (ok e r) (fp :expr toks)
                    (cond ((not (and ok (< (len r) (len toks)))) (fail))
@@ -529,8 +544,8 @@
                       (mv-let (ok as r) (fp :args (kdr (kdr (kdr toks))))
                         (if ok (mv t (list :call (kadr toks) t as) r) (fail))))
                      (t (mv t (list :call (kadr toks) nil nil) (kdr (kdr toks))))))
-      (:s-print (if (and (equal tk (kw "print")) (equal (kadr toks) (op "*")))
-                    (mv-let (ok is r) (fps :items (kdr (kdr toks))) (if ok (mv t (list :print is) r) (fail)))
+      (:s-print (if (and (equal tk (kw "print")) (fmt-head-p (kadr toks)))
+                    (mv-let (ok is r) (fps :items (kdr (kdr toks))) (if ok (mv t (list :print (fmt-of (kadr toks)) is) r) (fail)))
                   (fail)))
       (:s-assign (if (not (name-tok-p tk)) (fail)
                  (if (equal (kadr toks) (op "("))
