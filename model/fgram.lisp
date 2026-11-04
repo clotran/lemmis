@@ -38,7 +38,7 @@
     "endprogram" "endmodule" "endfunction" "endsubroutine" "endselect" "selectcase" "go" "goto" "write" "format" "read"))
 
 (defconst *fops*
-  '("+" "-" "*" "/" "**" "==" "/=" "<" "<=" ">" ">=" "(" ")" "," "=" ":" "::" "[" "]" "%"
+  '("+" "-" "*" "/" "**" "==" "/=" "<" "<=" ">" ">=" "(" ")" "," "=" ":" "::" "[" "]" "%" "//"
     ".eq." ".ne." ".lt." ".le." ".gt." ".ge." ".not." ".and." ".or." ".eqv." ".neqv."))
 
 (defun op (s) (declare (xargs :guard t)) (list :op s))
@@ -115,6 +115,7 @@
 (defconst *and-ops* (list (op ".and.")))                              ; R1020
 (defconst *rel-ops* (list (op "==") (op "/=") (op "<") (op "<=") (op ">") (op ">=")
                           (op ".eq.") (op ".ne.") (op ".lt.") (op ".le.") (op ".gt.") (op ".ge.")))  ; R1014
+(defconst *concat-ops* (list (op "//")))                              ; R1012
 (defconst *add-ops* (list (op "+") (op "-")))                         ; R1010
 (defconst *mult-ops* (list (op "*") (op "/")))                        ; R1009
 
@@ -123,14 +124,14 @@
   (declare (xargs :guard t))
   (case nt
     ((:expr :expr*) *eqv-ops*) ((:equiv :equiv*) *or-ops*) ((:or :or*) *and-ops*)
-    ((:l2 :l2*) *add-ops*) (otherwise *mult-ops*)))
+    ((:l3 :l3*) *concat-ops*) ((:l2 :l2*) *add-ops*) (otherwise *mult-ops*)))
 (defun lev-sub (nt)
   (declare (xargs :guard t))
   (case nt ((:expr :expr*) :equiv) ((:equiv :equiv*) :or) ((:or :or*) :and)
-    ((:l2 :l2*) :add) (otherwise :mult)))
+    ((:l3 :l3*) :l2) ((:l2 :l2*) :add) (otherwise :mult)))
 (defun lev-rest (nt)
   (declare (xargs :guard t))
-  (case nt (:expr :expr*) (:equiv :equiv*) (:or :or*) (:l2 :l2*) (otherwise :add*)))
+  (case nt (:expr :expr*) (:equiv :equiv*) (:or :or*) (:l3 :l3*) (:l2 :l2*) (otherwise :add*)))
 
 ; ---- the expression grammar
 ;
@@ -138,12 +139,12 @@
 ;                               level-5-expr: equiv-operand {equiv-op equiv-operand}
 ;  :equiv  (first rest)         R1017 equiv-operand: or-operand {or-op or-operand}
 ;  :or     (first rest)         R1016 or-operand: and-operand {and-op and-operand}
-;  :expr* :equiv* :or* :l2* :add*   the ((op operand) ...) after the first
+;  :expr* :equiv* :or* :l3* :l2* :add*   the ((op operand) ...) after the first
 ;  :and    (notp l4)            R1015 and-operand: [not-op] level-4-expr, R1019
 ;  :l4     (a op b)             R1013 level-4-expr: [level-3-expr rel-op]
-;                               level-3-expr; op, b nil when absent. R1011
-;                               level-3-expr is level-2-expr here: the subset
-;                               has no concat-op (no character expressions)
+;                               level-3-expr; op, b nil when absent
+;  :l3     (first rest)         R1011 level-3-expr: level-2-expr {concat-op
+;                               level-2-expr}, R1012 concat-op //
 ;  :l2     (sign first rest)    R1007 level-2-expr: [add-op] add-operand
 ;                               {add-op add-operand}; sign nil or + -
 ;  :add    (first rest)         R1006 add-operand: mult-operand {mult-op mult-operand}
@@ -177,19 +178,19 @@
 (defun fg (nt x)
   (declare (xargs :guard t :measure (fg-measure nt x)))
   (case nt
-    ((:expr :equiv :or :add)
+    ((:expr :equiv :or :l3 :add)
      (and (true-listp x) (= (len x) 2)
           (fg (lev-sub nt) (car x)) (fg (lev-rest nt) (cadr x))))
-    ((:expr* :equiv* :or* :l2* :add*)
+    ((:expr* :equiv* :or* :l3* :l2* :add*)
      (if (atom x) (null x)
        (and (true-listp (car x)) (= (len (car x)) 2)
             (member-equal (caar x) (lev-ops nt))
             (fg (lev-sub nt) (cadar x))
             (fg nt (cdr x)))))
     (:and (and (true-listp x) (= (len x) 2) (booleanp (car x)) (fg :l4 (cadr x))))
-    (:l4 (and (true-listp x) (= (len x) 3) (fg :l2 (car x))
+    (:l4 (and (true-listp x) (= (len x) 3) (fg :l3 (car x))
               (if (cadr x)
-                  (and (member-equal (cadr x) *rel-ops*) (fg :l2 (caddr x)))
+                  (and (member-equal (cadr x) *rel-ops*) (fg :l3 (caddr x)))
                 (null (caddr x)))))
     (:l2 (and (true-listp x) (= (len x) 3)
               (or (null (car x)) (member-equal (car x) *add-ops*))
@@ -237,13 +238,13 @@
   (if (atom x)
       (case nt ((:args :args*) (list (op ")"))) ((:elist :elist*) (list (op "]"))) (otherwise nil))
   (case nt
-    ((:expr :equiv :or :add)
+    ((:expr :equiv :or :l3 :add)
      (append (fy (lev-sub nt) (kar x)) (fy (lev-rest nt) (kadr x))))
-    ((:expr* :equiv* :or* :l2* :add*)
+    ((:expr* :equiv* :or* :l3* :l2* :add*)
      (if (atom x) nil
        (cons (kar (car x)) (append (fy (lev-sub nt) (kadr (car x))) (fy nt (cdr x))))))
     (:and (if (kar x) (cons (op ".not.") (fy :l4 (kadr x))) (fy :l4 (kadr x))))
-    (:l4 (append (fy :l2 (kar x)) (if (kadr x) (cons (kadr x) (fy :l2 (kaddr x))) nil)))
+    (:l4 (append (fy :l3 (kar x)) (if (kadr x) (cons (kadr x) (fy :l3 (kaddr x))) nil)))
     (:l2 (append (if (kar x) (list (kar x)) nil) (fy :add (kadr x)) (fy :l2* (kaddr x))))
     (:mult (append (fy :prim (kar x)) (if (kadr x) (cons (op "**") (fy :mult (kadr x))) nil)))
     (:prim (case (kar x)
@@ -285,12 +286,13 @@
          (m (or p (equal tk (op "**"))))
          (a (or m (member-equal tk *mult-ops*)))
          (l2 (or a (member-equal tk *add-ops*)))
-         (l4 (or l2 (member-equal tk *rel-ops*)))
+         (l3 (or l2 (member-equal tk *concat-ops*)))
+         (l4 (or l3 (member-equal tk *rel-ops*)))
          (o (or l4 (member-equal tk *and-ops*)))
          (q (or o (member-equal tk *or-ops*)))
          (e (or q (member-equal tk *eqv-ops*))))
     (and (case nt
-           (:prim p) (:mult m) ((:add :add*) a) ((:l2 :l2*) l2) ((:l4 :and) l4)
+           (:prim p) (:mult m) ((:add :add*) a) ((:l2 :l2*) l2) ((:l3 :l3*) l3) ((:l4 :and) l4)
            ((:or :or*) o) ((:equiv :equiv*) q) ((:expr :expr*) e)
            ; an argument, and a triplet's tail, are ended by "," or ")" only
            ((:arg :tri*) (not (member-equal tk (list (op ",") (op ")")))))

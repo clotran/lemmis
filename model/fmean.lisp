@@ -16,14 +16,14 @@
    (declare (xargs :guard t :measure (nfix fuel) :verify-guards nil))
    (if (not (posp fuel)) (mv (err :fuel) st)
      (case nt
-       ((:expr :equiv :or :add)
+       ((:expr :equiv :or :l3 :add)
         (with-v (v st) (me-ev (lev-sub nt) (kar x) env st cx (1- fuel))
           (me-fold nt (kadr x) v env st cx (1- fuel))))
        (:and (with-v (v st) (me-ev :l4 (kadr x) env st cx (1- fuel))
                (mv (if (kar x) (val-op :not v nil) v) st)))
-       (:l4 (with-v (a st) (me-ev :l2 (kar x) env st cx (1- fuel))
+       (:l4 (with-v (a st) (me-ev :l3 (kar x) env st cx (1- fuel))
               (if (kadr x)
-                  (with-v (b st) (me-ev :l2 (kaddr x) env st cx (1- fuel))
+                  (with-v (b st) (me-ev :l3 (kaddr x) env st cx (1- fuel))
                     (mv (val-op (op-str (kadr x)) a b) st))
                 (mv a st))))
        (:l2 (with-v (a st) (me-ev :add (kadr x) env st cx (1- fuel))
@@ -156,7 +156,7 @@
                                    (t (with-v (rs st) (me-elem u (proc-host (kaddr b) suf cx) vs 0 (prod sh) env st cx (1- fuel))
                                         (mv (elem-result rs sh) st)))))))
                         (t (me-call u (proc-host (kaddr b) suf cx) args env st cx (1- fuel))))))
-         ((nil) (with-v (vs st) (mv-let (vs kw st) (me-iargs args (member-equal (tok-name tk) '("size" "lbound" "ubound" "kind" "huge")) env st cx (1- fuel))
+         ((nil) (with-v (vs st) (mv-let (vs kw st) (me-iargs args (member-equal (tok-name tk) '("size" "lbound" "ubound" "kind" "huge" "len")) env st cx (1- fuel))
                                   (mv (if (errp vs) vs (list :ok vs kw)) st))
                   (mv (intrinsic (tok-name tk) (kadr vs) (kaddr vs)) st)))
          (otherwise (mv (err :type) st))))))
@@ -247,14 +247,26 @@
                             (mv-let (loc st) (st-new v st)
                               (me-bind (cdr dns) m env st cx (1- fuel) (cons (cons dn (list :var loc :in)) fr) copies))))))))))))))
 
- ; a kind selector's value (R706): a scalar integer constant expression
+ ; a kind selector's value (R706): a scalar integer constant expression;
+ ; DOUBLE PRECISION's, 8 (7.4.3.2p2); for CHARACTER, the length (R721,
+ ; R722): 1 when absent, :star an assumed length (R701), a negative one 0 (7.4.4.2p4)
  (defun me-kind (ts env st cx fuel)
    (declare (xargs :guard t :measure (nfix fuel)))
    (if (not (posp fuel)) (mv (err :fuel) st)
-     (if (null (kadr ts)) (mv 4 st)
+     (cond
+      ((equal (kar ts) "double") (mv 8 st))
+      ((equal (kar ts) "character")
+       (let ((ks (kadr ts)))
+         (cond ((null ks) (mv 1 st))
+               ((eq (kar ks) :len) (mv (digits-val (kadr (kadr ks))) st))
+               ((eq (kadr ks) :star) (mv :star st))
+               (t (with-v (v st) (me-ev :expr (kadr ks) env st cx (1- fuel))
+                    (if (ival-scalar v) (mv (nfix (v-num v)) st) (mv (err :type) st)))))))
+      ((null (kadr ts)) (mv 4 st))
+      (t
        (with-v (v st) (me-ev :expr (kadr (kadr ts)) env st cx (1- fuel))
          (if (and (ival-scalar v) (if (equal (kar ts) "real") (rkind-p (v-num v)) (ikind-p (v-num v))))
-             (mv (v-num v) st) (mv (err :type) st))))))
+             (mv (v-num v) st) (mv (err :type) st)))))))
 
  ; explicit bounds (R815): (mv lbs-or-err ubs st)
  (defun me-bounds (ss env st cx fuel)
@@ -296,6 +308,7 @@
                         (if (errp c) (mv c nil nil st) (mv nil (cons (cons n (list :const c)) fr) copies st))))))
                  ((member-equal n dns)                           ; a dummy: its actual's binding
                   (me-dummy n ty k ss attrs envf st cx (1- fuel) fr copies))
+                 ((eq k :star) (mv (err :syntax) nil nil st))   ; an assumed length: a dummy's or a constant's (C803)
                  (t
                   (mv-let (ls us st) (if (and ss (not (all-assumed ss))) (me-bounds ss envf st cx (1- fuel)) (mv nil nil st))
                     (cond
@@ -321,7 +334,10 @@
  (defun me-dummy (n ty k ss attrs env st cx fuel fr copies)
    (declare (xargs :guard t :measure (nfix fuel)))
    (if (not (posp fuel)) (mv (err :fuel) nil nil st)
-     (let* ((b (cdr (alk n fr))) (loc (kadr b)) (v (st-get loc st)) (int (decl-intent attrs)))
+     (let* ((b (cdr (alk n fr))) (loc (kadr b)) (v (st-get loc st)) (int (decl-intent attrs))
+            ; a character dummy of assumed length takes its actual's (8.5.13); the
+            ; subset: any other one has its actual's length (15.5.2.4 allows a longer actual)
+            (k (if (and (eq ty :c) (eq k :star)) (if (aval-p v) (a-k v) (scal-k v)) k)))
        (cond
         ((not (equal (list (if (aval-p v) (a-ty v) (scal-ty v)) (if (aval-p v) (a-k v) (scal-k v))) (list ty k)))
          (mv (err :type) nil nil st))

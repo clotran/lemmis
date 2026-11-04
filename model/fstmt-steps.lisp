@@ -490,15 +490,22 @@
     (:ts
      (cond
       ((not (tok-in tk *type-kws*)) (+ 1))
+      ((equal tk (kw "double")) (if (equal (kadr toks) (kw "precision")) (+ 1) (+ 1)))
       ((equal (kadr toks) (op "("))
        (let*
-        ((kwp (and (equal (kaddr toks) (kw "kind")) (kw-head-p (kdr (kdr toks)))))
+        ((ch (equal tk (kw "character")))
+         (kwp (and (equal (kaddr toks) (kw (if ch "len" "kind"))) (kw-head-p (kdr (kdr toks)))))
          (t1 (if kwp (kdr (kdr (kdr (kdr toks)))) (kdr (kdr toks)))))
-        (mv-let
-         (ok e r)
-         (fp :expr t1)
-         (declare (ignorable ok e r))
-         (let ((c47 (fp-steps :expr t1))) (if (and ok (equal (kar r) (op ")"))) (+ 1 c47) (+ 1 c47))))))
+        (if
+         (and ch (equal (kar t1) (op "*")))
+         (if (equal (kadr t1) (op ")")) (+ 1) (+ 1))
+         (mv-let
+          (ok e r)
+          (fp :expr t1)
+          (declare (ignorable ok e r))
+          (let ((c47 (fp-steps :expr t1))) (if (and ok (equal (kar r) (op ")"))) (+ 1 c47) (+ 1 c47)))))))
+      ((and (equal tk (kw "character")) (equal (kadr toks) (op "*")))
+       (if (len-tok-p (kaddr toks)) (+ 1) (+ 1)))
       (t (+ 1))))
     (:attrs
      (if

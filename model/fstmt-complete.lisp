@@ -26,13 +26,13 @@
 (defun scont-tok-p (nt tk)
   (declare (xargs :guard t))
   (case nt
-    (:ts (equal tk (op "(")))
+    (:ts (or (equal tk (op "(")) (equal tk (op "*"))))
     (:attrs (equal tk (op ",")))
     ((:shape :range :ix :io) (not (member-equal tk (list (op ",") (op ")")))))   ; a shape or a range is ended by "," or ")" only
     (:init (cont-tok-p :expr tk))
     (:ent (or (cont-tok-p :expr tk) (equal tk (op "(")) (equal tk (op "="))))
     ((:ents :decl-rest) (or (cont-tok-p :expr tk) (equal tk (op "(")) (equal tk (op "=")) (equal tk (op ","))))
-    (:prefix (or (tok-in tk *prefix-kws*) (tok-in tk *type-kws*) (equal tk (op "("))))
+    (:prefix (or (tok-in tk *prefix-kws*) (tok-in tk *type-kws*) (equal tk (op "(")) (equal tk (op "*"))))
     (:fn-rest (equal tk (kw "result")))
     (:sub-rest (equal tk (op "(")))
     ((:shapes :shapes* :names :names1 :ranges :ixs :ios :kios) nil)
@@ -183,7 +183,7 @@
 (defthm name-tok-not-punct
   (implies (name-tok-p tk)
            (and (not (equal tk '(:op ":"))) (not (equal tk '(:op ","))) (not (equal tk '(:op "(")))
-                (not (equal tk '(:op "="))) (not (equal tk '(:op ")")))
+                (not (equal tk '(:op "="))) (not (equal tk '(:op ")"))) (not (equal tk '(:op "*")))
                 (not (equal tk '(:name "function"))) (not (equal tk '(:name "subroutine")))))
   :hints (("Goal" :in-theory (enable name-tok-p))))
 
@@ -290,6 +290,11 @@
   (implies (name-tok-p tk) (and (not (equal (cadr tk) "integer")) (not (equal (cadr tk) "logical")) (not (equal (cadr tk) "real"))))
   :hints (("Goal" :in-theory (enable name-tok-p))))
 (fps-complete-at :ix)
+; a name is no keyword: a declaration's rest, a DO CONCURRENT's index, begin with no prefix-spec
+(defthm name-tok-not-prefix
+  (implies (name-tok-p tk) (and (not (tok-in tk *prefix-kws*)) (not (tok-in tk *type-kws*))
+                                (not (tok-in tk '("function" "subroutine"))) (not (tok-in tk *simple-kinds*))))
+  :hints (("Goal" :in-theory (enable name-tok-p tok-in member-equal))))
 (fps-complete-at :ixs)
 (fps-complete-at :ctl)
 (fps-complete-at :attr)
@@ -301,11 +306,6 @@
 (fps-complete-at :fn-rest)
 (fps-complete-at :sub-rest)
 
-; a declaration's rest begins with no prefix-spec: ",", ":" or a name
-(defthm name-tok-not-prefix
-  (implies (name-tok-p tk) (and (not (tok-in tk *prefix-kws*)) (not (tok-in tk *type-kws*))
-                                (not (tok-in tk '("function" "subroutine"))) (not (tok-in tk *simple-kinds*))))
-  :hints (("Goal" :in-theory (enable name-tok-p tok-in member-equal))))
 (defthm decl-rest-follow
   (implies (fgs :decl-rest d)
            (and (sfollow-ok :prefix (append (fys :decl-rest d) r))

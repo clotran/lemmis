@@ -239,7 +239,7 @@
                  (let ((nb (if (and e (< 0 e)) (+ e 2) 4)))
                    (append (fd-real-f x (- (nfix w) nb) (- d s) (cons 0 (cdr md)))
                            (make-list nb :initial-element #\Space)))))))))
-(defun fd-chars (v) (if (and (eq (kar v) :c) (stringp (kadr v))) (coerce (kadr v) 'list) nil))
+(defun fd-chars (v) (c-chars v))
 (defun fd-a (cs w) (if w (if (<= (len cs) (nfix w)) (fd-pad cs w) (take (nfix w) cs)) cs))
 (defun fd-data (it v md)             ; the characters, :pd, or an error: a value of a type the descriptor does not edit (13.7.1)
   (let ((w (kadr it)))

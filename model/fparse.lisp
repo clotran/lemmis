@@ -25,8 +25,8 @@
 (defun fp-rank (nt)
   (declare (xargs :guard t))
   (case nt
-    (:prim 1) (:mult 2) (:add 3) (:l2 4) (:l4 5) (:and 6) (:or 7) (:equiv 8) (:expr 9)
-    ((:arg :elist :tri*) 10) (:args 11)
+    (:prim 1) (:mult 2) (:add 3) (:l2 4) (:l3 5) (:l4 6) (:and 7) (:or 8) (:equiv 9) (:expr 10)
+    ((:arg :elist :tri*) 11) (:args 12)
     (otherwise 1)))
 
 ; a keyword argument's head, name =
@@ -41,12 +41,12 @@
                   :verify-guards nil))
   (let ((tk (kar toks)))
     (case nt
-      ((:expr :equiv :or :add)
+      ((:expr :equiv :or :l3 :add)
        (mv-let (ok a r) (fp (lev-sub nt) toks)
          (if (not (and ok (<= (len r) (len toks)))) (fail)
            (mv-let (ok2 rest r2) (fp (lev-rest nt) r)
              (if ok2 (mv t (list a rest) r2) (fail))))))
-      ((:expr* :equiv* :or* :l2* :add*)
+      ((:expr* :equiv* :or* :l3* :l2* :add*)
        (if (and (consp toks) (member-equal tk (lev-ops nt)))
            (mv-let (ok a r) (fp (lev-sub nt) (cdr toks))
              (if (not (and ok (<= (len r) (len (cdr toks))))) (fail)
@@ -56,10 +56,10 @@
       (:and (if (and (consp toks) (equal tk (op ".not.")))
                 (mv-let (ok a r) (fp :l4 (cdr toks)) (if ok (mv t (list t a) r) (fail)))
               (mv-let (ok a r) (fp :l4 toks) (if ok (mv t (list nil a) r) (fail)))))
-      (:l4 (mv-let (ok a r) (fp :l2 toks)
+      (:l4 (mv-let (ok a r) (fp :l3 toks)
              (cond ((not (and ok (<= (len r) (len toks)))) (fail))
                    ((and (consp r) (member-equal (car r) *rel-ops*))
-                    (mv-let (ok2 b r2) (fp :l2 (cdr r))
+                    (mv-let (ok2 b r2) (fp :l3 (cdr r))
                       (if ok2 (mv t (list a (car r) b) r2) (fail))))
                    (t (mv t (list a nil nil) r)))))
       (:l2 (let* ((sign (if (and (consp toks) (member-equal tk *add-ops*)) tk nil))
@@ -174,8 +174,8 @@
   (declare (xargs :guard t))
   (and (member-equal (list a b)
                      '((:expr :equiv) (:expr :expr*) (:expr* :equiv) (:equiv :or) (:equiv :equiv*)
-                       (:equiv* :or) (:or :and) (:or :or*) (:or* :and) (:and :l4) (:l4 :l2)
-                       (:l2 :add) (:l2 :l2*) (:l2* :add) (:add :mult) (:add :add*) (:add* :mult)
+                       (:equiv* :or) (:or :and) (:or :or*) (:or* :and) (:and :l4) (:l4 :l3)
+                       (:l3 :l2) (:l3 :l3*) (:l3* :l2) (:l2 :add) (:l2 :l2*) (:l2* :add) (:add :mult) (:add :add*) (:add* :mult)
                        (:mult :prim) (:mult :mult) (:arg :expr) (:tri* :expr) (:arg :tri*)))
        t))
 
@@ -192,7 +192,8 @@
   (and (implies (member-equal tk *eqv-ops*) (not (cont-tok-p :equiv tk)))
        (implies (member-equal tk *or-ops*) (not (cont-tok-p :or tk)))
        (implies (member-equal tk *and-ops*) (not (cont-tok-p :and tk)))
-       (implies (member-equal tk *rel-ops*) (not (cont-tok-p :l2 tk)))
+       (implies (member-equal tk *rel-ops*) (not (cont-tok-p :l3 tk)))
+       (implies (member-equal tk *concat-ops*) (not (cont-tok-p :l2 tk)))
        (implies (member-equal tk *add-ops*) (not (cont-tok-p :add tk)))
        (implies (member-equal tk *mult-ops*) (not (cont-tok-p :mult tk))))
   :hints (("Goal" :in-theory (enable cont-tok-p))))
@@ -203,12 +204,13 @@
            (and (implies (member-eq nt '(:expr :expr*)) (not (member-equal (car r) *eqv-ops*)))
                 (implies (member-eq nt '(:equiv :equiv*)) (not (member-equal (car r) *or-ops*)))
                 (implies (member-eq nt '(:or :or*)) (not (member-equal (car r) *and-ops*)))
-                (implies (member-eq nt '(:l2 :l2* :l4 :and)) (not (member-equal (car r) *add-ops*)))
+                (implies (member-eq nt '(:l2 :l2* :l3 :l3* :l4 :and)) (not (member-equal (car r) *add-ops*)))
+                (implies (member-eq nt '(:l3 :l3* :l4 :and)) (not (member-equal (car r) *concat-ops*)))
                 (implies (member-eq nt '(:l4 :and)) (not (member-equal (car r) *rel-ops*)))
                 (implies (member-eq nt '(:add :add*)) (not (member-equal (car r) *mult-ops*)))
-                (implies (member-eq nt '(:mult :add :add* :l2 :l2* :l4 :and :or :or* :equiv :equiv* :expr :expr*))
+                (implies (member-eq nt '(:mult :add :add* :l2 :l2* :l3 :l3* :l4 :and :or :or* :equiv :equiv* :expr :expr*))
                          (not (equal (car r) '(:op "**"))))
-                (implies (member-eq nt '(:prim :mult :add :add* :l2 :l2* :l4 :and :or :or* :equiv :equiv* :expr :expr* :arg :tri*))
+                (implies (member-eq nt '(:prim :mult :add :add* :l2 :l2* :l3 :l3* :l4 :and :or :or* :equiv :equiv* :expr :expr* :arg :tri*))
                          (and (not (equal (car r) '(:op "("))) (not (equal (car r) '(:op "=")))))
                 (implies (member-eq nt '(:arg :tri*))
                          (and (not (equal (car r) '(:op ":"))) (not (equal (car r) '(:op "]")))
@@ -286,6 +288,7 @@
   (implies (and (not (equal nt :expr)) (not (equal nt :equiv)) (not (equal nt :or)) (not (equal nt :add))
                 (not (equal nt :expr*)) (not (equal nt :equiv*)) (not (equal nt :or*)) (not (equal nt :l2*))
                 (not (equal nt :add*)) (not (equal nt :and)) (not (equal nt :l4)) (not (equal nt :l2))
+                (not (equal nt :l3)) (not (equal nt :l3*))
                 (not (equal nt :mult)) (not (equal nt :prim)) (not (equal nt :args)) (not (equal nt :args*))
                 (not (equal nt :arg)) (not (equal nt :tri*)) (not (equal nt :elist)) (not (equal nt :elist*)))
            (not (fg nt x)))
@@ -311,15 +314,15 @@
                   :hints (("Goal" :in-theory (enable kadr kaddr kadddr)))))
   (if (atom x) (list nt r)
     (case-each nt
-      ((:expr :equiv :or :add)
+      ((:expr :equiv :or :l3 :add)
        (list (fg-ind (lev-sub nt) (car x) (append (fy (lev-rest nt) (kadr x)) r))
              (fg-ind (lev-rest nt) (kadr x) r)))
-      ((:expr* :equiv* :or* :l2* :add*)
+      ((:expr* :equiv* :or* :l3* :l2* :add*)
        (list (fg-ind (lev-sub nt) (kadr (car x)) (append (fy nt (cdr x)) r))
              (fg-ind nt (cdr x) r)))
       (:and (fg-ind :l4 (kadr x) r))
-      (:l4 (list (fg-ind :l2 (car x) (if (kadr x) (cons (kadr x) (append (fy :l2 (kaddr x)) r)) r))
-                 (fg-ind :l2 (kaddr x) r)))
+      (:l4 (list (fg-ind :l3 (car x) (if (kadr x) (cons (kadr x) (append (fy :l3 (kaddr x)) r)) r))
+                 (fg-ind :l3 (kaddr x) r)))
       (:l2 (list (fg-ind :add (kadr x) (append (fy :l2* (kaddr x)) r))
                  (fg-ind :l2* (kaddr x) r)))
       (:mult (list (fg-ind :prim (car x) (if (kadr x) (cons (op "**") (append (fy :mult (kadr x)) r)) r))
@@ -347,9 +350,9 @@
   (declare (xargs :guard t))
   (case nt
     ((:prim :mult :add) (and (consp ys) (prim-start-p (car ys))))
-    ((:l2 :l4) (and (consp ys) (or (prim-start-p (car ys)) (and (member-equal (car ys) *add-ops*) t))))
+    ((:l2 :l3 :l4) (and (consp ys) (or (prim-start-p (car ys)) (and (member-equal (car ys) *add-ops*) t))))
     ((:and :or :equiv :expr) (and (consp ys) (start-tok-p (car ys))))
-    ((:expr* :equiv* :or* :l2* :add*)
+    ((:expr* :equiv* :or* :l3* :l2* :add*)
      (if (consp x) (and (consp ys) (member-equal (car ys) (lev-ops nt)) t) (null ys)))
     (:arg (and (consp ys) (or (start-tok-p (car ys)) (equal (car ys) '(:op ":")))))
     (:args* (and (consp ys) (member-equal (car ys) '((:op ",") (:op ")"))) t))
@@ -369,6 +372,7 @@
 (fy-first-at :mult (and (consp (fy :mult x)) (prim-start-p (car (fy :mult x)))))
 (fy-first-at :add (and (consp (fy :add x)) (prim-start-p (car (fy :add x)))))
 (fy-first-at :l2 (and (consp (fy :l2 x)) (or (prim-start-p (car (fy :l2 x))) (member-equal (car (fy :l2 x)) *add-ops*))))
+(fy-first-at :l3 (and (consp (fy :l3 x)) (or (prim-start-p (car (fy :l3 x))) (member-equal (car (fy :l3 x)) *add-ops*))))
 (fy-first-at :l4 (and (consp (fy :l4 x)) (or (prim-start-p (car (fy :l4 x))) (member-equal (car (fy :l4 x)) *add-ops*))))
 (fy-first-at :and (and (consp (fy :and x)) (start-tok-p (car (fy :and x)))))
 (fy-first-at :or (and (consp (fy :or x)) (start-tok-p (car (fy :or x)))))
@@ -386,6 +390,7 @@
 (fy-first-lev :expr*)
 (fy-first-lev :equiv*)
 (fy-first-lev :or*)
+(fy-first-lev :l3*)
 (fy-first-lev :l2*)
 (fy-first-lev :add*)
 
@@ -395,7 +400,7 @@
 ; A level's list of (op operand) after a whole tree: empty, when what
 ; follows does not continue it.
 (defthm fp-rest-empty
-  (implies (and (member-eq nt '(:expr* :equiv* :or* :l2* :add*)) (follow-ok nt r))
+  (implies (and (member-eq nt '(:expr* :equiv* :or* :l3* :l2* :add*)) (follow-ok nt r))
            (equal (fp nt r) (mv t nil r)))
   :hints (("Goal" :expand ((:free (nt) (fp nt r))) :in-theory (enable member-equal))))
 
@@ -463,20 +468,20 @@
 ; the trees that are atoms: the empty lists
 (defthm fg-atom
   (implies (and (atom x) (fg nt x))
-           (member-equal nt '(:expr* :equiv* :or* :l2* :add* :args :args* :elist*)))
+           (member-equal nt '(:expr* :equiv* :or* :l3* :l2* :add* :args :args* :elist*)))
   :rule-classes nil
   :hints (("Goal" :expand ((fg nt x)) :in-theory (enable member-equal))))
 
 (defthm fp-complete-atom
   (implies (and (atom x) (fg nt x) (follow-ok nt r))
            (and (equal (fp nt (append (fy nt x) r)) (mv t x r))
-                (not (member-eq nt '(:prim :mult :add :l2 :l4 :and :or :equiv :expr)))))
+                (not (member-eq nt '(:prim :mult :add :l2 :l3 :l4 :and :or :equiv :expr)))))
   :hints (("Goal" :use fg-atom :in-theory (enable member-equal))))
 
 (defthm fp-complete
   (implies (and (fg nt x) (follow-ok nt r))
            (and (equal (fp nt (append (fy nt x) r)) (mv t x r))
-                (implies (member-eq nt '(:prim :mult :add :l2 :l4 :and :or :equiv :expr))
+                (implies (member-eq nt '(:prim :mult :add :l2 :l3 :l4 :and :or :equiv :expr))
                          (not (kw-head-p (append (fy nt x) r))))))
   :hints (("Goal" :induct (fg-ind nt x r)) (fp-open-hint clause stable-under-simplificationp)))
 
@@ -487,7 +492,7 @@
 ; tests that govern it. It is generated from fp by mksteps.bb (bb
 ; mksteps.bb fparse.lisp fp fp-steps) and pasted here. A successful parse
 ; makes at most 32 calls per token it consumes, plus fp-d nt; with
-; fp-complete, a sentence of n tokens is read in at most 32n + 17 calls.
+; fp-complete, a sentence of n tokens is read in at most 32n + 19 calls.
 
 (in-theory (enable member-equal))
 (defun
@@ -498,7 +503,7 @@
   ((tk (kar toks)))
   (case
    nt
-   ((:expr :equiv :or :add)
+   ((:expr :equiv :or :l3 :add)
     (mv-let
      (ok a r)
      (fp (lev-sub nt) toks)
@@ -513,7 +518,7 @@
         (fp (lev-rest nt) r)
         (declare (ignorable ok2 rest r2))
         (let ((c2 (fp-steps (lev-rest nt) r))) (if ok2 (+ 1 c2 c1) (+ 1 c2 c1))))))))
-   ((:expr* :equiv* :or* :l2* :add*)
+   ((:expr* :equiv* :or* :l3* :l2* :add*)
     (if
      (and (consp toks) (member-equal tk (lev-ops nt)))
      (mv-let
@@ -547,18 +552,18 @@
    (:l4
     (mv-let
      (ok a r)
-     (fp :l2 toks)
+     (fp :l3 toks)
      (declare (ignorable ok a r))
      (let
-      ((c7 (fp-steps :l2 toks)))
+      ((c7 (fp-steps :l3 toks)))
       (cond
        ((not (and ok (<= (len r) (len toks)))) (+ 1 c7))
        ((and (consp r) (member-equal (car r) *rel-ops*))
         (mv-let
          (ok2 b r2)
-         (fp :l2 (cdr r))
+         (fp :l3 (cdr r))
          (declare (ignorable ok2 b r2))
-         (let ((c8 (fp-steps :l2 (cdr r)))) (if ok2 (+ 1 c8 c7) (+ 1 c8 c7)))))
+         (let ((c8 (fp-steps :l3 (cdr r)))) (if ok2 (+ 1 c8 c7) (+ 1 c8 c7)))))
        (t (+ 1 c7))))))
    (:l2
     (let*
@@ -735,8 +740,8 @@
 
 (defun fp-d (nt)
   (declare (xargs :guard t))
-  (case nt (:prim 1) (:mult 2) (:add 4) (:l2 6) (:l4 7) (:and 8) (:or 10) (:equiv 12) (:expr 14)
-    ((:arg :tri*) 15) (:args 17) (:elist 16) (otherwise 1)))
+  (case nt (:prim 1) (:mult 2) (:add 4) (:l2 6) (:l3 8) (:l4 9) (:and 10) (:or 12) (:equiv 14) (:expr 16)
+    ((:arg :tri*) 17) (:args 19) (:elist 18) (otherwise 1)))
 
 (defthm fp-steps-natp (natp (fp-steps nt toks)) :rule-classes :type-prescription)
 

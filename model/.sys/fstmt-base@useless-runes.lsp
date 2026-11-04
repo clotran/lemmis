@@ -1,4 +1,5 @@
 (KW)
+(LEN-TOK-P)
 (FG-EXPR)
 (NAMES-P)
 (SHAPE-KIND)
