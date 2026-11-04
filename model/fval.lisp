@@ -6,8 +6,11 @@
 ;              for gfortran and flang (iso_fortran_env int8 .. int64,
 ;              16.10.2), n in -2^(8k-1) .. 2^(8k-1)-1; default kind 4
 ;   (:l k b)   logical of kind k (7.4.5), b t or nil; default kind 4
-;   (:c s)     a character constant, printed only
-;   (:a ty k lbs ubs es)  an array (8.5.8, 9.5.3): ty :i or :l, kind k, its
+;   (:c n s)   character of length n (7.4.4), s a string of n characters;
+;              the default kind only, compared in ASCII order (gfortran's
+;              and flang's collating sequence, 7.4.4.4)
+;   (:a ty k lbs ubs es)  an array (8.5.8, 9.5.3): ty :i :r :l or :c, kind k
+;              (for :c, the length), its
 ;              bounds, its elements in array element order (9.5.3.2), each
 ;              an integer, t or nil, or :u (undefined)
 ;   (:u ty k)  an undefined scalar (19.6)
@@ -66,6 +69,23 @@
 (defun ival-p (v) (declare (xargs :guard t)) (and (consp v) (eq (car v) :i)))
 (defun lval-p (v) (declare (xargs :guard t)) (and (consp v) (eq (car v) :l)))
 (defun aval-p (v) (declare (xargs :guard t)) (and (consp v) (eq (car v) :a)))
+(defun cval-p (v) (declare (xargs :guard t)) (and (consp v) (eq (car v) :c) (stringp (kaddr v))))
+(defun vc (s) (declare (xargs :guard t)) (let ((s (if (stringp s) s ""))) (list :c (length s) s)))
+
+; two character values compared (10.1.5.5.1): the shorter as if padded
+; with blanks; -1, 0 or 1
+(defun cs-cmp (xs ys)
+  (declare (xargs :guard t :measure (+ (len xs) (len ys))))
+  (if (and (atom xs) (atom ys)) 0
+    (let ((a (if (and (consp xs) (characterp (car xs))) (char-code (car xs)) 32))
+          (b (if (and (consp ys) (characterp (car ys))) (char-code (car ys)) 32)))
+      (cond ((< a b) -1) ((> a b) 1) (t (cs-cmp (if (consp xs) (cdr xs) nil) (if (consp ys) (cdr ys) nil)))))))
+(defun c-chars (v) (declare (xargs :guard t)) (if (cval-p v) (coerce (kaddr v) 'list) nil))
+; a character value of length n: truncated, or padded with blanks (10.2.1.3p10)
+(defun c-fit (n v)
+  (declare (xargs :guard t))
+  (let ((n (nfix n))) (list :c n (coerce (take n (append (c-chars v) (make-list n :initial-element #\Space))) 'string))))
+(defun c-trim (cs) (declare (xargs :guard t)) (if (atom cs) nil (let ((r (c-trim (cdr cs)))) (if (and (null r) (eql (car cs) #\Space)) nil (cons (car cs) r)))))
 (defun v-kind (v) (declare (xargs :guard t)) (kadr v))
 (defun v-num (v) (declare (xargs :guard t)) (kaddr v))
 
@@ -174,6 +194,16 @@
             ((member-equal op '(">" ".gt.")) (vl 4 (> x y)))
             ((member-equal op '(">=" ".ge.")) (vl 4 (>= x y)))
             (t (err :type)))))
+   ((and (cval-p a) (cval-p b))           ; 10.1.5.3 concatenation, 10.1.5.5 character relations
+    (let ((c (cs-cmp (c-chars a) (c-chars b))))
+      (cond ((equal op "//") (vc (concatenate 'string (kaddr a) (kaddr b))))
+            ((member-equal op '("==" ".eq.")) (vl 4 (= c 0)))
+            ((member-equal op '("/=" ".ne.")) (vl 4 (not (= c 0))))
+            ((member-equal op '("<" ".lt.")) (vl 4 (< c 0)))
+            ((member-equal op '("<=" ".le.")) (vl 4 (<= c 0)))
+            ((member-equal op '(">" ".gt.")) (vl 4 (> c 0)))
+            ((member-equal op '(">=" ".ge.")) (vl 4 (>= c 0)))
+            (t (err :type)))))
    ((and (lval-p a) (lval-p b) (booleanp (v-num a)) (booleanp (v-num b)))
     ; mixed logical kinds: processor dependent (10.1.9.3); the greater here
     (let ((x (v-num a)) (y (v-num b)) (k (kmax (v-kind a) (v-kind b))))
@@ -224,9 +254,9 @@
 
 (defun wrap (ty k e)                 ; an element as a scalar value
   (declare (xargs :guard t))
-  (cond ((eq e :u) (list :u ty k)) ((eq e :pd) (list :pd ty k)) ((eq ty :i) (vi k e)) ((eq ty :r) (vr k e)) (t (vl k e))))
+  (cond ((eq e :u) (list :u ty k)) ((eq e :pd) (list :pd ty k)) ((eq ty :i) (vi k e)) ((eq ty :r) (vr k e)) ((eq ty :c) (list :c k e)) (t (vl k e))))
 (defun raw (v) (declare (xargs :guard t)) (cond ((and (consp v) (eq (car v) :u)) :u) ((pd-p v) :pd) (t (kaddr v))))
-(defun scal-ty (v) (declare (xargs :guard t)) (case (kar v) (:i :i) (:l :l) (:r :r) ((:u :pd) (kadr v)) (otherwise nil)))
+(defun scal-ty (v) (declare (xargs :guard t)) (case (kar v) (:i :i) (:l :l) (:r :r) (:c :c) ((:u :pd) (kadr v)) (otherwise nil)))
 (defun scal-k (v) (declare (xargs :guard t)) (if (member-eq (kar v) '(:u :pd)) (kaddr v) (kadr v)))
 
 (defun nth-safe (n xs) (declare (xargs :guard t)) (if (atom xs) nil (if (not (posp n)) (car xs) (nth-safe (1- n) (cdr xs)))))
@@ -296,6 +326,7 @@
         ((and (pd-p v) (member-eq ty '(:i :r)) (member-eq (kadr v) '(:i :r))) (list :pd ty k))
         ((and (pd-p v) (eq ty :l) (eq (kadr v) :l)) (list :pd ty k))
         ((and (eq ty :l) (lval-p v)) (vl k (v-num v)))
+        ((and (eq ty :c) (cval-p v)) (if (eq k :star) v (c-fit k v)))   ; :star, an assumed length (8.5.13)
         ((and (consp v) (eq (car v) :u)) (err :undefined))
         (t (err :type))))
 (defun conv-raws (ty k fty fk es)
@@ -402,18 +433,26 @@
                (case x (:nzero "-0") (:pinf "+Inf") (:ninf "-Inf") (:nan "NaN") (otherwise (rat-str x)))))
 (defun render1 (v)
   (declare (xargs :guard t))
-  (case (kar v) (:i (int-str (kaddr v))) (:l (if (kaddr v) "T" "F")) (:c (if (stringp (kadr v)) (kadr v) ""))
+  (case (kar v) (:i (int-str (kaddr v))) (:l (if (kaddr v) "T" "F")) (:c (if (stringp (kaddr v)) (kaddr v) ""))
     (:r (real-str (kadr v) (kaddr v))) (:pd "~PD")
     (otherwise "?")))
-(defun render-raws (ty k es)
+(defun wrap-all (ty k es)
   (declare (xargs :guard t))
-  (if (atom es) nil (cons (render1 (wrap ty k (car es))) (render-raws ty k (cdr es)))))
-(defun render (vs)
+  (if (atom es) nil (cons (wrap ty k (car es)) (wrap-all ty k (cdr es)))))
+(defun flat-vals (vs)                ; the scalars, an array's in array element order
   (declare (xargs :guard t))
   (if (atom vs) nil
-    (append (if (aval-p (car vs)) (render-raws (a-ty (car vs)) (a-k (car vs)) (a-es (car vs)))
-              (list (render1 (car vs))))
-            (render (cdr vs)))))
+    (append (if (aval-p (car vs)) (wrap-all (a-ty (car vs)) (a-k (car vs)) (a-es (car vs))) (list (car vs)))
+            (flat-vals (cdr vs)))))
+; adjacent character items are written with no value separator between
+; them (13.10.4, under the delimiter mode NONE, PRINT's)
+(defun render-flat (xs)
+  (declare (xargs :guard t :measure (len xs)))
+  (cond ((atom xs) nil)
+        ((and (cval-p (car xs)) (consp (cdr xs)) (cval-p (cadr xs)))
+         (render-flat (cons (vc (concatenate 'string (kaddr (car xs)) (kaddr (cadr xs)))) (cddr xs))))
+        (t (cons (render1 (car xs)) (render-flat (cdr xs))))))
+(defun render (vs) (declare (xargs :guard t)) (render-flat (flat-vals vs)))
 
 ; ---- the intrinsic procedures (16.9) the subset has, on argument values
 ; vs (positional) and kw (an alist of keyword arguments, "dim" "kind")
@@ -587,7 +626,14 @@
       (let ((k (cond ((rval-p a) (v-kind a)) ((and (aval-p a) (eq (a-ty a) :r)) (a-k a)) (t nil))))
         (if (rkind-p k) (vr k (if (equal name "tiny") (fl-tiny k) (fl-epsilon k))) (err :type))))
      ((equal name "kind")                                     ; 16.9.118
-      (cond ((or (ival-p a) (lval-p a) (rval-p a)) (vi 4 (v-kind a))) ((aval-p a) (vi 4 (a-k a))) (t (err :type))))
+      (cond ((or (ival-p a) (lval-p a) (rval-p a)) (vi 4 (v-kind a))) ((cval-p a) (vi 4 1))
+            ((aval-p a) (vi 4 (if (eq (a-ty a) :c) 1 (a-k a)))) (t (err :type))))
+     ((member-equal name '("len" "len_trim" "trim"))          ; 16.9.120, 16.9.121, 16.9.212, scalars
+      (let ((k (kind-arg kw)))
+        (cond ((not (and (= n 1) (cval-p a) k (or (null kw) (not (equal name "trim"))))) (err :type))
+              ((equal name "len") (mk-int k (v-kind a)))
+              ((equal name "len_trim") (mk-int k (len (c-trim (c-chars a)))))
+              (t (vc (coerce (c-trim (c-chars a)) 'string))))))
      ((member-equal name '("size" "lbound" "ubound"))         ; 16.9.194, 16.9.119, 16.9.215
       (let ((k (kind-arg kw)) (dim (or (kadr vs) (cdr (alk "dim" kw)))))
         (cond ((not (and k (aval-p a))) (err :type))

@@ -102,10 +102,16 @@
 ;  :oitems (e ...)                  R1216 output-item-list, e {, e}, to the end
 ;  :ts    (k ks)                    R703/R704 declaration-type-spec,
 ;                                   intrinsic-type-spec: R705 INTEGER
-;                                   [kind-selector] or LOGICAL
-;                                   [kind-selector]; R706 kind-selector:
+;                                   [kind-selector], REAL [kind-selector],
+;                                   LOGICAL [kind-selector]; R706 kind-selector:
 ;                                   ( [KIND =] scalar-int-constant-expr ),
-;                                   ks nil or (kwp e)
+;                                   ks nil or (kwp e); DOUBLE PRECISION (k
+;                                   "double", ks nil); CHARACTER [char-selector]
+;                                   (R721, R722 length-selector, no KIND=): ks
+;                                   nil, (kwp e) for ( [LEN =] type-param-value )
+;                                   (R701: e an expr, or :star for *), or
+;                                   (:len tk) for * char-length (R723, an
+;                                   int-literal-constant tk)
 ;  :attrs (attr ...)                each written ", attr-spec" (R802):
 ;                                   (:parameter) PARAMETER, (:value) VALUE,
 ;                                   (:intent i) INTENT ( intent-spec ) R828
@@ -217,8 +223,13 @@
                     (names-p (caddr x)) (or (cadr x) (null (caddr x)))))
     (:ts (and (true-listp x) (= (len x) 2) (member-equal (car x) *type-kws*)
               (or (null (cadr x))
-                  (and (true-listp (cadr x)) (= (len (cadr x)) 2) (booleanp (car (cadr x)))
-                       (fg :expr (cadr (cadr x)))))))
+                  (and (not (equal (car x) "double"))
+                       (true-listp (cadr x)) (= (len (cadr x)) 2)
+                       (if (eq (car (cadr x)) :len)
+                           (and (equal (car x) "character") (len-tok-p (cadr (cadr x))))
+                         (and (booleanp (car (cadr x)))
+                              (if (eq (cadr (cadr x)) :star) (equal (car x) "character")
+                                (fg :expr (cadr (cadr x))))))))))
     (:attrs (if (atom x) (null x) (and (fgs :attr (car x)) (fgs :attrs (cdr x)))))
     (:attr (and (true-listp x)
                 (case (car x)
@@ -340,10 +351,12 @@
                         (if (kaddr x) (list (kw "result") (op "(") (kaddr x) (op ")")) nil)))
       (:sub-rest (append (list (kw "subroutine") (car x)) (if (kadr x) (cons (op "(") (names-y (kaddr x))) nil)))
       (:ts (cons (kw (car x))
-                 (if (kadr x)
-                     (cons (op "(") (append (if (kar (kadr x)) (list (kw "kind") (op "=")) nil)
-                                            (fy :expr (kadr (kadr x))) (list (op ")"))))
-                   nil)))
+                 (cond ((equal (car x) "double") (list (kw "precision")))
+                       ((not (kadr x)) nil)
+                       ((eq (kar (kadr x)) :len) (list (op "*") (kadr (kadr x))))
+                       (t (cons (op "(") (append (if (kar (kadr x)) (list (kw (if (equal (car x) "character") "len" "kind")) (op "=")) nil)
+                                                 (if (eq (kadr (kadr x)) :star) (list (op "*")) (fy :expr (kadr (kadr x))))
+                                                 (list (op ")"))))))))
       (:attrs (cons (op ",") (append (fys :attr (car x)) (fys :attrs (cdr x)))))
       (:attr (case (car x)
                (:parameter (list (kw "parameter")))
@@ -629,13 +642,20 @@
                    (mv t (list as dc es) r2)
                  (fail)))))))
       (:ts (cond ((not (tok-in tk *type-kws*)) (fail))
+                 ((equal tk (kw "double"))
+                  (if (equal (kadr toks) (kw "precision")) (mv t (list "double" nil) (kdr (kdr toks))) (fail)))
                  ((equal (kadr toks) (op "("))
-                  (let* ((kwp (and (equal (kaddr toks) (kw "kind")) (kw-head-p (kdr (kdr toks)))))
+                  (let* ((ch (equal tk (kw "character")))
+                         (kwp (and (equal (kaddr toks) (kw (if ch "len" "kind"))) (kw-head-p (kdr (kdr toks)))))
                          (t1 (if kwp (kdr (kdr (kdr (kdr toks)))) (kdr (kdr toks)))))
-                    (mv-let (ok e r) (fp :expr t1)
-                      (if (and ok (equal (kar r) (op ")")))
-                          (mv t (list (kadr tk) (list kwp e)) (kdr r))
-                        (fail)))))
+                    (if (and ch (equal (kar t1) (op "*")))
+                        (if (equal (kadr t1) (op ")")) (mv t (list "character" (list kwp :star)) (kdr (kdr t1))) (fail))
+                      (mv-let (ok e r) (fp :expr t1)
+                        (if (and ok (equal (kar r) (op ")")))
+                            (mv t (list (kadr tk) (list kwp e)) (kdr r))
+                          (fail))))))
+                 ((and (equal tk (kw "character")) (equal (kadr toks) (op "*")))
+                  (if (len-tok-p (kaddr toks)) (mv t (list "character" (list :len (kaddr toks))) (kdr (kdr (kdr toks)))) (fail)))
                  (t (mv t (list (kadr tk) nil) (kdr toks)))))
       (:attrs (if (equal tk (op ","))
                   (mv-let (ok a r) (fps :attr (kdr toks))

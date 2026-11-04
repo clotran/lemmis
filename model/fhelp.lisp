@@ -243,7 +243,8 @@
   `(mv-let ,vs ,form (if (errp ,(car vs)) (mv ,(car vs) ,(cadr vs)) (progn$ ,@body))))
 
 (defun op-str (tk) (declare (xargs :guard t)) (kadr tk))
-(defun ts-ty (name) (declare (xargs :guard t)) (cond ((equal name "integer") :i) ((equal name "real") :r) (t :l)))
+(defun ts-ty (name) (declare (xargs :guard t))
+  (cond ((equal name "integer") :i) ((member-equal name '("real" "double")) :r) ((equal name "character") :c) (t :l)))
 (defun cond-err (v) (declare (xargs :guard t)) (if (pd-p v) (err :pd) (err :type)))   ; control on the processor's choice
 
 ; a real literal's value (R714): the significand's digits over a power of
@@ -275,7 +276,7 @@
                   ((digit-string-p kp) (digits-val kp))
                   (t (mv-let (b suf d) (env-lookup kp env) (declare (ignore suf d))
                        (if (and (eq (kar b) :const) (ival-scalar (kadr b))) (v-num (kadr b)) nil))))))
-    (cond ((eq (kar tk) :char) (list :c (kadr tk)))
+    (cond ((eq (kar tk) :char) (vc (kadr tk)))
           ((not (ikind-p k)) (err :type))
           ((eq (kar tk) :log) (vl k (kadr tk)))
           (t (mk-int k (digits-val (kadr tk))))))))

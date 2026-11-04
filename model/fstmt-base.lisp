@@ -12,7 +12,11 @@
 (defconst *unit-ends* '("program" "module" "function" "subroutine"))
 (defconst *simple-kinds* '("cycle" "exit" "return" "continue" "stop"))
 (defconst *prefix-kws* '("pure" "elemental" "impure" "recursive" "non_recursive"))
-(defconst *type-kws* '("integer" "logical" "real"))
+(defconst *type-kws* '("integer" "logical" "real" "character" "double"))
+; R723 char-length's int-literal-constant, CHARACTER * n (no kind-param: C730)
+(defun len-tok-p (x)
+  (declare (xargs :guard t))
+  (and (true-listp x) (= (len x) 3) (eq (car x) :int) (digit-string-p (cadr x)) (null (caddr x))))
 (defconst *intents* '(("in") ("out") ("inout") ("in" "out")))
 
 (defun fg-expr (e) (declare (xargs :guard t)) (fg :expr e))
@@ -68,10 +72,10 @@
 ; else: a designator, an input item (R1216)
 (defun lone-prim (e)                 ; the :prim tree, or nil
   (declare (xargs :guard t))
-  (let* ((eq1 (kar e)) (or1 (kar eq1)) (and1 (kar or1)) (l4 (kadr and1)) (l2 (kar l4)) (add (kadr l2))
+  (let* ((eq1 (kar e)) (or1 (kar eq1)) (and1 (kar or1)) (l4 (kadr and1)) (l3 (kar l4)) (l2 (kar l3)) (add (kadr l2))
          (mult (kar add)) (prim (kar mult)))
     (and (null (kadr e)) (null (kadr eq1)) (null (kadr or1)) (null (kar and1))
-         (null (kadr l4)) (null (kar l2)) (null (kaddr l2)) (null (kadr add)) (null (kadr mult))
+         (null (kadr l4)) (null (kadr l3)) (null (kar l2)) (null (kaddr l2)) (null (kadr add)) (null (kadr mult))
          (member-eq (kar prim) '(:name :ref)) prim)))
 (defun all-lone (es) (declare (xargs :guard t)) (if (atom es) t (and (lone-prim (car es)) (all-lone (cdr es)))))
 ; the three labels of an arithmetic IF after its ( expr ), and the statement's end

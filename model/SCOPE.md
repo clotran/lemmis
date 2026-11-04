@@ -11,7 +11,7 @@ proved to accept exactly that grammar (`fp-`, `fps-`, `fpu-sound` and
 `-complete`), for every alternative the Scope uses; **part** when only
 some alternatives are in; **no** otherwise.
 
-Score: **120 of 148** Scope rules proved (81%); 26 more in part; 2 not yet in.
+Score: **122 of 152** Scope rules proved (80%); 30 more in part; none not yet in.
 
 ## The books
 
@@ -25,7 +25,7 @@ Score: **120 of 148** Scope rules proved (81%); 26 more in part; 2 not yet in.
     that does not continue it, fp answers that tree -- so the grammar is
     unambiguous and fp accepts every sentence of it;
   - `fp-cost`: a successful parse makes at most 32 calls per token it
-    reads, plus a constant per nonterminal (`fp-d`, at most 17) -- with
+    reads, plus a constant per nonterminal (`fp-d`, at most 19) -- with
     fp-complete, n tokens are read in at most 32n + 17 calls.
   All certify in about 25 s.
 - `fstmt.lisp`: one statement's tokens, the same way: `fgs`, `fys`, the
@@ -60,8 +60,11 @@ Score: **120 of 148** Scope rules proved (81%); 26 more in part; 2 not yet in.
   (`*fkeywords*`: `if`, `do`, `end`, `integer`, ...). Fortran has no
   reserved words; with this, each statement's kind is known from its
   first tokens.
-- No character expressions: R1011's concat-op and character variables
-  are out; a character literal may appear (as a PRINT item).
+- Character is of the default kind only (no KIND= in R721, no kind-param
+  on a literal), and scalar or an array element by element: no substrings
+  (R908), no character input (READ), no character SELECT CASE. A character
+  dummy's length is `*` or its actual's (15.5.2.4 also lets the actual be
+  longer); a run where it is not stops with `:type`.
 - No defined operators (R1003, R1023 have no defined-unary-op or
   defined-binary-op), no conditional expressions (R1002), no derived
   types, no labels, no construct names, no `(/ ... /)` constructors.
@@ -99,10 +102,14 @@ Score: **120 of 148** Scope rules proved (81%); 26 more in part; 2 not yet in.
 | R717 | exponent | proved |  |
 | R724 | char-literal-constant | part | no kind-param prefix |
 | R725 | logical-literal-constant | proved | |
+| R701 | type-param-value | part | scalar-int-expr, `*` (a dummy's or a named constant's length); no `:` |
 | R703 | declaration-type-spec | proved | intrinsic-type-spec |
-| R704 | intrinsic-type-spec | part | INTEGER, REAL, LOGICAL; no COMPLEX, CHARACTER, DOUBLE PRECISION |
+| R704 | intrinsic-type-spec | part | INTEGER, REAL, DOUBLE PRECISION (two words), CHARACTER, LOGICAL; no COMPLEX |
 | R705 | integer-type-spec | proved |  |
 | R706 | kind-selector | proved |  |
+| R721 | char-selector | part | length-selector; no KIND= |
+| R722 | length-selector | part | ( [LEN =] type-param-value ), * char-length; no "," after it |
+| R723 | char-length | part | int-literal-constant; no ( type-param-value ) |
 | R777 | array-constructor | part | lbracket ac-spec rbracket |
 | R778 | ac-spec | part | ac-value-list |
 | R779 | lbracket | proved | |
@@ -138,8 +145,8 @@ Score: **120 of 148** Scope rules proved (81%); 26 more in part; 2 not yet in.
 | R1008 | power-op | proved | |
 | R1009 | mult-op | proved | |
 | R1010 | add-op | proved | |
-| R1011 | level-3-expr | no | concat-op: no character expressions yet |
-| R1012 | concat-op | no | |
+| R1011 | level-3-expr | proved | |
+| R1012 | concat-op | proved | |
 | R1013 | level-4-expr | proved | |
 | R1014 | rel-op | proved | |
 | R1015 | and-operand | proved | |
