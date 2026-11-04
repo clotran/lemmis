@@ -149,6 +149,7 @@ check-fsem records what each compiler printed:
 | DO CONCURRENT: a variable referred to in one iteration and defined in another; EXIT or RETURN out of it; an impure reference in it | 11.1.7.5p7, C1172, C1140, C1143 | `:concurrent` |
 | a PRINT inside DO CONCURRENT (its lines in the order the processor runs the iterations) | 11.1.7.4.2 | `:pd` |
 | an error in an operand the value does not need (.AND. after false, .OR. after true) | 10.1.7 | `:pd` |
+| a formatted real exactly halfway between two outputs (Fw.d, Ew.d) | 13.7.2.3.8: the I/O rounding mode is processor dependent | to nearest, ties to even: what gfortran and flang both do (cases/format.f90) |
 
 A control decision on a :pd value (IF, DO WHILE, SELECT) stops with `:pd`.
 

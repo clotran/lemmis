@@ -14,7 +14,7 @@ model/%.cert: model/%.lisp
 	  echo "model: $* certified"
 
 check: model
-	@cd model && bb check-fsem.bb
+	@cd model && ACL2="$(ACL2)" bb check-fsem.bb
 
 build/deps.mk: $(BOOKS:%=model/%.lisp)
 	@mkdir -p build

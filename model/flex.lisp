@@ -14,8 +14,10 @@
 ;            insensitive outside character contexts (6.1.2)
 ;
 ; Subset: a token is not split across lines and a character context is
-; not continued (6.3.2.4p3, p4); no labels (6.3.2.6). A character the
+; not continued (6.3.2.4p3, p4). A character the
 ; subset does not have gives (:bad c), which no statement accepts.
+; A statement's label is a statement of its own, ((:lab l)); a FORMAT
+; statement's specification one token, (:fmt text).
 ;
 ; A real literal (R714) is (:real m x e k): its significand's text m, the
 ; exponent letter x ("e", "d" or nil), the exponent's text e, the kind k.
@@ -62,7 +64,7 @@
 (defconst *lx-pairs*
   '(("enddo" "end" "do") ("endif" "end" "if") ("elseif" "else" "if") ("endprogram" "end" "program")
     ("endmodule" "end" "module") ("endfunction" "end" "function") ("endsubroutine" "end" "subroutine")
-    ("endselect" "end" "select") ("selectcase" "select" "case")))
+    ("endselect" "end" "select") ("selectcase" "select" "case") ("goto" "go" "to")))
 
 ; a kind-param after "_" (R708, R709): digits or a name
 (defun lx-kind (cs)                 ; (mv kind rest)
@@ -178,6 +180,21 @@
   :hints (("Goal" :in-theory (disable lx-dotword-p lx-exp lx-real lx-kind lx-str lx-digits))))
 (in-theory (disable lx-number))
 
+; ---- a FORMAT statement's specification, kept as text (13.2): its
+; edit descriptors are not tokens of the expression grammar. From "(" to
+; the matching ")", a character constant's text kept whole.
+(defun lx-fmt-raw (cs depth q)       ; (mv chars rest), q the open quote or nil
+  (declare (xargs :guard t :measure (len cs)))
+  (cond ((or (atom cs) (eql (car cs) #\Newline)) (mv nil cs))
+        (q (mv-let (a r) (lx-fmt-raw (cdr cs) depth (if (equal (car cs) q) nil q)) (mv (cons (car cs) a) r)))
+        ((or (eql (car cs) #\') (eql (car cs) #\")) (mv-let (a r) (lx-fmt-raw (cdr cs) depth (car cs)) (mv (cons (car cs) a) r)))
+        ((eql (car cs) #\() (mv-let (a r) (lx-fmt-raw (cdr cs) (+ 1 (nfix depth)) nil) (mv (cons (car cs) a) r)))
+        ((eql (car cs) #\))
+         (if (<= (nfix depth) 1) (mv (list #\)) (cdr cs))
+           (mv-let (a r) (lx-fmt-raw (cdr cs) (+ -1 (nfix depth)) nil) (mv (cons (car cs) a) r))))
+        (t (mv-let (a r) (lx-fmt-raw (cdr cs) depth nil) (mv (cons (car cs) a) r)))))
+(defthm lx-fmt-raw-len (<= (len (mv-nth 1 (lx-fmt-raw cs depth q))) (len cs)) :rule-classes :linear)
+
 ; the tokens, with :eos where a statement ends
 (defun lx-toks (cs)
   (declare (xargs :guard t :measure (len cs)))
@@ -192,9 +209,11 @@
        ((lx-letter-p c)
         (mv-let (a r) (lx-alnums cs)
           (let* ((s (lx-str (lx-down a))) (pair (assoc-equal s *lx-pairs*)))
-            (if pair
-                (list* (list :name (cadr pair)) (list :name (caddr pair)) (lx-toks r))
-              (cons (list :name s) (lx-toks r))))))
+            (cond (pair (list* (list :name (cadr pair)) (list :name (caddr pair)) (lx-toks r)))
+                  ((and (equal s "format") (eql (kar (lx-blanks r)) #\())
+                   (mv-let (f r2) (lx-fmt-raw (lx-blanks r) 0 nil)
+                     (list* (list :name s) (list :fmt (lx-str f)) (lx-toks r2))))
+                  (t (cons (list :name s) (lx-toks r)))))))
        ((or (lx-digit-p c) (and (eql c #\.) (consp (cdr cs)) (lx-digit-p (cadr cs))))
         (mv-let (tok r) (lx-number cs) (cons tok (lx-toks r))))
        ((eql c #\.)
@@ -217,10 +236,16 @@
        (t (list (list :bad (lx-str (list c)))))))))
 
 ; the statements: the tokens between :eos marks, the empty ones dropped
+; a statement's label (6.3.2.5): the digits before it, its own statement
+(defun lx-label (st)
+  (declare (xargs :guard t))
+  (if (and (consp st) (consp (cdr st)) (consp (car st)) (eq (car (car st)) :int) (null (kaddr (car st))))
+      (list (list (list :lab (kadr (car st)))) (cdr st))
+    (list st)))
 (defun lx-stmts (ts cur)
   (declare (xargs :guard (true-listp cur)))
-  (cond ((atom ts) (if cur (list (reverse cur)) nil))
-        ((eq (car ts) :eos) (if cur (cons (reverse cur) (lx-stmts (cdr ts) nil)) (lx-stmts (cdr ts) nil)))
+  (cond ((atom ts) (if cur (lx-label (reverse cur)) nil))
+        ((eq (car ts) :eos) (if cur (append (lx-label (reverse cur)) (lx-stmts (cdr ts) nil)) (lx-stmts (cdr ts) nil)))
         (t (lx-stmts (cdr ts) (cons (car ts) cur)))))
 
 (defun flex (s)
@@ -245,3 +270,149 @@
 (assert-event (equal (flex "if (1.eq.2.and.3.<4) x = 1")
                      '(((:name "if") (:op "(") (:int "1" nil) (:op ".eq.") (:int "2" nil) (:op ".and.")
                         (:real "3." nil nil nil) (:op "<") (:int "4" nil) (:op ")") (:name "x") (:op "=") (:int "1" nil)))))
+
+; ---- fixed source form (6.3.3): a "C", "c", "*" or "!" in column 1, or
+; a blank line, is a comment; columns 1-5 hold a statement's label, a
+; character other than blank or zero in column 6 continues the line
+; before, the statement is in columns 7-72. Blanks mean nothing outside
+; a character context (6.3.3.2), so a statement's text is read without
+; them and given to lx-toks with a blank after its keyword: "GOTO40040"
+; is go to 40040, "DO10I=1,10" do 10 i=1,10 (6.3.3.1).
+
+(defun ff-lines (cs line)            ; the lines, each a list of characters
+  (declare (xargs :guard (true-listp line)))
+  (cond ((atom cs) (if line (list (reverse line)) nil))
+        ((eql (kar cs) #\Newline) (cons (reverse line) (ff-lines (kdr cs) nil)))
+        (t (ff-lines (kdr cs) (cons (kar cs) line)))))
+(defun ff-take (n cs) (declare (xargs :guard (natp n))) (if (or (zp n) (atom cs)) nil (cons (kar cs) (ff-take (1- n) (kdr cs)))))
+(defun ff-drop (n cs) (declare (xargs :guard (natp n))) (if (or (zp n) (atom cs)) cs (ff-drop (1- n) (kdr cs))))
+(defun ff-blank-p (cs) (declare (xargs :guard t)) (if (atom cs) t (and (lx-blank-p (kar cs)) (ff-blank-p (kdr cs)))))
+(defun ff-no-blanks (cs) (declare (xargs :guard t)) (if (atom cs) nil (if (lx-blank-p (kar cs)) (ff-no-blanks (kdr cs)) (cons (kar cs) (ff-no-blanks (kdr cs))))))
+(defun ff-comment-p (l)
+  (declare (xargs :guard t))
+  (or (ff-blank-p l) (member (kar l) '(#\C #\c #\* #\!))))
+(defun ff-cont-p (l)
+  (declare (xargs :guard t))
+  (let ((c (kar (ff-drop 5 l)))) (and (characterp c) (not (eql c #\Space)) (not (eql c #\0)))))
+
+; the statements: (label-chars . text-chars), continuations joined
+(defun ff-join (ls acc)
+  (declare (xargs :guard (true-listp acc)))
+  (cond ((atom ls) (reverse acc))
+        ((ff-comment-p (kar ls)) (ff-join (kdr ls) acc))
+        ((and (ff-cont-p (kar ls)) (consp acc))
+         (ff-join (kdr ls) (cons (cons (kar (kar acc)) (append (true-list-fix (kdr (kar acc))) (ff-take 66 (ff-drop 6 (kar ls))))) (kdr acc))))
+        (t (ff-join (kdr ls) (cons (cons (ff-no-blanks (ff-take 5 (kar ls))) (ff-take 66 (ff-drop 6 (kar ls)))) acc)))))
+
+; the text without blanks, lower case, outside character contexts
+(defun ff-squeeze (cs q)
+  (declare (xargs :guard t))
+  (cond ((atom cs) nil)
+        (q (cons (kar cs) (ff-squeeze (kdr cs) (if (equal (kar cs) q) nil q))))
+        ((or (eql (kar cs) #\') (eql (kar cs) #\")) (cons (kar cs) (ff-squeeze (kdr cs) (kar cs))))
+        ((lx-blank-p (kar cs)) (ff-squeeze (kdr cs) nil))
+        (t (cons (if (and (characterp (kar cs)) (standard-char-p (kar cs))) (char-downcase (kar cs)) (kar cs))
+                 (ff-squeeze (kdr cs) nil)))))
+
+(defun ff-prefix-p (p cs) (declare (xargs :guard t)) (if (atom p) t (and (consp cs) (equal (kar p) (kar cs)) (ff-prefix-p (kdr p) (kdr cs)))))
+
+; an "=" outside parentheses and character contexts, not a relation's
+(defun ff-top-eq (cs depth q prev)   ; the text after it, or nil
+  (declare (xargs :guard t :measure (len cs)))
+  (cond ((atom cs) nil)
+        (q (ff-top-eq (kdr cs) depth (if (equal (kar cs) q) nil q) (kar cs)))
+        ((or (eql (kar cs) #\') (eql (kar cs) #\")) (ff-top-eq (kdr cs) depth (kar cs) (kar cs)))
+        ((eql (kar cs) #\() (ff-top-eq (kdr cs) (+ 1 (nfix depth)) nil (kar cs)))
+        ((eql (kar cs) #\)) (ff-top-eq (kdr cs) (+ -1 (nfix depth)) nil (kar cs)))
+        ((and (eql (kar cs) #\=) (zp (nfix depth)) (not (member prev '(#\< #\> #\/ #\=))) (not (eql (kadr cs) #\=)) (not (eql (kadr cs) #\>)))
+         (cons #\Space (kdr cs)))
+        (t (ff-top-eq (kdr cs) depth nil (kar cs)))))
+(defun ff-top-comma-p (cs depth q)
+  (declare (xargs :guard t :measure (len cs)))
+  (cond ((atom cs) nil)
+        (q (ff-top-comma-p (kdr cs) depth (if (equal (kar cs) q) nil q)))
+        ((or (eql (kar cs) #\') (eql (kar cs) #\")) (ff-top-comma-p (kdr cs) depth (kar cs)))
+        ((eql (kar cs) #\() (ff-top-comma-p (kdr cs) (+ 1 (nfix depth)) nil))
+        ((eql (kar cs) #\)) (ff-top-comma-p (kdr cs) (+ -1 (nfix depth)) nil))
+        ((and (eql (kar cs) #\,) (zp (nfix depth))) t)
+        (t (ff-top-comma-p (kdr cs) depth nil))))
+(defun ff-close (cs depth q n)       ; how many characters to the ")" closing an open "("
+  (declare (xargs :guard (natp n) :measure (len cs)))
+  (cond ((atom cs) nil)
+        (q (ff-close (kdr cs) depth (if (equal (kar cs) q) nil q) (+ 1 n)))
+        ((or (eql (kar cs) #\') (eql (kar cs) #\")) (ff-close (kdr cs) depth (kar cs) (+ 1 n)))
+        ((eql (kar cs) #\() (ff-close (kdr cs) (+ 1 (nfix depth)) nil (+ 1 n)))
+        ((eql (kar cs) #\)) (if (<= (nfix depth) 1) (+ 1 n) (ff-close (kdr cs) (+ -1 (nfix depth)) nil (+ 1 n))))
+        (t (ff-close (kdr cs) depth nil (+ 1 n)))))
+(defun ff-labels-p (cs) (declare (xargs :guard t))   ; digits and commas: an arithmetic IF's labels
+  (and (consp cs) (if (atom cs) t (and (or (lx-digit-p (kar cs)) (eql (kar cs) #\,)) (or (atom (kdr cs)) (ff-labels-p (kdr cs)))))))
+
+(defconst *ff-keywords*              ; a statement's first word, longest first where one begins another
+  '("doubleprecision" "implicitnone" "endprogram" "endsubroutine" "endfunction" "endmodule" "subroutine" "dimension"
+    "continue" "function" "implicit" "integer" "logical" "program" "contains" "elseif" "endif" "enddo" "return"
+    "format" "write" "print" "character" "real" "call" "stop" "else" "then" "end" "data" "common"))
+(defun ff-kw (cs ks)                 ; the keyword cs begins with
+  (declare (xargs :guard t))
+  (cond ((atom ks) nil)
+        ((and (stringp (kar ks)) (ff-prefix-p (coerce (kar ks) 'list) cs)) (kar ks))
+        (t (ff-kw cs (kdr ks)))))
+(defconst *ff-spaced*                ; a keyword written as two words in free form
+  '(("doubleprecision" . "double precision") ("implicitnone" . "implicit none") ("endprogram" . "end program")
+    ("endsubroutine" . "end subroutine") ("endfunction" . "end function") ("endmodule" . "end module")
+    ("elseif" . "else if") ("endif" . "end if") ("enddo" . "end do")))
+
+; a squeezed statement's free-form text
+(defun ff-stmt (cs)
+  (declare (xargs :guard t :measure (len cs)))
+  (cond
+   ((ff-prefix-p '(#\i #\f #\() cs)
+    (let ((n (ff-close (kdr (kdr (kdr cs))) 1 nil 0)))   ; just after IF's "("
+      (if (not (natp n)) cs
+        (let* ((head (ff-take (+ 3 n) cs)) (rest (ff-drop (+ 3 n) cs)))
+          (cond ((eql (kar rest) #\=) cs)                      ; an assignment to an array IF
+                ((ff-labels-p rest) (append head (cons #\Space rest)))
+                ((< (len rest) (len cs)) (append head (cons #\Space (ff-stmt rest))))
+                (t cs))))))
+   ((and (ff-top-eq cs 0 nil nil) (ff-prefix-p '(#\d #\o) cs) (ff-top-comma-p (ff-top-eq cs 0 nil nil) 0 nil))
+    ; DO [label] [,] v = e, e: the label's digits, then the rest
+    (let ((r (kdr (kdr cs))))
+      (mv-let (d r2) (lx-digits r)
+        (append (list #\d #\o #\Space) d (list #\Space) r2))))
+   ((ff-top-eq cs 0 nil nil) cs)                              ; an assignment
+   ((ff-prefix-p '(#\g #\o #\t #\o) cs) (append (coerce "go to " 'list) (ff-drop 4 cs)))
+   (t (let ((k (ff-kw cs *ff-keywords*)))
+        (if (not k) cs
+          (let ((sp (kdr (assoc-equal k *ff-spaced*))))
+            (append (coerce (if sp sp k) 'list) (cons #\Space (ff-drop (len (coerce k 'list)) cs)))))))))
+
+(defun ff-stmts (ss)                 ; each statement's tokens, its label's statement first
+  (declare (xargs :guard t))
+  (if (atom ss) nil
+    (let* ((lab (kar (kar ss))) (toks (lx-toks (ff-stmt (ff-squeeze (kdr (kar ss)) nil))))
+           (rest (ff-stmts (kdr ss))))
+      (append (if (and (consp lab) (digit-string-p (lx-str lab))) (list (list (list :lab (lx-str lab)))) nil)
+              (if (consp toks) (list (remove-equal :eos toks)) nil)
+              rest))))
+
+(defun flex-fixed (s)
+  (declare (xargs :guard (stringp s)))
+  (ff-stmts (ff-join (ff-lines (coerce s 'list) nil) nil)))
+
+(assert-event (equal (flex-fixed (concatenate 'string
+                                  "C A COMMENT" (string #\Newline)
+                                  "      PROGRAM FM002" (string #\Newline)
+                                  "   41 CONTINUE                                                          00860002" (string #\Newline)
+                                  "      IF (ICZERO) 30040,40,30040" (string #\Newline)
+                                  "      GO TO 40040" (string #\Newline)
+                                  "      IF (N .LE. (5)) GOTO 10" (string #\Newline)
+                                  "      DO 10 I = 1, N" (string #\Newline)
+                                  "      IVON01 = IVON01" (string #\Newline)
+                                  "     1   + 1" (string #\Newline)
+                                  "90002 FORMAT (\" \",4X,I5,7X,\"PASS\")"))
+                     '(((:name "program") (:name "fm002")) ((:lab "41")) ((:name "continue"))
+                       ((:name "if") (:op "(") (:name "iczero") (:op ")") (:int "30040" nil) (:op ",") (:int "40" nil) (:op ",") (:int "30040" nil))
+                       ((:name "go") (:name "to") (:int "40040" nil))
+                       ((:name "if") (:op "(") (:name "n") (:op ".le.") (:op "(") (:int "5" nil) (:op ")") (:op ")") (:name "go") (:name "to") (:int "10" nil))
+                       ((:name "do") (:int "10" nil) (:name "i") (:op "=") (:int "1" nil) (:op ",") (:name "n"))
+                       ((:name "ivon01") (:op "=") (:name "ivon01") (:op "+") (:int "1" nil))
+                       ((:lab "90002")) ((:name "format") (:fmt "(\" \",4x,i5,7x,\"PASS\")")))))

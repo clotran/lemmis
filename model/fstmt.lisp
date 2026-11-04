@@ -2,9 +2,10 @@
 ; (fgs, fys) and parser (fps) over one statement's tokens, the
 ; expressions read by fparse.lisp's fp. As there: fps-sound and
 ; fps-complete prove that fps accepts exactly the statements fgs allows,
-; and answers the one tree that spells them.
+; and answers the one tree that spells them (fstmt-sound.lisp,
+; fstmt-complete.lisp).
 ; fps-cost bounds its work: a successful parse makes at most 64 calls
-; (fp's among them) per token it consumes, plus fps-d nt.
+; (fp's among them) per token it consumes, plus fps-d nt (fstmt-cost.lisp).
 ;
 ; A statement's kind is known from its first token (the subset's names
 ; are never *fkeywords*), or after its type-spec: "integer function f"
@@ -67,6 +68,20 @@
 ;  :range (:val e) (:from e) (:to e) (:rng a b)   R1148 case-value-range:
 ;                                   case-value | case-value : | : case-value
 ;                                   | case-value : case-value; R1149 case-value
+;         (:label l)                R611 label, written before a statement
+;                                   (6.2.5): its own statement here, the
+;                                   token (:lab l) the lexers make
+;         (:goto l)                 R1157 goto-stmt: GO TO label
+;         (:aif e l1 l2 l3)         arithmetic IF, a deleted feature (B.1;
+;                                   Fortran 2008 R853): IF ( expr ) l1, l2, l3
+;         (:ldo l ctl)              R1121 label-do-stmt: DO label [loop-control]
+;         (:format s)               R1301 format-stmt: FORMAT format-specification,
+;                                   the token (:fmt s) its text from "(" to ")"
+;         (:write u f items)        R1211 write-stmt: WRITE ( io-unit ,
+;                                   format ) [output-item-list]; R1201
+;                                   io-unit * or an expr (u :star), R1215
+;                                   format * or a label (f :star)
+;  :oitems (e ...)                  R1216 output-item-list, e {, e}, to the end
 ;  :ts    (k ks)                    R703/R704 declaration-type-spec,
 ;                                   intrinsic-type-spec: R705 INTEGER
 ;                                   [kind-selector] or LOGICAL
@@ -141,7 +156,27 @@
 
 (defun action-kind-p (k)          ; R515, C1143
   (declare (xargs :guard t))
-  (and (member-eq k '(:assign :simple :call :print)) t))
+  (and (member-eq k '(:assign :simple :call :print :goto :write)) t))
+
+(defun nonzero-digit-p (cs)
+  (declare (xargs :guard t))
+  (and (consp cs) (or (and (characterp (car cs)) (digit-char-p (car cs)) (not (eql (car cs) #\0)) t) (nonzero-digit-p (cdr cs)))))
+(defun label-digits-p (d)         ; R611: one to five digits, one of them not zero (C613)
+  (declare (xargs :guard t))
+  (and (digit-string-p d) (<= (len (coerce d 'list)) 5) (nonzero-digit-p (coerce d 'list))))
+(defun label-int-p (tk)           ; a label written as a number (GO TO 10)
+  (declare (xargs :guard t))
+  (and (true-listp tk) (= (len tk) 3) (eq (car tk) :int) (label-digits-p (cadr tk)) (null (caddr tk))))
+(defun label-tok-p (tk)           ; a statement's label, as the lexers write it
+  (declare (xargs :guard t))
+  (and (true-listp tk) (= (len tk) 2) (eq (car tk) :lab) (label-digits-p (cadr tk))))
+(defun fmt-tok-p (tk) (declare (xargs :guard t)) (and (true-listp tk) (= (len tk) 2) (eq (car tk) :fmt) (stringp (cadr tk))))
+(defun lab-int (d) (declare (xargs :guard t)) (list :int d nil))
+; the three labels of an arithmetic IF after its ( expr ), and the statement's end
+(defun aif-labs-p (r)
+  (declare (xargs :guard t))
+  (and (label-int-p (kar r)) (equal (kadr r) (op ",")) (label-int-p (kaddr r)) (equal (kadddr r) (op ","))
+       (label-int-p (kar (kdr (kdr (kdr (kdr r))))))))
 
 (defun ents-init-p (ents)
   (declare (xargs :guard t))
@@ -196,6 +231,13 @@
             (:select (and (= (len x) 2) (fg :expr (cadr x))))
             (:case (and (= (len x) 2) (fgs :ranges (cadr x))))
             (:case-default (= (len x) 1))
+            ((:label :goto) (and (= (len x) 2) (label-digits-p (cadr x))))
+            (:aif (and (= (len x) 5) (fg :expr (cadr x)) (label-digits-p (caddr x)) (label-digits-p (cadddr x))
+                       (label-digits-p (car (cddddr x)))))
+            (:ldo (and (= (len x) 3) (label-digits-p (cadr x)) (fgs :ctl (caddr x))))
+            (:format (and (= (len x) 2) (stringp (cadr x))))
+            (:write (and (= (len x) 4) (or (eq (cadr x) :star) (fg :expr (cadr x)))
+                         (or (eq (caddr x) :star) (label-digits-p (caddr x))) (fgs :oitems (cadddr x))))
             (:function (and (= (len x) 5) (fgs :prefix (cadr x)) (fgs :fn-rest (cddr x))))
             (:subroutine (and (= (len x) 5) (fgs :prefix (cadr x)) (not (assoc-eq :ts (cadr x)))
                               (fgs :sub-rest (cddr x))))
@@ -240,6 +282,7 @@
                (fgs :init (caddr x))))
     (:init (or (null x) (fg :expr x)))
     (:items (if (atom x) (null x) (and (fg :expr (car x)) (fgs :items (cdr x)))))
+    (:oitems (if (atom x) (null x) (and (fg :expr (car x)) (fgs :oitems (cdr x)))))
     (:ctl (or (null x)
               (and (true-listp x)
                    (case (car x)
@@ -304,6 +347,16 @@
          (:select (list* (kw "select") (kw "case") (op "(") (append (fy :expr (kadr x)) (list (op ")")))))
          (:case (list* (kw "case") (op "(") (fys :ranges (kadr x))))
          (:case-default (list (kw "case") (kw "default")))
+         (:label (list (list :lab (kadr x))))
+         (:goto (list (kw "go") (kw "to") (lab-int (kadr x))))
+         (:aif (list* (kw "if") (op "(") (append (fy :expr (kadr x))
+                                                (list (op ")") (lab-int (kaddr x)) (op ",") (lab-int (kadddr x)) (op ",")
+                                                      (lab-int (kar (kdr (kdr (kdr (kdr x))))))))))
+         (:ldo (list* (kw "do") (lab-int (kadr x)) (fys :ctl (kaddr x))))
+         (:format (list (kw "format") (list :fmt (kadr x))))
+         (:write (append (list (kw "write") (op "(")) (if (eq (kadr x) :star) (list (op "*")) (fy :expr (kadr x)))
+                         (list (op ",") (if (eq (kaddr x) :star) (op "*") (lab-int (kaddr x))) (op ")"))
+                         (fys :oitems (kadddr x))))
          (:function (append (fys :prefix (kadr x)) (fys :fn-rest (kdr (kdr x)))))
          (:subroutine (append (fys :prefix (kadr x)) (fys :sub-rest (kdr (kdr x)))))
          (otherwise nil)))
@@ -340,6 +393,7 @@
       (:ent (append (list (car x)) (if (kadr x) (cons (op "(") (fys :shapes (kadr x))) nil) (fys :init (kaddr x))))
       (:init (cons (op "=") (fy :expr x)))
       (:items (cons (op ",") (append (fy :expr (car x)) (fys :items (cdr x)))))
+      (:oitems (append (fy :expr (car x)) (if (consp (cdr x)) (cons (op ",") (fys :oitems (cdr x))) nil)))
       (:ctl (case (car x)
               (:range (append (if (kadr x) (list (op ",")) nil) (list (kaddr x) (op "="))
                               (fy :expr (kadddr x)) (cons (op ",") (fy :expr (kar (kdr (kdr (kdr (kdr x)))))))
@@ -383,6 +437,10 @@
         ((equal tk (kw "call")) :s-call)
         ((equal tk (kw "print")) :s-print)
         ((or (tok-in tk '("function" "subroutine")) (tok-in tk *prefix-kws*) (tok-in tk *type-kws*)) :s-unit)
+        ((eq (kar tk) :lab) :s-label)
+        ((equal tk (kw "go")) :s-goto)
+        ((equal tk (kw "write")) :s-write)
+        ((equal tk (kw "format")) :s-format)
         ((equal tk (kw "select")) :s-select)
         ((equal tk (kw "case")) :s-case)
         ((name-tok-p tk) :s-assign)
@@ -392,7 +450,7 @@
   (declare (xargs :guard t :measure (+ (* 16 (len toks)) (fps-rank nt)) :verify-guards nil))
   (let ((tk (kar toks)))
     (if (atom toks)                      ; what may be empty
-        (if (member-eq nt '(:attrs :onames :items :ctl :prefix :init)) (mv t nil toks) (fail))
+        (if (member-eq nt '(:attrs :onames :items :ctl :prefix :init :oitems)) (mv t nil toks) (fail))
     (case nt
       (:stmt (fps (stmt-nt tk) toks))
       (:s-head (if (and (or (equal tk (kw "program")) (equal tk (kw "module"))) (name-tok-p (kadr toks)))
@@ -433,14 +491,39 @@
       (:s-if (if (and (equal tk (kw "if")) (equal (kadr toks) (op "(")))
                  (mv-let (ok e r) (fp :expr (kdr (kdr toks)))
                    (cond ((not (and ok (equal (kar r) (op ")")))) (fail))
+                         ((aif-labs-p (kdr r))
+                          (mv t (list :aif e (kadr (kadr r)) (kadr (kadddr r)) (kadr (kar (cdr (cddddr r))))) (kdr (cdr (cddddr r)))))
                          ((and (equal (kadr r) (kw "then")) (atom (kdr (kdr r))))
                           (mv t (list :if-then e) (kdr (kdr r))))
                          ((not (< (len (kdr r)) (len toks))) (fail))
                          (t (mv-let (ok2 s r2) (fps :stmt (kdr r))
                               (if (and ok2 (action-kind-p (kar s))) (mv t (list :if e s) r2) (fail))))))
                (fail)))
-      (:s-do (if (not (equal tk (kw "do"))) (fail)
-               (mv-let (ok c r) (fps :ctl (kdr toks)) (if ok (mv t (list :do c) r) (fail)))))
+      (:s-do (cond ((not (equal tk (kw "do"))) (fail))
+                   ((label-int-p (kadr toks))
+                    (mv-let (ok c r) (fps :ctl (kdr (kdr toks))) (if ok (mv t (list :ldo (kadr (kadr toks)) c) r) (fail))))
+                   (t (mv-let (ok c r) (fps :ctl (kdr toks)) (if ok (mv t (list :do c) r) (fail))))))
+      (:s-label (if (label-tok-p tk) (mv t (list :label (kadr tk)) (kdr toks)) (fail)))
+      (:s-goto (if (and (equal tk (kw "go")) (equal (kadr toks) (kw "to")) (label-int-p (kaddr toks)))
+                   (mv t (list :goto (kadr (kaddr toks))) (kdr (kdr (kdr toks))))
+                 (fail)))
+      (:s-format (if (and (equal tk (kw "format")) (fmt-tok-p (kadr toks)))
+                     (mv t (list :format (kadr (kadr toks))) (kdr (kdr toks)))
+                   (fail)))
+      (:s-write
+       (if (not (and (equal tk (kw "write")) (equal (kadr toks) (op "(")))) (fail)
+         (mv-let (ok u r) (if (equal (kaddr toks) (op "*")) (mv t :star (kdr (kdr (kdr toks)))) (fp :expr (kdr (kdr toks))))
+           (cond ((not (and ok (equal (kar r) (op ",")) (equal (kaddr r) (op ")")) (< (len r) (len toks)))) (fail))
+                 ((not (or (equal (kadr r) (op "*")) (label-int-p (kadr r)))) (fail))
+                 (t (mv-let (ok2 is r2) (fps :oitems (kdr (kdr (kdr r))))
+                      (if ok2 (mv t (list :write u (if (equal (kadr r) (op "*")) :star (kadr (kadr r))) is) r2) (fail))))))))
+      (:oitems (if (atom toks) (mv t nil toks)
+                 (mv-let (ok e r) (fp :expr toks)
+                   (cond ((not (and ok (< (len r) (len toks)))) (fail))
+                         ((atom r) (mv t (list e) r))
+                         ((equal (kar r) (op ","))
+                          (mv-let (ok2 es r2) (fps :oitems (kdr r)) (if (and ok2 (consp es)) (mv t (cons e es) r2) (fail))))
+                         (t (fail))))))
       (:s-call (cond ((not (and (equal tk (kw "call")) (name-tok-p (kadr toks)))) (fail))
                      ((equal (kaddr toks) (op "("))
                       (mv-let (ok as r) (fp :args (kdr (kdr (kdr toks))))
@@ -634,1183 +717,3 @@
                      (t (mv t nil toks))))
       (otherwise (fail))))))
 
-(defthm fg-expr-consp (implies (fg :expr x) (consp x)) :hints (("Goal" :expand ((fg :expr x)))))
-(defthm fg-args-true-listp (implies (fg :args x) (true-listp x)) :hints (("Goal" :expand ((fg :args x)))))
-
-; an expression fp reads is a tree, never nil
-(defthm fp-expr-tree
-  (implies (mv-nth 0 (fp :expr toks)) (mv-nth 1 (fp :expr toks)))
-  :hints (("Goal" :use ((:instance fp-sound (nt :expr))) :in-theory (disable fp-sound))))
-
-; fps opens only where a proof says so
-(in-theory (disable fps))
-
-; the tree nt answers: an :s-* answers a statement
-(defun gnt (nt) (declare (xargs :guard t)) (if (member-eq nt '(:s-head :s-end :s-other :s-use :s-else :s-if :s-do :s-call :s-print :s-assign :s-unit :s-select :s-case)) :stmt nt))
-
-; the parts' shapes, and fgs and fys opened only on a tree being built
-; (a cons): a subtree a hypothesis speaks of stays closed
-(defthm parts-shape
-  (and (implies (fgs :decl-rest x) (and (true-listp x) (equal (len x) 3)))
-       (implies (fgs :fn-rest x) (and (true-listp x) (equal (len x) 3)))
-       (implies (fgs :sub-rest x) (and (true-listp x) (equal (len x) 3)))
-       (implies (fgs :ts x) (and (true-listp x) (equal (len x) 2))))
-  :hints (("Goal" :expand ((fgs :decl-rest x) (fgs :fn-rest x) (fgs :sub-rest x) (fgs :ts x)))))
-
-(set-ignore-ok t)
-(defmacro def-cons-opener (name call)
-  `(make-event
-    (let ((fn (car ',call)))
-      `(defthm ,',name
-         (implies (syntaxp (and (quotep nt) (consp x) (member-eq (car x) '(cons quote))))
-                  (equal ,',call ,(body fn nil (w state))))
-         :hints (("Goal" :expand (,',call)))))))
-(def-cons-opener fgs-cons-open (fgs nt x))
-(def-cons-opener fys-cons-open (fys nt x))
-(in-theory (disable fgs fys shape-kind))
-
-; the nonterminals that only rename a recognizer or a spelling
-(defthm fgs-fys-aliases
-  (and (equal (fgs :names x) (names-p x)) (equal (fgs :onames x) (names-p x))
-       (equal (fgs :names1 x) (and (consp x) (names-p x)))
-       (equal (fys :names x) (names-y x)) (equal (fys :names1 x) (names-y x))
-       (equal (fys :onames x) (onames-y x))
-       (equal (fgs :shapes x) (and (consp x) (shapes-same x (shape-kind (car x))) (fgs :shapes* x)))
-       (equal (fys :shapes x) (fys :shapes* x)))
-  :hints (("Goal" :in-theory (enable fgs fys))))
-
-; a prefix that is one type-spec: the declaration's
-(defthm prefix-just-ts
-  (implies (and (fgs :prefix p) (consp p) (null (cdr p)) (equal (car (car p)) :ts))
-           (and (consp (cdr (car p))) (fgs :ts (cadr (car p))) (equal (fys :prefix p) (fys :ts (cadr (car p))))))
-  :rule-classes nil
-  :hints (("Goal" :expand ((fgs :prefix p) (fys :prefix p) (fgs :prefix (cdr p)) (fys :prefix (cdr p))))))
-
-; the lists that are never empty
-(defthm nonempty-parts
-  (and (implies (fgs :shapes* x) (consp x)) (implies (fgs :ents x) (consp x)) (implies (fgs :ranges x) (consp x))
-       (implies (fgs :ixs x) (consp x)))
-  :hints (("Goal" :expand ((fgs :shapes* x) (fgs :ents x) (fgs :ranges x) (fgs :ixs x)))))
-
-; fps-sound, bottom up: one lemma per nonterminal, in an order where
-; each one's calls are already answered, by an induction on that
-; nonterminal's own calls (its nt a constant)
-; the conclusion about a tree x of nt and the rest r, in the canonical
-; forms fgs-fys-aliases rewrites to
-(defun sound-concl (nt x r toks)
-  (declare (xargs :mode :program))
-  (let ((g (gnt nt)))
-   (append
-    ; the trees never nil
-    (if (member-eq g '(:stmt :shapes :shapes* :ents :ent :names1 :ts :attr :shape :decl-rest :fn-rest :sub-rest :ranges :range :ixs :ix))
-        `(and ,x) '(and))
-    (list
-    (case g
-      ((:names :onames) `(and (names-p ,x) (equal (append ,(if (eq g :onames) `(onames-y ,x) `(names-y ,x)) ,r) ,toks)))
-      (:names1 `(and (consp ,x) (names-p ,x) (equal (append (names-y ,x) ,r) ,toks)))
-      (:shapes `(and (consp ,x) (shapes-same ,x (shape-kind (car ,x))) (fgs :shapes* ,x)
-                     (equal (append (fys :shapes* ,x) ,r) ,toks)))
-      (otherwise `(and (fgs ,g ,x) (equal (append (fys ,g ,x) ,r) ,toks))))))))
-
-; a list nonterminal's own recursion, for its inductions: each call on the
-; tokens after an item, as fps makes it
-(defun list-ind (nt toks)
-  (declare (xargs :measure (len toks)))
-  (if (atom toks) nil
-    (mv-let (go r)
-      (case nt
-        (:shapes* (mv-let (ok s r) (fps :shape toks) (declare (ignore s))
-                    (if (and ok (equal (kar r) (op ","))) (mv t (kdr r)) (mv nil nil))))
-        (:ixs (mv-let (ok s r) (fps :ix toks) (declare (ignore s))
-                   (if (and ok (equal (kar r) (op ","))) (mv t (kdr r)) (mv nil nil))))
-        (:ranges (mv-let (ok s r) (fps :range toks) (declare (ignore s))
-                   (if (and ok (equal (kar r) (op ","))) (mv t (kdr r)) (mv nil nil))))
-        (:names1 (if (equal (kadr toks) (op ",")) (mv t (kdr (kdr toks))) (mv nil nil)))
-        (:onames (if (and (name-tok-p (kar toks)) (equal (kadr toks) (op ","))) (mv t (kdr (kdr toks))) (mv nil nil)))
-        (:attrs (if (equal (kar toks) (op ","))
-                    (mv-let (ok a r) (fps :attr (kdr toks)) (declare (ignore a)) (if ok (mv t r) (mv nil nil)))
-                  (mv nil nil)))
-        (:ents (mv-let (ok e r) (fps :ent toks) (declare (ignore e))
-                 (if (and ok (equal (kar r) (op ","))) (mv t (kdr r)) (mv nil nil))))
-        (:items (if (equal (kar toks) (op ","))
-                    (mv-let (ok e r) (fp :expr (kdr toks)) (declare (ignore e)) (if ok (mv t r) (mv nil nil)))
-                  (mv nil nil)))
-        (otherwise (cond ((tok-in (kar toks) *prefix-kws*) (mv t (kdr toks)))
-                         ((tok-in (kar toks) *type-kws*)
-                          (mv-let (ok ts r) (fps :ts toks) (declare (ignore ts)) (if ok (mv t r) (mv nil nil))))
-                         (t (mv nil nil)))))
-      (if (and go (< (len r) (len toks))) (list-ind nt r) nil))))
-
-(defmacro fps-sound-at (nt)          ; a list nt inducts on list-ind
-  (if (member-eq nt '(:shapes* :names1 :onames :attrs :ents :items :prefix :ranges :ixs))
-      `(defthm ,(packn (list 'fps-sound- nt))
-         (implies (mv-nth 0 (fps ,nt toks))
-                  ,(sound-concl nt `(mv-nth 1 (fps ,nt toks)) `(mv-nth 2 (fps ,nt toks)) 'toks))
-         :hints (("Goal" :induct (list-ind ,nt toks) :expand ((fps ,nt toks)) :in-theory (enable member-equal))))
-    `(defthm ,(packn (list 'fps-sound- nt))
-       (implies (mv-nth 0 (fps ,nt toks))
-                ,(sound-concl nt `(mv-nth 1 (fps ,nt toks)) `(mv-nth 2 (fps ,nt toks)) 'toks))
-       :hints (("Goal" :expand ((fps ,nt toks))
-                :in-theory ,(if (eq nt :init) '(enable member-equal fgs fys) '(enable member-equal)))))))
-
-(fps-sound-at :init)
-(fps-sound-at :ts)
-(fps-sound-at :shape)
-(fps-sound-at :range)
-(fps-sound-at :items)
-(fps-sound-at :ix)
-(fps-sound-at :ixs)
-(fps-sound-at :ctl)
-(fps-sound-at :onames)
-(fps-sound-at :names1)
-(fps-sound-at :names)
-(fps-sound-at :shapes*)
-(fps-sound-at :ranges)
-(fps-sound-at :shapes)
-(fps-sound-at :attr)
-(fps-sound-at :attrs)
-(fps-sound-at :ent)
-(fps-sound-at :ents)
-(fps-sound-at :decl-rest)
-(fps-sound-at :prefix)
-(fps-sound-at :fn-rest)
-(fps-sound-at :sub-rest)
-(fps-sound-at :s-head)
-(fps-sound-at :s-end)
-(fps-sound-at :s-other)
-(fps-sound-at :s-use)
-(fps-sound-at :s-else)
-(fps-sound-at :s-do)
-(fps-sound-at :s-call)
-(fps-sound-at :s-print)
-(fps-sound-at :s-assign)
-(fps-sound-at :s-select)
-(fps-sound-at :s-case)
-; a declaration's type-spec, read as a prefix of one type-spec
-(defthm fps-prefix-just-ts
-  (let ((p (mv-nth 1 (fps :prefix toks))))
-    (implies (and (mv-nth 0 (fps :prefix toks)) (consp p) (null (cdr p)) (equal (car (car p)) :ts))
-             (and (consp (cdr (car p))) (fgs :ts (cadr (car p)))
-                  (equal (append (fys :ts (cadr (car p))) (mv-nth 2 (fps :prefix toks))) toks))))
-  :hints (("Goal" :use ((:instance prefix-just-ts (p (mv-nth 1 (fps :prefix toks))))) :in-theory (disable fps-sound-prefix))
-          ("Goal'" :use fps-sound-prefix)))
-
-(fps-sound-at :s-unit)
-
-; the statements other than IF, as one
-(defthm fps-sound-flat
-  (implies (and (member-eq nt '(:s-head :s-end :s-other :s-use :s-else :s-do :s-call :s-print :s-assign :s-unit :s-select :s-case))
-                (mv-nth 0 (fps nt toks)))
-           (and (fgs :stmt (mv-nth 1 (fps nt toks)))
-                (equal (append (fys :stmt (mv-nth 1 (fps nt toks))) (mv-nth 2 (fps nt toks))) toks)))
-  :hints (("Goal" :in-theory (enable member-equal))))
-
-; IF's recursion, for the induction: the action statement after IF ( e )
-(defun stmt-ind (nt toks)          ; the statement inside is a :stmt, whatever nt was
-  (declare (xargs :measure (len toks)) (ignorable nt))
-  (if (and (consp toks) (equal (kar toks) (kw "if")) (equal (kadr toks) (op "(")))
-      (mv-let (ok e r) (fp :expr (kdr (kdr toks)))
-        (declare (ignore e))
-        (if (and ok (equal (kar r) (op ")")) (< (len (kdr r)) (len toks))) (stmt-ind :stmt (kdr r)) nil))
-    nil))
-
-; a statement, and an IF statement around one
-(defthm fps-sound-stmt
-  (implies (and (member-eq nt '(:stmt :s-if)) (mv-nth 0 (fps nt toks)))
-           (and (fgs :stmt (mv-nth 1 (fps nt toks)))
-                (equal (append (fys :stmt (mv-nth 1 (fps nt toks))) (mv-nth 2 (fps nt toks))) toks)))
-  :hints (("Goal" :induct (stmt-ind nt toks) :in-theory (enable member-equal)
-           :expand ((fps :stmt toks) (fps :s-if toks)))))
-
-(defconst *fps-nts*
-  '(:stmt :s-head :s-end :s-other :s-use :s-else :s-if :s-do :s-call :s-print :s-assign :s-unit :s-select :s-case
-    :fn-rest :sub-rest :decl-rest :ts :attrs :attr :shapes :shapes* :shape :ranges :range :ixs :ix :ents :ent :init
-    :names :names1 :onames :items :ctl :prefix))
-
-(defthm fps-other
-  (implies (not (member-equal nt *fps-nts*)) (not (mv-nth 0 (fps nt toks))))
-  :hints (("Goal" :expand ((fps nt toks)) :in-theory (enable member-equal))))
-
-(defun nt-cases (nts) (declare (xargs :mode :program))
-  (if (endp nts) nil (cons `(equal nt ,(car nts)) (nt-cases (cdr nts)))))
-
-; fps-sound: what fps answers is a tree of its nonterminal (an :s-* answers
-; a statement), and spells the tokens it read
-(make-event
- `(defthm fps-sound
-    (implies (mv-nth 0 (fps nt toks))
-             (and (fgs (gnt nt) (mv-nth 1 (fps nt toks)))
-                  (equal (append (fys (gnt nt) (mv-nth 1 (fps nt toks))) (mv-nth 2 (fps nt toks))) toks)))
-    :hints (("Goal" :cases ,(nt-cases *fps-nts*) :in-theory (enable member-equal)))))
-
-; what fps consumed is a spelling: the rest is no longer than its tokens
-(defthm fps-len
-  (implies (mv-nth 0 (fps nt toks))
-           (<= (len (mv-nth 2 (fps nt toks))) (len toks)))
-  :rule-classes :linear
-  :hints (("Goal" :use fps-sound :in-theory (disable fps-sound))))
-
-; ---- fps-complete: every statement is read back as its own tree
-;
-; As fparse.lisp's fp-complete, bottom up: for each nonterminal, the
-; spelling of any of its trees, followed by anything that does not
-; continue it (sfollow-ok), is read back as that tree.
-
-(defun scont-tok-p (nt tk)
-  (declare (xargs :guard t))
-  (case nt
-    (:ts (equal tk (op "(")))
-    (:attrs (equal tk (op ",")))
-    ((:shape :range :ix) (not (member-equal tk (list (op ",") (op ")")))))   ; a shape or a range is ended by "," or ")" only
-    (:init (cont-tok-p :expr tk))
-    (:ent (or (cont-tok-p :expr tk) (equal tk (op "(")) (equal tk (op "="))))
-    ((:ents :decl-rest) (or (cont-tok-p :expr tk) (equal tk (op "(")) (equal tk (op "=")) (equal tk (op ","))))
-    (:prefix (or (tok-in tk *prefix-kws*) (tok-in tk *type-kws*) (equal tk (op "("))))
-    (:fn-rest (equal tk (kw "result")))
-    (:sub-rest (equal tk (op "(")))
-    ((:shapes :shapes* :names :names1 :ranges :ixs) nil)
-    (otherwise t)))                       ; a statement is whole; DO's control ends it
-
-(defun sfollow-ok (nt r)
-  (declare (xargs :guard t))
-  (if (atom r) (not (member-eq nt '(:shape :range :ix))) (not (scont-tok-p nt (car r)))))
-
-(defthm sfollow-facts
-  (and (implies (and (atom r) (not (member-eq nt '(:shape :range :ix)))) (sfollow-ok nt r))
-       (equal (sfollow-ok nt (cons a b)) (not (scont-tok-p nt a)))
-       (equal (sfollow-ok nt (append a b)) (if (consp a) (not (scont-tok-p nt (car a))) (sfollow-ok nt b)))
-       (implies (member-eq nt '(:shapes :shapes* :names :names1 :ranges :ixs)) (sfollow-ok nt r))
-       ; what follows an initialization or a shape follows its expression
-       (implies (sfollow-ok :init r) (follow-ok :expr r))
-       (implies (sfollow-ok :shape r) (follow-ok :expr r))
-       (implies (sfollow-ok :shape r) (consp r))
-       (implies (sfollow-ok :range r) (follow-ok :expr r))
-       (implies (sfollow-ok :range r) (consp r))
-       (implies (sfollow-ok :ix r) (follow-ok :expr r))
-       (implies (sfollow-ok :ix r) (consp r))
-       (implies (and (sfollow-ok :ix r) (not (equal (car r) (op ",")))) (equal (car r) (op ")")))
-       (implies (and (sfollow-ok :range r) (not (equal (car r) (op ",")))) (equal (car r) (op ")")))
-       ; PRINT's items, ONLY's names, DO's control, a statement: the statement's end follows
-       (implies (and (sfollow-ok nt r) (member-eq nt '(:items :onames :ctl :stmt))) (atom r))
-       (implies (sfollow-ok :items r) (and (atom r) (follow-ok :expr r)))
-       (implies (sfollow-ok :ctl r) (and (atom r) (follow-ok :expr r)))
-       (implies (and (sfollow-ok :shape r) (not (equal (car r) (op ",")))) (equal (car r) (op ")")))
-       (implies (sfollow-ok :ent r) (sfollow-ok :init r))
-       (implies (sfollow-ok :ents r) (sfollow-ok :ent r))
-       (implies (sfollow-ok :decl-rest r) (sfollow-ok :ents r)))
-  :hints (("Goal" :in-theory (enable sfollow-ok follow-ok member-equal))))
-
-(in-theory (disable sfollow-ok scont-tok-p))
-
-; fgs and fys opened one level on a variable tree (a subtree a hypothesis
-; speaks of is no variable, and stays closed)
-(defmacro def-var-opener (name call)
-  `(make-event
-    (let ((fn (car ',call)))
-      `(defthm ,',name
-         (implies (syntaxp (and (quotep nt) (symbolp x))) (equal ,',call ,(body fn nil (w state))))
-         :hints (("Goal" :expand (,',call)))))))
-(def-var-opener fgs-var-open (fgs nt x))
-(def-var-opener fys-var-open (fys nt x))
-
-; fps opens on a constant nt over tokens that are a cons, or the spelling
-; of a tree of another nt; never over (append (fys 'nt t) r), the call an
-; induction hypothesis or an earlier fps-complete- lemma answers
-(make-event
- `(defthm fps-open
-    (implies (syntaxp (and (quotep nt) (consp toks)
-                           (or (eq (car toks) 'cons)
-                               (and (eq (car toks) 'binary-append)
-                                    (consp (cadr toks)) (member-eq (car (cadr toks)) '(fys fy))
-                                    (not (equal (cadr (cadr toks)) nt))))))
-             (equal (fps nt toks) ,(body 'fps nil (w state))))
-    :hints (("Goal" :expand ((fps nt toks))))))
-
-; an expression stays whole here: fp-complete reads it back
-(in-theory (disable fy-open fg-open fp-open))
-
-; an expression's spelling begins with none of the punctuation around it
-(defthm expr-first-not
-  (implies (fg :expr x)
-           (and (consp (fy :expr x))
-                (not (equal (car (fy :expr x)) '(:op ":"))) (not (equal (car (fy :expr x)) '(:op ",")))
-                (not (equal (car (fy :expr x)) '(:op ")"))) (not (equal (car (fy :expr x)) '(:op "=")))))
-  :hints (("Goal" :use ((:instance fy-first-expr)) :in-theory (e/d (start-tok-p) (fy-first-expr)))))
-
-; the parts that may be empty, read back as empty
-(defthm fps-empty
-  (and (implies (sfollow-ok :init r) (equal (fps :init r) (mv t nil r)))
-       (implies (sfollow-ok :attrs r) (equal (fps :attrs r) (mv t nil r)))
-       (implies (sfollow-ok :items r) (equal (fps :items r) (mv t nil r)))
-       (implies (sfollow-ok :prefix r) (equal (fps :prefix r) (mv t nil r)))
-       (implies (sfollow-ok :onames r) (equal (fps :onames r) (mv t nil r)))
-       (implies (sfollow-ok :ctl r) (equal (fps :ctl r) (mv t nil r))))
-  :hints (("Goal" :expand ((fps :init r) (fps :attrs r) (fps :items r) (fps :prefix r) (fps :onames r) (fps :ctl r))
-           :in-theory (enable sfollow-ok scont-tok-p cont-tok-p member-equal))))
-
-; first tokens of the parts' spellings, and their shapes
-(defthm fys-first
-  (and (implies (not (consp x)) (and (equal (fys :items x) nil) (equal (fys :attrs x) nil) (equal (fys :prefix x) nil)
-                                     (equal (fys :onames x) nil) (equal (fys :ctl x) nil) (equal (fys :init x) nil)))
-       (implies (fgs :ts x) (and (consp (fys :ts x)) (tok-in (car (fys :ts x)) *type-kws*)))
-       (implies (and (fgs :attrs x) (consp x)) (and (consp (fys :attrs x)) (equal (car (fys :attrs x)) (op ","))))
-       (implies (and (fgs :items x) (consp x)) (and (consp (fys :items x)) (equal (car (fys :items x)) (op ","))))
-       (implies (and (fgs :prefix x) (consp x))
-                (and (consp (fys :prefix x))
-                     (or (tok-in (car (fys :prefix x)) *prefix-kws*) (tok-in (car (fys :prefix x)) *type-kws*))))
-       (implies (fgs :ent x) (and (consp (fys :ent x)) (name-tok-p (car (fys :ent x)))))
-       (implies (fgs :ents x) (and (consp (fys :ents x)) (name-tok-p (car (fys :ents x)))))
-       (implies (and (fgs :init x) x) (and (consp (fys :init x)) (equal (car (fys :init x)) (op "="))))
-       (implies (and (fgs :init x) (not x)) (equal (fys :init x) nil))
-       (implies (fgs :shape x) (and (consp (fys :shape x))
-                                    (or (start-tok-p (car (fys :shape x))) (equal (car (fys :shape x)) (op ":")))))
-       (implies (fgs :ix x) (and (consp (fys :ix x)) (name-tok-p (car (fys :ix x)))))
-       (implies (fgs :ixs x) (and (consp (fys :ixs x)) (name-tok-p (car (fys :ixs x)))))
-       (implies (fgs :range x) (and (consp (fys :range x))
-                                    (or (start-tok-p (car (fys :range x))) (equal (car (fys :range x)) (op ":")))))
-       (implies (fgs :ranges x) (and (consp (fys :ranges x))
-                                     (or (start-tok-p (car (fys :ranges x))) (equal (car (fys :ranges x)) (op ":")))))
-       (implies (fgs :shapes* x) (and (consp (fys :shapes* x))
-                                      (or (start-tok-p (car (fys :shapes* x))) (equal (car (fys :shapes* x)) (op ":")))))
-       (implies (and (fgs :onames x) (consp x)) (and (consp (fys :onames x)) (name-tok-p (car (fys :onames x)))))
-       (implies (fgs :names1 x) (and (consp (fys :names1 x)) (name-tok-p (car (fys :names1 x)))))
-       (implies (and (fgs :ctl x) x)
-                (and (consp (fys :ctl x)) (or (equal (car (fys :ctl x)) (op ",")) (name-tok-p (car (fys :ctl x)))))))
-  :hints (("Goal" :in-theory (enable fgs fys names-p names-y onames-y member-equal)
-           :expand ((fgs :shapes* x) (fys :shapes* x) (fgs :ranges x) (fys :ranges x) (fgs :ixs x) (fys :ixs x) (fgs :ents x) (fys :ents x) (fgs :prefix x) (fys :prefix x)
-                    (onames-y x) (names-y x) (names-p x)))))
-
-; each lemma expands its own call on the spelling, and nothing else of its nt
-; what follows an item: another, or the statement's end
-; a name is no punctuation
-(defthm name-tok-not-punct
-  (implies (name-tok-p tk)
-           (and (not (equal tk '(:op ":"))) (not (equal tk '(:op ","))) (not (equal tk '(:op "(")))
-                (not (equal tk '(:op "="))) (not (equal tk '(:op ")")))
-                (not (equal tk '(:name "function"))) (not (equal tk '(:name "subroutine")))))
-  :hints (("Goal" :in-theory (enable name-tok-p))))
-
-; a one-part list, and a six-part list (DO's range), equal the list of their parts
-(defthm equal-list1
-  (implies (and (true-listp x) (equal (len x) 1)) (equal (equal x (list a)) (equal (car x) a)))
-  :hints (("Goal" :expand ((len x) (len (cdr x)) (true-listp x) (true-listp (cdr x))))))
-(defthm equal-list3
-  (implies (and (true-listp x) (equal (len x) 3))
-           (equal (equal x (list a b c))
-                  (and (equal (car x) a) (equal (cadr x) b) (equal (caddr x) c))))
-  :hints (("Goal" :expand ((len x) (true-listp x) (len (cdr x)) (true-listp (cdr x)) (len (cddr x)) (true-listp (cddr x)) (len (cdddr x)) (true-listp (cdddr x))))))
-(defthm equal-list4
-  (implies (and (true-listp x) (equal (len x) 4))
-           (equal (equal x (list a b c d))
-                  (and (equal (car x) a) (equal (cadr x) b) (equal (caddr x) c) (equal (cadddr x) d))))
-  :hints (("Goal" :expand ((len x) (true-listp x) (len (cdr x)) (true-listp (cdr x)) (len (cddr x)) (true-listp (cddr x)) (len (cdddr x)) (true-listp (cdddr x)) (len (cddddr x)) (true-listp (cddddr x))))))
-(defthm equal-list5
-  (implies (and (true-listp x) (equal (len x) 5))
-           (equal (equal x (list a b c d e))
-                  (and (equal (car x) a) (equal (cadr x) b) (equal (caddr x) c) (equal (cadddr x) d) (equal (car (cddddr x)) e))))
-  :hints (("Goal" :expand ((len x) (true-listp x) (len (cdr x)) (true-listp (cdr x)) (len (cddr x)) (true-listp (cddr x)) (len (cdddr x)) (true-listp (cdddr x)) (len (cddddr x)) (true-listp (cddddr x)) (len (cdr (cddddr x))) (true-listp (cdr (cddddr x)))))))
-(defthm equal-list6
-  (implies (and (true-listp x) (equal (len x) 6))
-           (equal (equal x (list a b c d e g))
-                  (and (equal (car x) a) (equal (cadr x) b) (equal (caddr x) c) (equal (cadddr x) d)
-                       (equal (car (cddddr x)) e) (equal (cadr (cddddr x)) g))))
-  :hints (("Goal" :expand ((len x) (len (cdr x)) (len (cddr x)) (len (cdddr x)) (len (cddddr x))
-                            (len (cdr (cddddr x))) (len (cddr (cddddr x)))
-                            (true-listp x) (true-listp (cdr x)) (true-listp (cddr x)) (true-listp (cdddr x))
-                            (true-listp (cddddr x)) (true-listp (cdr (cddddr x))) (true-listp (cddr (cddddr x)))))))
-
-(defthm items-follow
-  (implies (and (fgs :items y) (sfollow-ok :items r)) (follow-ok :expr (append (fys :items y) r)))
-  :hints (("Goal" :cases ((consp y)))))
-
-; what follows a prefix's type-spec: more prefix, or what follows the prefix
-(defthm prefix-first-not-paren
-  (implies (and (fgs :prefix y) (consp y)) (not (equal (car (fys :prefix y)) '(:op "("))))
-  :hints (("Goal" :expand ((fgs :prefix y) (fys :prefix y)) :in-theory (enable fgs fys))))
-(defthm prefix-follow
-  (implies (and (fgs :prefix y) (sfollow-ok :prefix r)) (sfollow-ok :ts (append (fys :prefix y) r)))
-  :hints (("Goal" :cases ((consp y)) :in-theory (enable sfollow-ok scont-tok-p))))
-
-(defun top-expand-hint (id term)
-  (declare (xargs :mode :program))
-  (and (equal (access clause-id id :primes) 0) `(:expand (,term))))
-
-(defun complete-yield (nt x)          ; the spelling, in the canonical forms
-  (declare (xargs :mode :program))
-  (case nt ((:names :names1) `(names-y ,x)) (:onames `(onames-y ,x)) (:shapes `(fys :shapes* ,x)) (otherwise `(fys ,nt ,x))))
-(defun complete-hyp (nt x)
-  (declare (xargs :mode :program))
-  (case nt ((:names :onames) `(names-p ,x)) (:names1 `(and (consp ,x) (names-p ,x)))
-    (:shapes `(and (consp ,x) (shapes-same ,x (shape-kind (car ,x))) (fgs :shapes* ,x)))
-    (otherwise `(fgs ,nt ,x))))
-
-(defmacro fps-complete-at (nt)
-  (let ((top `(fps ,nt (binary-append ,(complete-yield nt 'x) r))))
-    `(defthm ,(packn (list 'fps-complete- nt))
-       (implies (and ,(complete-hyp nt 'x) (sfollow-ok ,nt r))
-                (equal ,top (mv t x r)))
-       :hints (("Goal" ,@(if (member-eq nt '(:shapes* :names1 :onames :attrs :ents :items :prefix :ranges :ixs))
-                              '(:induct (len x)) nil)
-                :expand (,top) :in-theory (enable member-equal))
-               (top-expand-hint id ',top)))))
-
-(fps-complete-at :init)
-(fps-complete-at :ts)
-(fps-complete-at :shape)
-(fps-complete-at :shapes*)
-(fps-complete-at :range)
-(fps-complete-at :ranges)
-(fps-complete-at :shapes)
-(fps-complete-at :names1)
-(fps-complete-at :names)
-(fps-complete-at :onames)
-(fps-complete-at :items)
-; a name is no type keyword
-(defthm name-tok-not-type-kw
-  (implies (name-tok-p tk) (and (not (equal (cadr tk) "integer")) (not (equal (cadr tk) "logical")) (not (equal (cadr tk) "real"))))
-  :hints (("Goal" :in-theory (enable name-tok-p))))
-(fps-complete-at :ix)
-(fps-complete-at :ixs)
-(fps-complete-at :ctl)
-(fps-complete-at :attr)
-(fps-complete-at :attrs)
-(fps-complete-at :ent)
-(fps-complete-at :ents)
-(fps-complete-at :decl-rest)
-(fps-complete-at :prefix)
-(fps-complete-at :fn-rest)
-(fps-complete-at :sub-rest)
-
-; a declaration's rest begins with no prefix-spec: ",", ":" or a name
-(defthm name-tok-not-prefix
-  (implies (name-tok-p tk) (and (not (tok-in tk *prefix-kws*)) (not (tok-in tk *type-kws*))
-                                (not (tok-in tk '("function" "subroutine"))) (not (tok-in tk *simple-kinds*))))
-  :hints (("Goal" :in-theory (enable name-tok-p tok-in member-equal))))
-(defthm decl-rest-follow
-  (implies (fgs :decl-rest d)
-           (and (sfollow-ok :prefix (append (fys :decl-rest d) r))
-                (consp (fys :decl-rest d))
-                (not (equal (car (fys :decl-rest d)) '(:name "function")))
-                (not (equal (car (fys :decl-rest d)) '(:name "subroutine")))))
-  :hints (("Goal" :expand ((fgs :decl-rest d) (fys :decl-rest d) (fys :attrs (car d)))
-           :in-theory (enable sfollow-ok scont-tok-p tok-in))))
-
-; a declaration's type-spec, read as a prefix: the prefix of that one spec
-(defthm fps-complete-prefix-ts
-  (implies (and (fgs :ts ts) (sfollow-ok :prefix r))
-           (equal (fps :prefix (append (fys :ts ts) r)) (mv t (list (list :ts ts)) r)))
-  :hints (("Goal" :use ((:instance fps-complete-prefix (x (list (list :ts ts)))))
-           :in-theory (disable fps-complete-prefix fps-open))))
-
-; a function's and a subroutine's rest begin with their keyword
-(defthm rest-first
-  (and (implies (fgs :fn-rest x) (and (consp (fys :fn-rest x)) (equal (car (fys :fn-rest x)) '(:name "function"))))
-       (implies (fgs :sub-rest x) (and (consp (fys :sub-rest x)) (equal (car (fys :sub-rest x)) '(:name "subroutine")))))
-  :hints (("Goal" :expand ((fgs :fn-rest x) (fys :fn-rest x) (fgs :sub-rest x) (fys :sub-rest x)))))
-
-; the statement kind a first token announces
-(defthm stmt-nt-facts
-  (and (implies (name-tok-p tk) (equal (stmt-nt tk) :s-assign))
-       (implies (fgs :ts ts) (equal (stmt-nt (car (fys :ts ts))) :s-unit))
-       (implies (and (fgs :prefix p) (consp (fys :prefix p))) (equal (stmt-nt (car (fys :prefix p))) :s-unit)))
-  :hints (("Goal" :expand ((fgs :ts ts) (fys :ts ts) (fgs :prefix p) (fys :prefix p) (fgs :ts (cadr (car p))) (fys :ts (cadr (car p))))
-           :in-theory (enable name-tok-p tok-in member-equal))))
-
-(in-theory (disable tok-in stmt-nt))
-
-; the statements, kind by kind: a statement is whole, nothing follows it
-(defmacro fps-complete-kind (k)
-  (let ((top '(fps :stmt (binary-append (fys :stmt x) r))))
-    `(defthm ,(packn (list 'fps-complete-stmt- k))
-       (implies (and (fgs :stmt x) (equal (car x) ,k) (atom r))
-                (equal ,top (mv t x r)))
-       :hints (("Goal" :expand (,top) :in-theory (enable member-equal))))))
-
-(fps-complete-kind :program)
-(fps-complete-kind :module)
-(fps-complete-kind :end)
-(fps-complete-kind :contains)
-(fps-complete-kind :implicit-none)
-(fps-complete-kind :else)
-(fps-complete-kind :use)
-(fps-complete-kind :decl)
-(fps-complete-kind :assign)
-(fps-complete-kind :if-then)
-(fps-complete-kind :else-if)
-(fps-complete-kind :do)
-(fps-complete-kind :simple)
-(fps-complete-kind :call)
-(fps-complete-kind :print)
-(fps-complete-kind :function)
-(fps-complete-kind :subroutine)
-(fps-complete-kind :if)
-(fps-complete-kind :select)
-(fps-complete-kind :case)
-(fps-complete-kind :case-default)
-
-(defun kind-cases (ks) (declare (xargs :mode :program))
-  (if (endp ks) nil (cons `(equal (car x) ,(car ks)) (kind-cases (cdr ks)))))
-
-; fps-complete: a statement's tokens are read back as that statement
-(make-event
- `(defthm fps-complete
-    (implies (and (fgs :stmt x) (atom r))
-             (equal (fps :stmt (append (fys :stmt x) r)) (mv t x r)))
-    :hints (("Goal" :cases ,(kind-cases '(:program :module :end :contains :implicit-none :else :use :decl :assign
-                                          :if-then :else-if :do :simple :call :print :function :subroutine :if
-                                          :select :case :case-default))
-             :in-theory (enable member-equal))
-            ("Subgoal 1" :expand ((fgs :stmt x))))))
-
-; ---- cost: fps-steps counts fps's calls, each fp call counted by fp-steps
-;      (generated: bb mksteps.bb fstmt.lisp fps fps-steps fp)
-(encapsulate () (local (in-theory (enable stmt-nt tok-in)))
-(defun
- fps-steps
- (nt toks)
- (declare (xargs :guard t :measure (+ (* 16 (len toks)) (fps-rank nt)) :verify-guards nil))
- (let
-  ((tk (kar toks)))
-  (if
-   (atom toks)
-   (if (member-eq nt ' (:attrs :onames :items :ctl :prefix :init)) (+ 1) (+ 1))
-   (case
-    nt
-    (:stmt (let ((c1 (fps-steps (stmt-nt tk) toks))) (+ 1 c1)))
-    (:s-head
-     (if (and (or (equal tk (kw "program")) (equal tk (kw "module"))) (name-tok-p (kadr toks))) (+ 1) (+ 1)))
-    (:s-end
-     (if
-      (not (equal tk (kw "end")))
-      (+ 1)
-      (if
-       (tok-in (kadr toks) *end-kinds*)
-       (if (and (tok-in (kadr toks) *unit-ends*) (name-tok-p (kaddr toks))) (+ 1) (+ 1))
-       (+ 1))))
-    (:s-other
-     (cond
-      ((equal tk (kw "contains")) (+ 1))
-      ((and (equal tk (kw "implicit")) (equal (kadr toks) (kw "none"))) (+ 1))
-      ((tok-in tk *simple-kinds*) (+ 1))
-      (t (+ 1))))
-    (:s-use
-     (if
-      (not (equal tk (kw "use")))
-      (+ 1)
-      (let*
-       ((t1 (kdr toks))
-        (nat
-         (cond
-          ((and (equal (kar t1) (op ":")) (equal (kadr t1) (op ":"))) :dc)
-          ((and
-            (equal (kar t1) (op ","))
-            (tok-in (kadr t1) ' ("intrinsic" "non_intrinsic"))
-            (equal (kaddr t1) (op ":"))
-            (equal (kadddr t1) (op ":")))
-           (kadr (kadr t1)))
-          (t nil)))
-        (t2 (cond ((eq nat :dc) (kdr (kdr t1))) (nat (kdr (kdr (kdr (kdr t1))))) (t t1))))
-       (cond
-        ((not (name-tok-p (kar t2))) (+ 1))
-        ((and (equal (kadr t2) (op ",")) (equal (kaddr t2) (kw "only")) (equal (kadddr t2) (op ":")))
-         (mv-let
-          (ok ns r)
-          (fps :onames (kdr (kdr (kdr (kdr t2)))))
-          (declare (ignorable ok ns r))
-          (let ((c2 (fps-steps :onames (kdr (kdr (kdr (kdr t2))))))) (if ok (+ 1 c2) (+ 1 c2)))))
-        (t (+ 1))))))
-    (:s-else
-     (if
-      (not (equal tk (kw "else")))
-      (+ 1)
-      (if
-       (and (equal (kadr toks) (kw "if")) (equal (kaddr toks) (op "(")))
-       (mv-let
-        (ok e r)
-        (fp :expr (kdr (kdr (kdr toks))))
-        (declare (ignorable ok e r))
-        (let
-         ((c3 (fp-steps :expr (kdr (kdr (kdr toks))))))
-         (if (and ok (equal (kar r) (op ")")) (equal (kadr r) (kw "then"))) (+ 1 c3) (+ 1 c3))))
-       (+ 1))))
-    (:s-if
-     (if
-      (and (equal tk (kw "if")) (equal (kadr toks) (op "(")))
-      (mv-let
-       (ok e r)
-       (fp :expr (kdr (kdr toks)))
-       (declare (ignorable ok e r))
-       (let
-        ((c4 (fp-steps :expr (kdr (kdr toks)))))
-        (cond
-         ((not (and ok (equal (kar r) (op ")")))) (+ 1 c4))
-         ((and (equal (kadr r) (kw "then")) (atom (kdr (kdr r)))) (+ 1 c4))
-         ((not (< (len (kdr r)) (len toks))) (+ 1 c4))
-         (t
-          (mv-let
-           (ok2 s r2)
-           (fps :stmt (kdr r))
-           (declare (ignorable ok2 s r2))
-           (let
-            ((c5 (fps-steps :stmt (kdr r))))
-            (if (and ok2 (action-kind-p (kar s))) (+ 1 c5 c4) (+ 1 c5 c4))))))))
-      (+ 1)))
-    (:s-do
-     (if
-      (not (equal tk (kw "do")))
-      (+ 1)
-      (mv-let
-       (ok c r)
-       (fps :ctl (kdr toks))
-       (declare (ignorable ok c r))
-       (let ((c6 (fps-steps :ctl (kdr toks)))) (if ok (+ 1 c6) (+ 1 c6))))))
-    (:s-call
-     (cond
-      ((not (and (equal tk (kw "call")) (name-tok-p (kadr toks)))) (+ 1))
-      ((equal (kaddr toks) (op "("))
-       (mv-let
-        (ok as r)
-        (fp :args (kdr (kdr (kdr toks))))
-        (declare (ignorable ok as r))
-        (let ((c7 (fp-steps :args (kdr (kdr (kdr toks)))))) (if ok (+ 1 c7) (+ 1 c7)))))
-      (t (+ 1))))
-    (:s-print
-     (if
-      (and (equal tk (kw "print")) (equal (kadr toks) (op "*")))
-      (mv-let
-       (ok is r)
-       (fps :items (kdr (kdr toks)))
-       (declare (ignorable ok is r))
-       (let ((c8 (fps-steps :items (kdr (kdr toks))))) (if ok (+ 1 c8) (+ 1 c8))))
-      (+ 1)))
-    (:s-assign
-     (if
-      (not (name-tok-p tk))
-      (+ 1)
-      (if
-       (equal (kadr toks) (op "("))
-       (mv-let
-        (ok as r)
-        (fp :args (kdr (kdr toks)))
-        (declare (ignorable ok as r))
-        (let
-         ((c9 (fp-steps :args (kdr (kdr toks)))))
-         (if
-          (and ok (no-kw-args as) (equal (kar r) (op "=")))
-          (mv-let
-           (ok2 e r2)
-           (fp :expr (kdr r))
-           (declare (ignorable ok2 e r2))
-           (let ((c10 (fp-steps :expr (kdr r)))) (if ok2 (+ 1 c10 c9) (+ 1 c10 c9))))
-          (+ 1 c9))))
-       (if
-        (equal (kadr toks) (op "="))
-        (mv-let
-         (ok e r)
-         (fp :expr (kdr (kdr toks)))
-         (declare (ignorable ok e r))
-         (let ((c11 (fp-steps :expr (kdr (kdr toks))))) (if ok (+ 1 c11) (+ 1 c11))))
-        (+ 1)))))
-    (:s-select
-     (if
-      (and (equal tk (kw "select")) (equal (kadr toks) (kw "case")) (equal (kaddr toks) (op "(")))
-      (mv-let
-       (ok e r)
-       (fp :expr (kdr (kdr (kdr toks))))
-       (declare (ignorable ok e r))
-       (let
-        ((c12 (fp-steps :expr (kdr (kdr (kdr toks))))))
-        (if (and ok (equal (kar r) (op ")"))) (+ 1 c12) (+ 1 c12))))
-      (+ 1)))
-    (:s-case
-     (cond
-      ((not (equal tk (kw "case"))) (+ 1))
-      ((equal (kadr toks) (kw "default")) (+ 1))
-      ((equal (kadr toks) (op "("))
-       (mv-let
-        (ok rs r)
-        (fps :ranges (kdr (kdr toks)))
-        (declare (ignorable ok rs r))
-        (let ((c13 (fps-steps :ranges (kdr (kdr toks))))) (if ok (+ 1 c13) (+ 1 c13)))))
-      (t (+ 1))))
-    (:ranges
-     (mv-let
-      (ok s r)
-      (fps :range toks)
-      (declare (ignorable ok s r))
-      (let
-       ((c14 (fps-steps :range toks)))
-       (cond
-        ((not (and ok (<= (len r) (len toks)))) (+ 1 c14))
-        ((equal (kar r) (op ")")) (+ 1 c14))
-        ((equal (kar r) (op ","))
-         (mv-let
-          (ok2 ss r2)
-          (fps :ranges (kdr r))
-          (declare (ignorable ok2 ss r2))
-          (let ((c15 (fps-steps :ranges (kdr r)))) (if ok2 (+ 1 c15 c14) (+ 1 c15 c14)))))
-        (t (+ 1 c14))))))
-    (:ixs
-     (mv-let
-      (ok s r)
-      (fps :ix toks)
-      (declare (ignorable ok s r))
-      (let
-       ((c16 (fps-steps :ix toks)))
-       (cond
-        ((not (and ok (<= (len r) (len toks)))) (+ 1 c16))
-        ((equal (kar r) (op ")")) (+ 1 c16))
-        ((equal (kar r) (op ","))
-         (mv-let
-          (ok2 ss r2)
-          (fps :ixs (kdr r))
-          (declare (ignorable ok2 ss r2))
-          (let ((c17 (fps-steps :ixs (kdr r)))) (if ok2 (+ 1 c17 c16) (+ 1 c17 c16)))))
-        (t (+ 1 c16))))))
-    (:ix
-     (if
-      (and (name-tok-p tk) (equal (kadr toks) (op "=")))
-      (mv-let
-       (ok lo r)
-       (fp :expr (kdr (kdr toks)))
-       (declare (ignorable ok lo r))
-       (let
-        ((c18 (fp-steps :expr (kdr (kdr toks)))))
-        (if
-         (not (and ok (equal (kar r) (op ":"))))
-         (+ 1 c18)
-         (mv-let
-          (ok2 hi r2)
-          (fp :expr (kdr r))
-          (declare (ignorable ok2 hi r2))
-          (let
-           ((c19 (fp-steps :expr (kdr r))))
-           (cond
-            ((not ok2) (+ 1 c19 c18))
-            ((equal (kar r2) (op ":"))
-             (mv-let
-              (ok3 st r3)
-              (fp :expr (kdr r2))
-              (declare (ignorable ok3 st r3))
-              (let ((c20 (fp-steps :expr (kdr r2)))) (if ok3 (+ 1 c20 c19 c18) (+ 1 c20 c19 c18)))))
-            (t (+ 1 c19 c18))))))))
-      (+ 1)))
-    (:range
-     (if
-      (equal tk (op ":"))
-      (mv-let
-       (ok e r)
-       (fp :expr (kdr toks))
-       (declare (ignorable ok e r))
-       (let ((c21 (fp-steps :expr (kdr toks)))) (if ok (+ 1 c21) (+ 1 c21))))
-      (mv-let
-       (ok e r)
-       (fp :expr toks)
-       (declare (ignorable ok e r))
-       (let
-        ((c22 (fp-steps :expr toks)))
-        (cond
-         ((not (and ok (<= (len r) (len toks)))) (+ 1 c22))
-         ((not (equal (kar r) (op ":"))) (+ 1 c22))
-         ((or (equal (kadr r) (op ",")) (equal (kadr r) (op ")"))) (+ 1 c22))
-         (t
-          (mv-let
-           (ok2 b r2)
-           (fp :expr (kdr r))
-           (declare (ignorable ok2 b r2))
-           (let ((c23 (fp-steps :expr (kdr r)))) (if ok2 (+ 1 c23 c22) (+ 1 c23 c22))))))))))
-    (:s-unit
-     (mv-let
-      (ok pre r)
-      (fps :prefix toks)
-      (declare (ignorable ok pre r))
-      (let
-       ((c24 (fps-steps :prefix toks)))
-       (cond
-        ((not (and ok (<= (len r) (len toks)))) (+ 1 c24))
-        ((equal (kar r) (kw "function"))
-         (mv-let
-          (ok2 fr r2)
-          (fps :fn-rest r)
-          (declare (ignorable ok2 fr r2))
-          (let ((c25 (fps-steps :fn-rest r))) (if ok2 (+ 1 c25 c24) (+ 1 c25 c24)))))
-        ((equal (kar r) (kw "subroutine"))
-         (if
-          (assoc-eq :ts pre)
-          (+ 1 c24)
-          (mv-let
-           (ok2 sr r2)
-           (fps :sub-rest r)
-           (declare (ignorable ok2 sr r2))
-           (let ((c26 (fps-steps :sub-rest r))) (if ok2 (+ 1 c26 c24) (+ 1 c26 c24))))))
-        ((and (consp pre) (null (cdr pre)) (eq (kar (car pre)) :ts))
-         (mv-let
-          (ok2 dr r2)
-          (fps :decl-rest r)
-          (declare (ignorable ok2 dr r2))
-          (let ((c27 (fps-steps :decl-rest r))) (if ok2 (+ 1 c27 c24) (+ 1 c27 c24)))))
-        (t (+ 1 c24))))))
-    (:fn-rest
-     (if
-      (and (equal tk (kw "function")) (name-tok-p (kadr toks)) (equal (kaddr toks) (op "(")))
-      (mv-let
-       (ok ds r)
-       (fps :names (kdr (kdr (kdr toks))))
-       (declare (ignorable ok ds r))
-       (let
-        ((c28 (fps-steps :names (kdr (kdr (kdr toks))))))
-        (cond
-         ((not ok) (+ 1 c28))
-         ((and
-           (equal (kar r) (kw "result"))
-           (equal (kadr r) (op "("))
-           (name-tok-p (kaddr r))
-           (equal (kadddr r) (op ")")))
-          (+ 1 c28))
-         (t (+ 1 c28)))))
-      (+ 1)))
-    (:sub-rest
-     (cond
-      ((not (and (equal tk (kw "subroutine")) (name-tok-p (kadr toks)))) (+ 1))
-      ((equal (kaddr toks) (op "("))
-       (mv-let
-        (ok ds r)
-        (fps :names (kdr (kdr (kdr toks))))
-        (declare (ignorable ok ds r))
-        (let ((c29 (fps-steps :names (kdr (kdr (kdr toks)))))) (if ok (+ 1 c29) (+ 1 c29)))))
-      (t (+ 1))))
-    (:decl-rest
-     (mv-let
-      (ok as r)
-      (fps :attrs toks)
-      (declare (ignorable ok as r))
-      (let
-       ((c30 (fps-steps :attrs toks)))
-       (if
-        (not (and ok (<= (len r) (len toks))))
-        (+ 1 c30)
-        (let*
-         ((dc (and (equal (kar r) (op ":")) (equal (kadr r) (op ":")))) (r1 (if dc (kdr (kdr r)) r)))
-         (mv-let
-          (ok2 es r2)
-          (fps :ents r1)
-          (declare (ignorable ok2 es r2))
-          (let
-           ((c31 (fps-steps :ents r1)))
-           (if
-            (and ok2 (consp es) (implies (or (consp as) (ents-init-p es)) dc))
-            (+ 1 c31 c30)
-            (+ 1 c31 c30)))))))))
-    (:ts
-     (cond
-      ((not (tok-in tk *type-kws*)) (+ 1))
-      ((equal (kadr toks) (op "("))
-       (let*
-        ((kwp (and (equal (kaddr toks) (kw "kind")) (kw-head-p (kdr (kdr toks)))))
-         (t1 (if kwp (kdr (kdr (kdr (kdr toks)))) (kdr (kdr toks)))))
-        (mv-let
-         (ok e r)
-         (fp :expr t1)
-         (declare (ignorable ok e r))
-         (let ((c32 (fp-steps :expr t1))) (if (and ok (equal (kar r) (op ")"))) (+ 1 c32) (+ 1 c32))))))
-      (t (+ 1))))
-    (:attrs
-     (if
-      (equal tk (op ","))
-      (mv-let
-       (ok a r)
-       (fps :attr (kdr toks))
-       (declare (ignorable ok a r))
-       (let
-        ((c33 (fps-steps :attr (kdr toks))))
-        (if
-         (not (and ok (<= (len r) (len (kdr toks)))))
-         (+ 1 c33)
-         (mv-let
-          (ok2 as r2)
-          (fps :attrs r)
-          (declare (ignorable ok2 as r2))
-          (let ((c34 (fps-steps :attrs r))) (if ok2 (+ 1 c34 c33) (+ 1 c34 c33)))))))
-      (+ 1)))
-    (:attr
-     (cond
-      ((equal tk (kw "parameter")) (+ 1))
-      ((equal tk (kw "value")) (+ 1))
-      ((and (equal tk (kw "intent")) (equal (kadr toks) (op "(")))
-       (cond
-        ((and
-          (equal (kaddr toks) (kw "in"))
-          (equal (kadddr toks) (kw "out"))
-          (equal (kar (kdr (kdr (kdr (kdr toks))))) (op ")")))
-         (+ 1))
-        ((and (tok-in (kaddr toks) ' ("in" "out" "inout")) (equal (kadddr toks) (op ")"))) (+ 1))
-        (t (+ 1))))
-      ((and (equal tk (kw "dimension")) (equal (kadr toks) (op "(")))
-       (mv-let
-        (ok ss r)
-        (fps :shapes (kdr (kdr toks)))
-        (declare (ignorable ok ss r))
-        (let ((c35 (fps-steps :shapes (kdr (kdr toks))))) (if ok (+ 1 c35) (+ 1 c35)))))
-      (t (+ 1))))
-    (:shapes
-     (mv-let
-      (ok ss r)
-      (fps :shapes* toks)
-      (declare (ignorable ok ss r))
-      (let
-       ((c36 (fps-steps :shapes* toks)))
-       (if (and ok (consp ss) (shapes-same ss (shape-kind (car ss)))) (+ 1 c36) (+ 1 c36)))))
-    (:shapes*
-     (mv-let
-      (ok s r)
-      (fps :shape toks)
-      (declare (ignorable ok s r))
-      (let
-       ((c37 (fps-steps :shape toks)))
-       (cond
-        ((not (and ok (<= (len r) (len toks)))) (+ 1 c37))
-        ((equal (kar r) (op ")")) (+ 1 c37))
-        ((equal (kar r) (op ","))
-         (mv-let
-          (ok2 ss r2)
-          (fps :shapes* (kdr r))
-          (declare (ignorable ok2 ss r2))
-          (let ((c38 (fps-steps :shapes* (kdr r)))) (if ok2 (+ 1 c38 c37) (+ 1 c38 c37)))))
-        (t (+ 1 c37))))))
-    (:shape
-     (if
-      (equal tk (op ":"))
-      (+ 1)
-      (mv-let
-       (ok e r)
-       (fp :expr toks)
-       (declare (ignorable ok e r))
-       (let
-        ((c39 (fp-steps :expr toks)))
-        (cond
-         ((not (and ok (<= (len r) (len toks)))) (+ 1 c39))
-         ((not (equal (kar r) (op ":"))) (+ 1 c39))
-         ((or (equal (kadr r) (op ",")) (equal (kadr r) (op ")"))) (+ 1 c39))
-         (t
-          (mv-let
-           (ok2 hi r2)
-           (fp :expr (kdr r))
-           (declare (ignorable ok2 hi r2))
-           (let ((c40 (fp-steps :expr (kdr r)))) (if ok2 (+ 1 c40 c39) (+ 1 c40 c39))))))))))
-    (:ents
-     (mv-let
-      (ok e r)
-      (fps :ent toks)
-      (declare (ignorable ok e r))
-      (let
-       ((c41 (fps-steps :ent toks)))
-       (cond
-        ((not (and ok (<= (len r) (len toks)))) (+ 1 c41))
-        ((equal (kar r) (op ","))
-         (mv-let
-          (ok2 es r2)
-          (fps :ents (kdr r))
-          (declare (ignorable ok2 es r2))
-          (let ((c42 (fps-steps :ents (kdr r)))) (if ok2 (+ 1 c42 c41) (+ 1 c42 c41)))))
-        (t (+ 1 c41))))))
-    (:ent
-     (cond
-      ((not (name-tok-p tk)) (+ 1))
-      ((equal (kadr toks) (op "("))
-       (mv-let
-        (ok ss r)
-        (fps :shapes (kdr (kdr toks)))
-        (declare (ignorable ok ss r))
-        (let
-         ((c43 (fps-steps :shapes (kdr (kdr toks)))))
-         (if
-          (not (and ok (<= (len r) (len toks))))
-          (+ 1 c43)
-          (mv-let
-           (ok2 i r2)
-           (fps :init r)
-           (declare (ignorable ok2 i r2))
-           (let ((c44 (fps-steps :init r))) (if ok2 (+ 1 c44 c43) (+ 1 c44 c43))))))))
-      (t
-       (mv-let
-        (ok2 i r2)
-        (fps :init (kdr toks))
-        (declare (ignorable ok2 i r2))
-        (let ((c45 (fps-steps :init (kdr toks)))) (if ok2 (+ 1 c45) (+ 1 c45)))))))
-    (:init
-     (if
-      (equal tk (op "="))
-      (mv-let
-       (ok e r)
-       (fp :expr (kdr toks))
-       (declare (ignorable ok e r))
-       (let ((c46 (fp-steps :expr (kdr toks)))) (if ok (+ 1 c46) (+ 1 c46))))
-      (+ 1)))
-    (:names (if (equal tk (op ")")) (+ 1) (let ((c47 (fps-steps :names1 toks))) (+ 1 c47))))
-    (:names1
-     (cond
-      ((not (name-tok-p tk)) (+ 1))
-      ((equal (kadr toks) (op ")")) (+ 1))
-      ((equal (kadr toks) (op ","))
-       (mv-let
-        (ok ns r)
-        (fps :names1 (kdr (kdr toks)))
-        (declare (ignorable ok ns r))
-        (let ((c48 (fps-steps :names1 (kdr (kdr toks))))) (if ok (+ 1 c48) (+ 1 c48)))))
-      (t (+ 1))))
-    (:onames
-     (cond
-      ((not (name-tok-p tk)) (+ 1))
-      ((equal (kadr toks) (op ","))
-       (mv-let
-        (ok ns r)
-        (fps :onames (kdr (kdr toks)))
-        (declare (ignorable ok ns r))
-        (let ((c49 (fps-steps :onames (kdr (kdr toks))))) (if (and ok (consp ns)) (+ 1 c49) (+ 1 c49)))))
-      (t (+ 1))))
-    (:items
-     (if
-      (equal tk (op ","))
-      (mv-let
-       (ok e r)
-       (fp :expr (kdr toks))
-       (declare (ignorable ok e r))
-       (let
-        ((c50 (fp-steps :expr (kdr toks))))
-        (if
-         (not (and ok (< (len r) (len toks))))
-         (+ 1 c50)
-         (mv-let
-          (ok2 es r2)
-          (fps :items r)
-          (declare (ignorable ok2 es r2))
-          (let ((c51 (fps-steps :items r))) (if ok2 (+ 1 c51 c50) (+ 1 c51 c50)))))))
-      (+ 1)))
-    (:ctl
-     (if
-      (atom toks)
-      (+ 1)
-      (let*
-       ((c (equal tk (op ","))) (t1 (if c (kdr toks) toks)))
-       (cond
-        ((and (equal (kar t1) (kw "while")) (equal (kadr t1) (op "(")))
-         (mv-let
-          (ok e r)
-          (fp :expr (kdr (kdr t1)))
-          (declare (ignorable ok e r))
-          (let
-           ((c52 (fp-steps :expr (kdr (kdr t1)))))
-           (if (and ok (equal (kar r) (op ")"))) (+ 1 c52) (+ 1 c52)))))
-        ((and (equal (kar t1) (kw "concurrent")) (equal (kadr t1) (op "(")))
-         (let
-          ((t2 (kdr (kdr t1))))
-          (mv-let
-           (ok ts r)
-           (if (tok-in (kar t2) *type-kws*) (fps :ts t2) (mv t nil t2))
-           (declare (ignorable ok ts r))
-           (let
-            ((c53 (if (tok-in (kar t2) *type-kws*) (fps-steps :ts t2) 0)))
-            (cond
-             ((not (and ok (<= (len r) (len t2)))) (+ 1 c53))
-             ((and
-               ts
-               (not (and (equal (kar ts) "integer") (equal (kar r) (op ":")) (equal (kadr r) (op ":")))))
-              (+ 1 c53))
-             (t
-              (mv-let
-               (ok2 ixs r2)
-               (fps :ixs (if ts (kdr (kdr r)) r))
-               (declare (ignorable ok2 ixs r2))
-               (let
-                ((c54 (fps-steps :ixs (if ts (kdr (kdr r)) r))))
-                (if ok2 (+ 1 c54 c53) (+ 1 c54 c53))))))))))
-        ((and (name-tok-p (kar t1)) (equal (kadr t1) (op "=")))
-         (mv-let
-          (ok e1 r)
-          (fp :expr (kdr (kdr t1)))
-          (declare (ignorable ok e1 r))
-          (let
-           ((c55 (fp-steps :expr (kdr (kdr t1)))))
-           (if
-            (not (and ok (equal (kar r) (op ","))))
-            (+ 1 c55)
-            (mv-let
-             (ok2 e2 r2)
-             (fp :expr (kdr r))
-             (declare (ignorable ok2 e2 r2))
-             (let
-              ((c56 (fp-steps :expr (kdr r))))
-              (cond
-               ((not ok2) (+ 1 c56 c55))
-               ((equal (kar r2) (op ","))
-                (mv-let
-                 (ok3 e3 r3)
-                 (fp :expr (kdr r2))
-                 (declare (ignorable ok3 e3 r3))
-                 (let ((c57 (fp-steps :expr (kdr r2)))) (if ok3 (+ 1 c57 c56 c55) (+ 1 c57 c56 c55)))))
-               (t (+ 1 c56 c55)))))))))
-        (t (+ 1))))))
-    (:prefix
-     (cond
-      ((tok-in tk *prefix-kws*)
-       (mv-let
-        (ok ps r)
-        (fps :prefix (kdr toks))
-        (declare (ignorable ok ps r))
-        (let ((c58 (fps-steps :prefix (kdr toks)))) (if ok (+ 1 c58) (+ 1 c58)))))
-      ((tok-in tk *type-kws*)
-       (mv-let
-        (ok ts r)
-        (fps :ts toks)
-        (declare (ignorable ok ts r))
-        (let
-         ((c59 (fps-steps :ts toks)))
-         (if
-          (not (and ok (< (len r) (len toks))))
-          (+ 1 c59)
-          (mv-let
-           (ok2 ps r2)
-           (fps :prefix r)
-           (declare (ignorable ok2 ps r2))
-           (let ((c60 (fps-steps :prefix r))) (if ok2 (+ 1 c60 c59) (+ 1 c60 c59))))))))
-      (t (+ 1))))
-    (otherwise (+ 1)))))))
-
-(defthm fps-steps-natp (natp (fps-steps nt toks)) :rule-classes :type-prescription)
-
-(defthm fp-cost-linear
-  (implies (mv-nth 0 (fp nt toks))
-           (<= (+ (fp-steps nt toks) (* 32 (len (mv-nth 2 (fp nt toks)))))
-               (+ (* 32 (len toks)) (fp-d nt))))
-  :rule-classes ((:linear :trigger-terms ((fp-steps nt toks)))) :hints (("Goal" :by fp-cost)))
-
-(defthm len-cdr-consp (implies (consp x) (equal (len (cdr x)) (+ -1 (len x)))))
-
-; the constant each nt adds; a type-spec always reads its keyword, so it
-; may owe less than nothing
-(defun fps-d (nt)
-  (declare (xargs :guard t))
-  (case nt (:stmt 48) (:s-unit 40) (:decl-rest 32) (:shapes 48) (:shapes* 40) (:shape 32) (:ents 16)
-    (:init 16) (:ent 8) (:attrs 8) (:names 8) (:ranges 40) (:range 32) (:ixs 40) (:ix 32) (:ts -63) (otherwise 4)))
-
-(defun fps-cost-hint (id clause)
-  (declare (xargs :mode :program))
-  (and (equal (access clause-id id :pool-lst) (quote (1)))
-       (equal (len (access clause-id id :case-lst)) 1)
-       (equal (access clause-id id :primes) 0)
-       (let ((cs (case-nts clause)))
-         (list :expand (append (quote ((fps nt toks) (fps-steps nt toks)))
-                               (loop$ for c in cs append (list (list (quote fps) c (quote toks)) (list (quote fps-steps) c (quote toks)))))))))
-
-(defthm stmt-nt-is-s
-  (implies (not (member-equal c (quote (:s-head :s-end :s-other :s-use :s-else :s-if :s-do :s-call :s-print :s-assign :s-unit :s-select :s-case))))
-           (not (equal (stmt-nt tk) c)))
-  :hints (("Goal" :in-theory (enable stmt-nt))))
-
-; a successful statement parse makes at most 64 calls per token it consumes,
-; plus fps-d nt
-(defthm fps-cost
-  (implies (mv-nth 0 (fps nt toks))
-           (<= (+ (fps-steps nt toks) (* 64 (len (mv-nth 2 (fps nt toks)))))
-               (+ (* 64 (len toks)) (fps-d nt))))
-  :hints (("Goal" :induct (fps-steps nt toks) :in-theory (enable member-equal)) (fps-cost-hint id clause)))

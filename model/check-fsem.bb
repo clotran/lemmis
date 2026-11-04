@@ -307,15 +307,17 @@
                     (fail! (:name c) fc "printed" got "; the model" lines)
                     :else (do (swap! results update :agree inc) (println "ok" (:name c) fc (count lines) "values" (if err? "then the bounds error" "")))))))))))
 
-;; ---- whole programs: model/cases/*.f90 as text ---------------------------
+;; ---- whole programs: model/cases/*.f90 and *.f as text ------------------
 ;;
 ;; Each program is read by fmean.lisp's fortran-run (flex, fps, fpu, the
 ;; meaning) and compiled by gfortran -std=f2018 and flang. PRINT *'s layout
 ;; is processor dependent (13.10.4), so lines are compared as their
 ;; whitespace-separated tokens. A program both compilers disagree on is
-;; reported: the standard decides it, case by case, in SUBSET.md.
+;; reported: the standard decides it, case by case, in SUBSET.md. A *.f
+;; file is read in fixed source form (6.3.3). A record a WRITE writes under
+;; a format (the model's ~F) is compared exactly, but for trailing blanks.
 
-(def prog-files (sort (map str (fs/glob (str here "/cases") "*.f90"))))
+(def prog-files (sort (map str (concat (fs/glob (str here "/cases") "*.f90") (fs/glob (str here "/cases") "*.f")))))
 
 (defn lisp-str [s] (str "\"" (-> s (str/replace "\\" "\\\\") (str/replace "\"" "\\\"")) "\""))
 
@@ -327,7 +329,7 @@
                      "(defun show-lines (ls) (declare (xargs :mode :program))\n"
                      "  (if (endp ls) nil (prog2$ (cw \"LINE~s0~%\" (show-toks (car ls))) (show-lines (cdr ls)))))\n"
                      (str/join (for [f prog-files]
-                                 (str "(let ((r (fortran-run " (lisp-str (slurp f)) " 100000000)))\n"
+                                 (str "(let ((r (fortran-run-form " (lisp-str (slurp f)) (if (str/ends-with? f ".f") " t" " nil") " 100000000)))\n"
                                       "  (prog2$ (cw \"~%PROG~%STATUS ~x0~%\" (car r)) (if (consp (car r)) (cw \"AT ~x0~%\" (cadr r)) (show-lines (cadr r)))))\n")))
                      "(good-bye)\n")
           r (sh! 1200 {:dir here :in input} "nice" acl2)
@@ -339,7 +341,8 @@
       (mapv (fn [b] {:status (second (re-find #"STATUS (.*)" b))
                      :at (second (re-find #"AT (.*)" b))
                      :lines (vec (for [l (str/split-lines b) :let [[_ x] (re-find #"^LINE(.*)$" l)] :when x]
-                                   (vec (remove str/blank? (str/split (str/trim x) #"\s+")))))})
+                                   (if-let [[_ rec] (re-find #"^ ~F(.*)$" x)] (str/trimr rec)
+                                     (vec (remove str/blank? (str/split (str/trim x) #"\s+"))))))})
             blocks))))
 
 ;; a real the model prints exactly, ~Rk:n/d (or -0 +Inf -Inf NaN), against
@@ -363,13 +366,16 @@
                        (zero? (.compareTo (BigDecimal. (double x)) q)))))))))
 (def pd-seen (atom []))
 (defn tok-match? [m c] (cond (str/starts-with? m "~R") (real-match? m c) (= m "~PD") true :else (= m c)))
-(defn lines-match? [ms cs] (and (= (count ms) (count cs)) (every? true? (map #(and (= (count %1) (count %2)) (every? true? (map tok-match? %1 %2))) ms cs))))
+(defn toks-of-line [l] (vec (remove str/blank? (str/split (str/trim l) #"\s+"))))
+(defn line-match? [m c]              ; m a model line: a formatted record (a string) or tokens
+  (if (string? m) (= m (str/trimr c)) (let [ts (toks-of-line c)] (and (= (count m) (count ts)) (every? true? (map tok-match? m ts))))))
+(defn lines-match? [ms cs] (and (= (count ms) (count cs)) (every? true? (map line-match? ms cs))))
 (defn value-eq? [m a b]              ; two compilers' tokens, as the model's kind reads them
   (if (or (str/starts-with? m "~R") (= m "~PD"))
     (let [k (if (str/starts-with? m "~R4") 4 8) x (real-of k a) y (real-of k b)]
       (and x y (= (Double/doubleToLongBits x) (Double/doubleToLongBits y))))
     (= a b)))
-(defn toks-of [out] (vec (for [l (str/split-lines (str/trim out)) :let [ts (vec (remove str/blank? (str/split (str/trim l) #"\s+")))] :when (seq ts)] ts)))
+(defn lines-of [out] (if (str/blank? out) [] (vec (str/split-lines (str/trimr out)))))
 
 (def prog-results (atom {:progs 0 :agree-both 0 :runs 0 :agree 0 :disagree-compilers []}))
 (doseq [[f m] (map vector prog-files prog-model)]
@@ -379,7 +385,7 @@
                (let [exe (str work "/prog-" nm "-" fc)
                      cr (apply sh! 180 {:dir work} "nice" fc (concat flags ["-o" exe f]))]
                  (if (not= 0 (:exit cr)) [fc :compile-error (:err cr)]
-                   (let [rr (sh! 60 {:dir work} exe)] [fc (:exit rr) (toks-of (:out rr))]))))
+                   (let [rr (sh! 60 {:dir work} exe)] [fc (:exit rr) (lines-of (:out rr))]))))
         ok-model (#{":NORMAL" ":STOP"} (:status m))]
     (when-not ok-model (fail! nm "the model stops with" (:status m) (or (:at m) "")))
     (let [agrees (for [[fc ex toks] outs]
@@ -389,16 +395,55 @@
                              (not (lines-match? (:lines m) toks)) (do (fail! nm fc "printed" toks "; the model" (:lines m)) false)
                              :else (do (swap! prog-results update :agree inc) true))))
           agrees (doall agrees)]
-      (doseq [[i ml] (map-indexed vector (:lines m)) [j mt] (map-indexed vector ml) :when (= mt "~PD")]
-        (swap! pd-seen conj [nm (inc i) (inc j) (vec (for [[fc _ toks] outs] [fc (get-in toks [i j])]))]))
+      (doseq [[i ml] (map-indexed vector (:lines m)) :when (vector? ml) [j mt] (map-indexed vector ml) :when (= mt "~PD")]
+        (swap! pd-seen conj [nm (inc i) (inc j) (vec (for [[fc _ ls] outs] [fc (get (toks-of-line (get ls i "")) j)]))]))
       (when (and (= 2 (count outs))
-                 (not (every? true? (for [[i ml] (map-indexed vector (:lines m)) [j mt] (map-indexed vector ml)]
-                                      (value-eq? mt (get-in (nth (first outs) 2) [i j] "") (get-in (nth (second outs) 2) [i j] ""))))))
+                 (not (every? true? (for [[i ml] (map-indexed vector (:lines m))
+                                          :let [a (get (nth (first outs) 2) i "") b (get (nth (second outs) 2) i "")]
+                                          j (if (vector? ml) (range (count ml)) [nil])]
+                                      (if j (value-eq? (ml j) (get (toks-of-line a) j "") (get (toks-of-line b) j ""))
+                                        (= (str/trimr a) (str/trimr b)))))))
         (swap! prog-results update :disagree-compilers conj nm)
         (println "compilers disagree on" nm))
       (when (and ok-model (every? true? agrees))
         (swap! prog-results update :agree-both inc)
         (println "ok" nm (count (:lines m)) "lines, every compiler")))))
+
+;; ---- NIST's FCVS: model/fcvs/ (bb fetch-fcvs.bb), each program read in fixed
+;; source form by fortran-run-form and its records compared, line by line,
+;; with the reference output beside it. Scored, not failed: the subset does not
+;; reach most of the suite yet.
+
+(def fcvs-files (if (fs/exists? (str here "/fcvs")) (sort (map str (fs/glob (str here "/fcvs") "FM*.f"))) []))
+
+(def fcvs-model
+  (if (empty? fcvs-files) []
+    (let [input (str "(include-book \"fmean\")\n(set-iprint nil)\n(set-fmt-hard-right-margin 100000 state)\n(set-fmt-soft-right-margin 100000 state)\n"
+                     "(defun show-recs (ls) (declare (xargs :mode :program))\n"
+                     "  (if (endp ls) nil (prog2$ (cw \"REC~s0~%\" (car (car ls))) (show-recs (cdr ls)))))\n"
+                     (str/join (for [f fcvs-files]
+                                 (str "(let ((r (fortran-run-form " (lisp-str (slurp f)) " t 2000000)))\n"
+                                      "  (prog2$ (cw \"~%FCVS~%STATUS ~x0~%\" (car r)) (if (consp (car r)) (cw \"AT ~x0~%\" (cadr r)) (show-recs (cadr r)))))\n")))
+                     "(good-bye)\n")
+          r (sh! 3000 {:dir here :in input} "nice" acl2)
+          blocks (rest (str/split (:out r) #"\nFCVS\n"))]
+      (mapv (fn [b] {:status (second (re-find #"STATUS (.*)" b))
+                     :at (second (re-find #"AT (.*)" b))
+                     :recs (vec (for [l (str/split-lines b) :let [[_ x] (re-find #"^REC~F(.*)$" l)] :when x] (str/trimr x)))})
+            blocks))))
+
+(def fcvs-pass (atom []))
+(doseq [[f m] (map vector fcvs-files (concat fcvs-model (repeat nil)))]
+  (let [nm (fs/file-name f)
+        ref (str/replace f #"\.f$" ".reference_output")
+        want (when (fs/exists? ref) (vec (map str/trimr (str/split-lines (str/trimr (slurp ref))))))]
+    (cond (nil? m) nil
+          (and want (#{":STOP" ":NORMAL"} (:status m)) (= want (:recs m))) (swap! fcvs-pass conj nm)
+          :else nil)))
+(when (seq fcvs-files)
+  (println (format "check-fsem: FCVS %d of %d programs agree with their reference output (%.0f%%): %s"
+                   (count @fcvs-pass) (count fcvs-files) (* 100.0 (/ (count @fcvs-pass) (count fcvs-files)))
+                   (str/join " " @fcvs-pass))))
 
 (doseq [[nm l t cs] @pd-seen]
   (println "processor dependent:" nm "line" l "value" t (str/join ", " (for [[fc v] cs] (str fc " printed " v)))))

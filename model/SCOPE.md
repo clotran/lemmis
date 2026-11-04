@@ -29,15 +29,18 @@ Score: **114 of 138** Scope rules proved (83%); 22 more in part; 2 not yet in.
     fp-complete, n tokens are read in at most 32n + 17 calls.
   All certify in about 25 s.
 - `fstmt.lisp`: one statement's tokens, the same way: `fgs`, `fys`, the
-  parser `fps` (its kind known from the first tokens), `fps-sound`,
-  `fps-complete` (followed by nothing: a statement is whole) and
-  `fps-cost`: at most 64 calls per token read, fp's among them, plus
+  parser `fps` (its kind known from the first tokens); `fstmt-sound.lisp`:
+  `fps-sound`; `fstmt-complete.lisp`: `fps-complete` (followed by nothing:
+  a statement is whole);
+  `fstmt-cost.lisp`: `fps-cost`: at most 64 calls per token read, fp's among them, plus
   `fps-d` (at most 48). About 8 minutes.
 - `fprog.lisp`: program units over statement trees: `fgu`, `fyu`, the
   parser `fpu`, `fpu-sound` (on statement trees), `fpu-complete` and
   `fpu-cost`: at most 32 calls per statement, plus `fpu-d` (at most 12).
   About 5 minutes.
-- `fmean.lisp`: the meaning (item 2). `fortran-parse` is flex, then fps
+- `fval.lisp`, `fhelp.lisp`, `fmean.lisp`: the meaning (item 2): the
+  values, state and intrinsics; the helpers, labels and FORMAT; the
+  evaluation itself. `fortran-parse` is flex, then fps
   on each statement, then fpu; `fortran-parse-sound`: what it accepts is
   a program of the grammar.
 - `freal.lisp`: the binary32 and binary64 formats of ISO/IEC 60559 for
