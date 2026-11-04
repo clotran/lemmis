@@ -251,8 +251,13 @@ is how `fx-is-f-ex` went through after two monolithic attempts ran out.
 
 1. Layer 2 is done: g-expr, g-ret and the function (`g-fn-sem`), with
    10 of the 12 checked functions proved (gen-inst.lisp).
-2. Layer 3: calls (the frame-agreement lemma over fsem's clique, and the
-   fuel bound), then tail-recursive loops; the whole theorem for the slice.
+2. Layer 3: calls (the frame-agreement lemma over fsem's clique -- proved,
+   gen-call.lisp's `f-ev-agree`: for expressions of cf-expr's forms plus
+   `:fcall`, two frames agreeing on the names read (`ce-names`) give the
+   same f-ev at every fuel, by `ag-ok-thm` over f-ev, f-bind and f-invoke;
+   left: g-expr's run with fuel and calls, f-bind of argument expressions
+   (g-fn-sem binds literals), the cross-function induction on a-ev's fuel,
+   and the fuel bound), then tail-recursive loops; the whole theorem for the slice.
    One to two lanes.
 3. Per-function discharge of the hypotheses: the clotran definition equals
    a-ev of its body, and guard ⇒ no `:range`. This is done in clotran's tree

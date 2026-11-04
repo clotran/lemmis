@@ -276,6 +276,8 @@ hold, before any extension.
    int64 literals answers a-ev's value of the body, for call-free bodies;
    `gen-inst.lisp`: that, for 10 of the 12 checked functions of clotran
    (all but the two with loops), from what clotran's books hand over.
+   Layer 3 begun: `gen-call.lisp`, f-ev's frame agreement over fsem's
+   clique with calls (`f-ev-agree`).
    Left, in order: calls (frame agreement over fsem's clique, the fuel
    bound) and loops; per function, clotran's definition = a-ev and its
    guard => no int64 overflow (guard verification alone does not give
