@@ -599,9 +599,73 @@
                  (:instance g-if-types (sc (j1 1)) (cc (j1 2)) (tc (j1 3)) (sa (j2 1)) (ca (j2 2)) (ta (j2 3))
                             (sb (j3 1)) (cb (j3 2)) (tb (j3 3)) (cnt (j3 4)) (locs (j3 5)) (used (append fnames (em-names em))))))))
 
-; Left (next lane): gsx-if, g-sexpr's if from gs-sem of its three parts
-; and their sn-ok, by sif-glue and g-sexpr-if-out. Attempted: the else
-; branch's scalar-ok is stated on (j3 3), sif-glue wants (j2 3) (equal
-; by g-sexpr-if-out); with a :use of gs-sem-use on (cadddr x) it should
-; close, but the proof split 16x63 ways (367 s) -- split sif-glue into a
-; then-lemma and an else-lemma first.
+; sif-glue split by the test's value, the branch's type read off the frame
+; (no free variable), so the if case uses them by rewriting, not :use
+(defthm sif-then
+  (let ((fr1 (mv-nth 1 (sx-list sc fr heap))))
+    (implies (and (equal (car (sx-list sc fr heap)) :normal) (equal (mv-nth 2 (sx-list sc fr heap)) heap)
+                  (not (car (sv cc fr1 heap))) (mv-nth 1 (sv cc fr1 heap)) (booleanp (mv-nth 1 (sv cc fr1 heap)))
+                  (consp (dty tmp fr))
+                  (equal (car (sx-list sa fr1 heap)) :normal) (equal (mv-nth 2 (sx-list sa fr1 heap)) heap)
+                  (not (car (sv ca (mv-nth 1 (sx-list sa fr1 heap)) heap)))
+                  (scalar-ok (car (dty tmp fr)) (mv-nth 1 (sv ca (mv-nth 1 (sx-list sa fr1 heap)) heap))))
+             (and (equal (car (sx-list (if-stmts sc cc sa ca sb cb tmp) fr heap)) :normal)
+                  (equal (mv-nth 2 (sx-list (if-stmts sc cc sa ca sb cb tmp) fr heap)) heap)
+                  (not (car (sv (list :var tmp) (mv-nth 1 (sx-list (if-stmts sc cc sa ca sb cb tmp) fr heap)) heap)))
+                  (equal (mv-nth 1 (sv (list :var tmp) (mv-nth 1 (sx-list (if-stmts sc cc sa ca sb cb tmp) fr heap)) heap))
+                         (mv-nth 1 (sv ca (mv-nth 1 (sx-list sa fr1 heap)) heap))))))
+  :hints (("Goal" :do-not-induct t :in-theory (disable sx sv sx-list sif-glue if-stmts)
+           :use (:instance sif-glue (ta (car (dty tmp fr))) (c t)
+                           (v (mv-nth 1 (sv ca (mv-nth 1 (sx-list sa (mv-nth 1 (sx-list sc fr heap)) heap)) heap)))))))
+
+(defthm sif-else
+  (let ((fr1 (mv-nth 1 (sx-list sc fr heap))))
+    (implies (and (equal (car (sx-list sc fr heap)) :normal) (equal (mv-nth 2 (sx-list sc fr heap)) heap)
+                  (not (car (sv cc fr1 heap))) (not (mv-nth 1 (sv cc fr1 heap)))
+                  (consp (dty tmp fr))
+                  (equal (car (sx-list sb fr1 heap)) :normal) (equal (mv-nth 2 (sx-list sb fr1 heap)) heap)
+                  (not (car (sv cb (mv-nth 1 (sx-list sb fr1 heap)) heap)))
+                  (scalar-ok (car (dty tmp fr)) (mv-nth 1 (sv cb (mv-nth 1 (sx-list sb fr1 heap)) heap))))
+             (and (equal (car (sx-list (if-stmts sc cc sa ca sb cb tmp) fr heap)) :normal)
+                  (equal (mv-nth 2 (sx-list (if-stmts sc cc sa ca sb cb tmp) fr heap)) heap)
+                  (not (car (sv (list :var tmp) (mv-nth 1 (sx-list (if-stmts sc cc sa ca sb cb tmp) fr heap)) heap)))
+                  (equal (mv-nth 1 (sv (list :var tmp) (mv-nth 1 (sx-list (if-stmts sc cc sa ca sb cb tmp) fr heap)) heap))
+                         (mv-nth 1 (sv cb (mv-nth 1 (sx-list sb fr1 heap)) heap))))))
+  :hints (("Goal" :do-not-induct t :in-theory (disable sx sv sx-list sif-glue if-stmts)
+           :use (:instance sif-glue (ta (car (dty tmp fr))) (c nil)
+                           (v (mv-nth 1 (sv cb (mv-nth 1 (sx-list sb (mv-nth 1 (sx-list sc fr heap)) heap)) heap)))))))
+
+(in-theory (disable sif-glue))
+
+; the else branch's value has the then branch's type (g-if wants them equal);
+; stated on (j2 3) so the if case finds it by rewriting
+(defthm gs-sem-else-type
+  (implies (and (gs-ifp x st) (not (gsx 0))
+                (gs-sem (cadddr x) em (j2 4) (j2 5) sigs fnames st env s defs n fr heap o)
+                (not (car (a-sx (cadddr x) env s st defs n))) (no-calls :term (cadddr x) sigs nil) (em-ok em env fr)
+                (decl-ok (j3 5) fr) (no-prim-defs defs) (not (consp (lkp 'mv-nth defs)))
+                (not (g-role 'mv-nth st)) (not (g-role 'mv st)) (st-ok st o s) (obj-is o s fr heap))
+           (scalar-ok (j2 3) (mv-nth 1 (a-sx (cadddr x) env s st defs n))))
+  :hints (("Goal" :do-not-induct t :in-theory (theory 'minimal-theory)
+           :use ((:instance gs-sem-use (x (cadddr x)) (cnt (j2 4)) (locs (j2 5))) g-sexpr-if-out))))
+
+(defmacro fr1 () '(mv-nth 1 (sx-list (j1 1) fr heap)))
+
+; the if case: its test's and branches' gs-sem and names facts give its own
+(defthm gsx-if
+  (implies (and (gs-ifp x st)
+                (gs-sem (cadr x) em cnt locs sigs fnames st env s defs (1- n) fr heap o)
+                (gs-sem (caddr x) em (j1 4) (j1 5) sigs fnames st env s defs (1- n) (fr1) heap o)
+                (gs-sem (cadddr x) em (j2 4) (j2 5) sigs fnames st env s defs (1- n) (fr1) heap o)
+                (sn-ok (cadr x) em cnt locs sigs fnames st)
+                (sn-ok (caddr x) em (j1 4) (j1 5) sigs fnames st)
+                (sn-ok (cadddr x) em (j2 4) (j2 5) sigs fnames st))
+           (gs-sem x em cnt locs sigs fnames st env s defs n fr heap o))
+  :hints (("Goal" :do-not-induct t :expand ((gs-sem x em cnt locs sigs fnames st env s defs n fr heap o))
+           :cases ((mv-nth 1 (a-sx (cadr x) env s st defs (1- n))))
+           :in-theory (disable g-sexpr a-sx sx-list sx sv no-calls em-ok scalar-ok st-ok obj-is gs-ifp
+                               g-sexpr-if if-stmts g-tmp nfix dty decl-ok-subset sif-glue sv-is-fv fv
+                               sx-list-is-fx-list fx-list)
+           :do-not (quote (eliminate-destructors generalize))
+           :use ((:instance decl-ok-subset (a (j1 5)) (b (j2 5)))
+                 (:instance decl-ok-subset (a (j2 5)) (b (j3 5)))))))

@@ -581,11 +581,15 @@ Two findings from acl2-fortran's `stmt`:
    gen-names' gs-ok: statements assign only new temporaries, the code
    reads em's names, its temporaries and fnames -- the objects must be in
    fnames); their own induction is still to do. For if: `sif-glue`,
-   `g-sexpr-if`, `g-sexpr-if-out`, `a-sx-if` proved; `gsx-if` itself not
-   yet (see the note at the end of gen-stexp.lisp). :bounds propagation
+   `g-sexpr-if`, `g-sexpr-if-out`, `a-sx-if` proved, and **`gsx-if`**
+   (24 s): the if from gs-sem of test and branches (the branches at the
+   frame after the test's statements) and their three sn-ok, by
+   `sif-then`/`sif-else` (sif-glue split on the test's value, the type read
+   off dty so they fire by rewriting) and `gs-sem-else-type` (the else
+   value has the then type; a `:use` of gs-sem-use in the minimal theory). :bounds propagation
    past the element read is not stated (a-sx's strict `implies` would
    answer :bounds where the code does not).
-   Next, in order: (1') gsx-if; lambda (g-svals: a gsb-sem as gen-proof's
+   Next, in order: (1') lambda (g-svals: a gsb-sem as gen-proof's
    gb-sem, em-ok of (append binds em) against (pairlis$ vars vals));
    sn-ok/sna-ok by induction over g-sexpr (gen-names' gs-ok-thm pattern);
    then the gs-sem theorem by an induction over g-sexpr dispatching to the
