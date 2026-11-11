@@ -26,7 +26,12 @@
     :fns '[bnd40p sk-step sk-more ex-aplook ex-apstep] :bools '[bnd40p sk-more] :raw "*vmfg-raw*"}
    {:book "vmicg" :file "src/f/gen/vmc_gen.f90" :fns '[vmicg-sat] :bools '[] :raw "*vmicg-raw*"}
    ;; stobj subroutines (gen-st.lisp's g-st-module, its configuration :st)
-   {:book "heapgn" :file "src/f/gen/heap_gen.inc" :fns '[hpg-spush] :bools '[] :raw "*spush-raw*" :st "*heapg-st*"}])
+   {:book "heapgn" :file "src/f/gen/heap_gen.inc" :fns '[hpg-spush] :bools '[] :raw "*spush-raw*" :st "*heapg-st*"}
+   ;; :ctx -- callees handed over too (their formals and results), not compared
+   {:book "heapgn" :file "src/f/gen/heap_gen.inc" :fns '[hpg-drain hpg-run-from-batch hpg-run-take hpg-next-tail hpg-seq-op]
+    :ctx '[hpg-scan-obj hpg-scan-vec hpg-run-pop hpg-run-new hpg-run-take-c hpg-ot hpg-or hpg-obj-at hpg-okd hpg-oi
+           hpg-size-class hpg-class-len]
+    :bools '[hpg-obj-at] :raw "*heapg-st-raw*" :st "*heapg-st*"}])
 
 (defn acl2! [dir input]
   (let [r (p/shell {:dir dir :in input :out :string :err :string :continue true} acl2)] (:out r)))
@@ -38,8 +43,9 @@
       (let [c (.charAt s j) d (case c \( (inc d) \) (dec d) d)]
         (if (zero? d) (subs s i (inc j)) (recur (inc j) d))))))
 
-(defn dump [{:keys [book fns]}]
-  (let [out (acl2! (str clotran "/model")
+(defn dump [{:keys [book fns ctx]}]
+  (let [fns (concat fns ctx)
+        out (acl2! (str clotran "/model")
                    (str "(include-book \"" book "\")\n(set-print-case :downcase state)\n"
                         "(defun dump-fns (fns state)\n  (declare (xargs :mode :program :stobjs state))\n"
                         "  (if (endp fns) state\n    (let ((fn (car fns)) (w (w state)))\n"
@@ -54,7 +60,7 @@
 
 (defn translate [raws bools const fns st]
   (let [out (acl2! "."
-                   (str "(include-book \"gen-inst\")\n(include-book \"gen-st\")\n(set-print-case :downcase state)\n"
+                   (str "(include-book \"gen-inst\")\n(include-book \"gen-st-heap\")\n(set-print-case :downcase state)\n"
                         "(defun g-show (ps) (declare (xargs :mode :program))\n"
                         "  (if (endp ps) nil (prog2$ (cw \"~%PROC ~x0~%\" (car ps)) (g-show (cdr ps)))))\n"
                         "(set-iprint nil)\n"

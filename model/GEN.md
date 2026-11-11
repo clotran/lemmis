@@ -409,10 +409,37 @@ reads (`hs%f`, `hs%a(i)`, `size(hs%a, kind=int64)`): a term with no stobj
 in it goes to g-expr whole, so the counter and the names are g-expr's.
 `g-stmt` takes the stobj itself, a field or array update, `if`, and a
 lambda (the values into temporaries, then the stobjs' updates, then the
-body). Refused for now: calls answering stobjs (`call`), `mv`/`mv-nth`
-and intent(out) results, tail self-calls, extern fields/arrays (GC's
-`hp_*`), a SELECT in statement position, and stobj-reading functions
-answering a value. check-gen: `hpg-spush` (22 lines) agrees.
+body).
+
+Widened (lane 2 of item 4, (b)): g-sexpr now has g-expr's `if`/`implies`,
+`the-check` and lambda over stobj reads, and calls of value functions given
+the stobj (`f(hs, args)`, the stobj first, as acl2-fortran's call-args).
+g-stmt takes `(fn ... outs dests tself)`: outs are stobjs-out (a stobj, or
+nil for a value going to the next of dests), tself the function in tail
+position. New cases: the tail self-call (values into temporaries named
+after the formals, the stobjs' updates, the formals, `cycle`; the body in
+`do ... exit end do`); `cons`, the results' tuple (values to the dests,
+through `r` temporaries when a stobj result is moved); a call of a function
+answering other than one value (`g-st-module` adds `(f :sub formals outs)`
+to st from raw): `call f(stobjs, values, dests)`, its outs must be the ones
+wanted; a lambda binding `mv` to such a call (its value results into `mv_k`
+temporaries, em keys `(mv k)`; stobj vars bound to `(mv-nth 'k mv)` must be
+the call's k-th result). Results: `intent(out) r` (r1 .. rk). A function
+reading a stobj and answering a value is a pure FUNCTION, the stobj
+intent(in), by g-sret (g-ret on g-sexpr). Still refused: extern
+fields/arrays (GC's `hp_*`), a SELECT in statement or return position, tail
+self-calls in value functions. check-gen (gen-st-heap.lisp holds the raw
+hand-over; a check-gen entry's `:ctx` callees are handed over but not
+compared): hpg-spush (22), hpg-drain (59), hpg-run-from-batch (15),
+hpg-run-take (15), hpg-next-tail (63), hpg-seq-op (161) agree. Those are
+all of heapgn's procedures with no `hp_*` extern; every other heapgn
+procedure reads or writes one.
+
+A third copy of finding 2 below, noted not proved: acl2-fortran's mv lambda
+adds the values' bindings before translating the mv call's arguments, and
+call-stmt reads its value arguments' code after the stobj arguments'
+updates run (the analogue of the field-update finding). gen-st copies both;
+the general theorem's side conditions must exclude them too.
 
 **`hpg-spush-fortran-correct`** (gen-st-spush.lisp): clotran's hpgp stobj,
 hpg-lens, hpg-ok and hpg-spush copied in (check-gen compares the copies,
@@ -511,8 +538,17 @@ Two findings from acl2-fortran's `stmt`:
    theorem as g-fn-sem is for g-fn; (b) `call` of stobj subroutines,
    `mv`/`mv-nth` and the intent(out) results, tail loops in subroutines
    (acl2-fortran's `call-stmt`, `tuple`, `assign-formals`), and the
-   functions reading a stobj but answering a value; (c) more heapgn
-   functions in check-gen as (b) lands (externs need fsyn's `hp_*`).
+   functions reading a stobj but answering a value [done in translation,
+   checked, not proved: see Stobjs above]; (c) more heapgn
+   functions in check-gen as (b) lands [done: all extern-free ones; the
+   rest need fsyn's `hp_*`]. For (a), the plan: heap-aware fuel-free
+   evaluators `sv e fr heap` / `sx s fr heap` (fv/fx plus :comp, :size,
+   :elem reads and :comp/:elem assignments through comp-of/obj-of, as
+   f-ev/f-ex do), bridged once by sv-is-f-ev / sx-is-f-ex at large fuel
+   (fv-is-f-ev's and fx-is-f-ex's pattern), then the per-case lemmas against
+   a-sx/a-st on sv/sx, fuel-free. Chosen over f-ex at large fuel because
+   every per-case lemma would otherwise carry a fuel bound, and over
+   extending fv/fx because every layer-2 lemma reasons through them.
 5. Values and the runtime shims (`type(value)`, `rt_*`): fsyn/fsem first need
    an abstract runtime. Two lanes.
 6. Switch acl2-fortran to print g-module's output, and fix or confirm the
