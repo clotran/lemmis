@@ -10,9 +10,9 @@
 (set-irrelevant-formals-ok t)
 
 (defthm ge-sem-all
-  (ge-sem x em cnt locs sigs fnames env defs n fr nil)
+  (ge-sem x em cnt locs sigs fnames env defs n fr cs)
   :rule-classes nil
-  :hints (("Goal" :use (:instance ge-sem-thm (flag :expr) (vars nil) (cs nil)))))
+  :hints (("Goal" :use (:instance ge-sem-thm (flag :expr) (vars nil)))))
 
 (defmacro rty () '(kadr (cdr (lkp self sigs))))
 
@@ -20,30 +20,30 @@
 
 ; ---- g-ret's recursion, carrying a-ev's env and fuel and the frame
 
-(defun gr-ind (flag x k em cnt locs self sigs fnames env defs n fr)
+(defun gr-ind (flag x k em cnt locs self sigs fnames env defs cs n fr)
   (declare (xargs :measure (if (eq flag :sel) (1+ (* 2 (acl2-count x))) (* 2 (acl2-count x)))
                   :verify-guards nil
                   :hints (("Goal" :in-theory (disable g-case-key int-lit-p g-chain acl2-count)))))
   (if (eq flag :sel)
-      (if (zp k) (gr-ind :ret x 0 em cnt locs self sigs fnames env defs n fr)
+      (if (zp k) (gr-ind :ret x 0 em cnt locs self sigs fnames env defs cs n fr)
         (if (not (and (consp x) (true-listp x) (= (len x) 4))) nil
           (mv-let (e sa cnt1 locs1) (g-ret (caddr x) em cnt locs self sigs fnames)
             (declare (ignore e sa))
-            (list (gr-ind :ret (caddr x) 0 em cnt locs self sigs fnames env defs (1- n) fr)
-                  (gr-ind :sel (cadddr x) (1- k) em cnt1 locs1 self sigs fnames env defs (1- n) fr)))))
+            (list (gr-ind :ret (caddr x) 0 em cnt locs self sigs fnames env defs cs (1- n) fr)
+                  (gr-ind :sel (cadddr x) (1- k) em cnt1 locs1 self sigs fnames env defs cs (1- n) fr)))))
     (cond
      ((and (consp x) (<= 3 (g-chain x nil nil)))
       (mv-let (e sa cnt1 locs1) (g-ret (caddr x) em cnt locs self sigs fnames)
         (declare (ignore e sa))
-        (list (gr-ind :ret (caddr x) 0 em cnt locs self sigs fnames env defs (1- n) fr)
-              (gr-ind :sel (cadddr x) (1- (g-chain x nil nil)) em cnt1 locs1 self sigs fnames env defs (1- n) fr))))
+        (list (gr-ind :ret (caddr x) 0 em cnt locs self sigs fnames env defs cs (1- n) fr)
+              (gr-ind :sel (cadddr x) (1- (g-chain x nil nil)) em cnt1 locs1 self sigs fnames env defs cs (1- n) fr))))
      ((and (consp x) (eq (car x) 'if) (true-listp x) (= (len x) 4))
       (mv-let (e sc cc tc cnt1 locs1) (g-expr (cadr x) em cnt locs sigs fnames)
         (declare (ignore e cc tc))
         (mv-let (e sa cnt2 locs2) (g-ret (caddr x) em cnt1 locs1 self sigs fnames)
           (declare (ignore e sa))
-          (list (gr-ind :ret (caddr x) 0 em cnt1 locs1 self sigs fnames env defs (1- n) (fr-after sc fr))
-                (gr-ind :ret (cadddr x) 0 em cnt2 locs2 self sigs fnames env defs (1- n) (fr-after sc fr))))))
+          (list (gr-ind :ret (caddr x) 0 em cnt1 locs1 self sigs fnames env defs cs (1- n) (fr-after sc fr))
+                (gr-ind :ret (cadddr x) 0 em cnt2 locs2 self sigs fnames env defs cs (1- n) (fr-after sc fr))))))
      (t nil))))
 
 ; ---- the temporaries only grow
@@ -161,7 +161,7 @@
 (defthm grl-ok-thm
   (grl-ok flag x k em cnt locs self sigs fnames)
   :rule-classes nil
-  :hints (("Goal" :induct (gr-ind flag x k em cnt locs self sigs fnames env defs n fr) :do-not-induct t
+  :hints (("Goal" :induct (gr-ind flag x k em cnt locs self sigs fnames env defs cs n fr) :do-not-induct t
            :in-theory (disable g-ret g-select g-expr g-tail g-case-key g-chain int-lit-p fr-after))))
 
 (defthm g-ret-locs
@@ -270,10 +270,10 @@
 ; ---- what g-ret's statements do: :return, "r" holding a-ev's value
 
 (defmacro gr-hyps (locs2)
-  `(and (no-calls :term x sigs nil) (consp (lkp self sigs)) (symbolp self) (not (equal self 'quote))
+  `(and (no-calls :term x sigs cs) (a-orc defs sigs cs) (not (member-equal self cs)) (consp (lkp self sigs)) (symbolp self) (not (equal self 'quote))
         (em-ok em env fr) (decl-ok ,locs2 fr) (no-prim-defs defs) (equal (dty "r" fr) (list (rty)))))
 
-(defun gr-sem (x em cnt locs self sigs fnames env defs n fr)
+(defun gr-sem (x em cnt locs self sigs fnames env defs cs n fr)
   (declare (xargs :verify-guards nil))
   (mv-let (e s cnt2 locs2) (g-ret x em cnt locs self sigs fnames)
     (declare (ignore cnt2))
@@ -282,7 +282,7 @@
                (mv-let (st fr2) (fx-list s fr)
                  (and (equal st :return) (ret-ok fr2 (rty) v)))))))
 
-(defun gsel-sem (x k em cnt locs self sigs fnames env defs n fr)
+(defun gsel-sem (x k em cnt locs self sigs fnames env defs cs n fr)
   (declare (xargs :verify-guards nil))
   (mv-let (e arms dflt cnt2 locs2) (g-select x k em cnt locs self sigs fnames)
     (declare (ignore cnt2))
@@ -295,14 +295,14 @@
 (defmacro gso (j) `(mv-nth ,j (g-select x k em cnt locs self sigs fnames)))
 
 (defthm gr-sem-use
-  (implies (and (gr-sem x em cnt locs self sigs fnames env defs n fr)
+  (implies (and (gr-sem x em cnt locs self sigs fnames env defs cs n fr)
                 (not (gro 0)) (not (car (a-ev x env defs n))) (gr-hyps (gro 3)))
            (and (equal (car (fx-list (gro 1) fr)) :return)
                 (implies (equal rt (rty)) (ret-ok (mv-nth 1 (fx-list (gro 1) fr)) rt (mv-nth 1 (a-ev x env defs n))))))
   :hints (("Goal" :in-theory (e/d (gr-sem) (g-ret a-ev fx-list ret-ok no-calls em-ok decl-ok dty)))))
 
 (defthm gsel-sem-use
-  (implies (and (gsel-sem x k em cnt locs self sigs fnames env defs n fr)
+  (implies (and (gsel-sem x k em cnt locs self sigs fnames env defs cs n fr)
                 (not (gso 0)) (not (car (a-ev x env defs n))) (gr-hyps (gso 4)) (chain-on (chain-v x) x k)
                 (equal val (cdr (lkp (chain-v x) env))))
            (and (equal (car (fx-arms val (gso 1) (gso 2) fr)) :return)
@@ -311,7 +311,7 @@
   :hints (("Goal" :in-theory (e/d (gsel-sem) (g-select a-ev fx-arms ret-ok no-calls em-ok decl-ok dty chain-on chain-v)))))
 
 (defthm gsel-sem-use0
-  (implies (and (gsel-sem x k em cnt locs self sigs fnames env defs n fr) (zp k)
+  (implies (and (gsel-sem x k em cnt locs self sigs fnames env defs cs n fr) (zp k)
                 (not (gso 0)) (not (car (a-ev x env defs n))) (gr-hyps (gso 4)))
            (and (equal (car (fx-list (gso 2) fr)) :return)
                 (implies (equal rt (rty))
@@ -336,12 +336,12 @@
 (defthm gr-other
   (implies (not (and (consp x) (or (<= 3 (g-chain x nil nil))
                                    (and (eq (car x) 'if) (true-listp x) (= (len x) 4)))))
-           (gr-sem x em cnt locs self sigs fnames env defs n fr))
-  :hints (("Goal" :do-not-induct t :expand ((gr-sem x em cnt locs self sigs fnames env defs n fr)
+           (gr-sem x em cnt locs self sigs fnames env defs cs n fr))
+  :hints (("Goal" :do-not-induct t :expand ((gr-sem x em cnt locs self sigs fnames env defs cs n fr)
                                             (g-ret x em cnt locs self sigs fnames))
            :in-theory (disable g-ret g-select g-expr g-tail g-case-key g-chain int-lit-p a-ev fx-list fv
                                no-calls em-ok scalar-ok dty fx-list-append)
-           :use ((:instance ge-sem-all) (:instance ge-sem-use (cs nil))))))
+           :use ((:instance ge-sem-all) ge-sem-use))))
 
 ; ---- the chain's variable, kept whole
 
@@ -364,10 +364,10 @@
 
 (defthm gr-if
   (implies (and (consp x) (not (<= 3 (g-chain x nil nil))) (eq (car x) 'if) (true-listp x) (= (len x) 4)
-                (gr-sem (caddr x) em (gc1 4) (gc1 5) self sigs fnames env defs (1- n) (fr-after (gc1 1) fr))
-                (gr-sem (cadddr x) em (gi1 2) (gi1 3) self sigs fnames env defs (1- n) (fr-after (gc1 1) fr)))
-           (gr-sem x em cnt locs self sigs fnames env defs n fr))
-  :hints (("Goal" :do-not-induct t :expand ((gr-sem x em cnt locs self sigs fnames env defs n fr)
+                (gr-sem (caddr x) em (gc1 4) (gc1 5) self sigs fnames env defs cs (1- n) (fr-after (gc1 1) fr))
+                (gr-sem (cadddr x) em (gi1 2) (gi1 3) self sigs fnames env defs cs (1- n) (fr-after (gc1 1) fr)))
+           (gr-sem x em cnt locs self sigs fnames env defs cs n fr))
+  :hints (("Goal" :do-not-induct t :expand ((gr-sem x em cnt locs self sigs fnames env defs cs n fr)
                                             (g-ret x em cnt locs self sigs fnames))
            :in-theory (disable g-ret g-select g-expr g-tail g-case-key g-chain int-lit-p a-ev fx-list fv
                                no-calls em-ok scalar-ok dty fx decl-ok-ret-locs)
@@ -379,10 +379,10 @@
 
 (defthm gr-chain
   (implies (and (consp x) (<= 3 (g-chain x nil nil))
-                (gr-sem (caddr x) em cnt locs self sigs fnames env defs (1- n) fr)
-                (gsel-sem (cadddr x) (1- (g-chain x nil nil)) em (gr1 2) (gr1 3) self sigs fnames env defs (1- n) fr))
-           (gr-sem x em cnt locs self sigs fnames env defs n fr))
-  :hints (("Goal" :do-not-induct t :expand ((gr-sem x em cnt locs self sigs fnames env defs n fr)
+                (gr-sem (caddr x) em cnt locs self sigs fnames env defs cs (1- n) fr)
+                (gsel-sem (cadddr x) (1- (g-chain x nil nil)) em (gr1 2) (gr1 3) self sigs fnames env defs cs (1- n) fr))
+           (gr-sem x em cnt locs self sigs fnames env defs cs n fr))
+  :hints (("Goal" :do-not-induct t :expand ((gr-sem x em cnt locs self sigs fnames env defs cs n fr)
                                             (g-ret x em cnt locs self sigs fnames))
            :in-theory (e/d (var-ok) (g-ret g-select g-expr g-tail g-case-key g-chain int-lit-p a-ev fx-list fv
                                     no-calls em-ok scalar-ok dty fx decl-ok-ret-locs decl-ok-sel-locs em-ok-necc
@@ -395,25 +395,25 @@
                  (:instance decl-ok-sel-locs (x (cadddr x)) (k (1- (g-chain x nil nil))) (cnt (gr1 2)) (locs (gr1 3)))))))
 
 (defthm gsel-zp
-  (implies (and (zp k) (gr-sem x em cnt locs self sigs fnames env defs n fr))
-           (gsel-sem x k em cnt locs self sigs fnames env defs n fr))
-  :hints (("Goal" :do-not-induct t :expand ((gsel-sem x k em cnt locs self sigs fnames env defs n fr)
+  (implies (and (zp k) (gr-sem x em cnt locs self sigs fnames env defs cs n fr))
+           (gsel-sem x k em cnt locs self sigs fnames env defs cs n fr))
+  :hints (("Goal" :do-not-induct t :expand ((gsel-sem x k em cnt locs self sigs fnames env defs cs n fr)
                                             (g-select x k em cnt locs self sigs fnames))
            :in-theory (disable g-ret g-select a-ev fx-list no-calls em-ok dty))))
 
 (defthm gsel-bad
   (implies (and (not (zp k)) (not (and (consp x) (true-listp x) (= (len x) 4))))
-           (gsel-sem x k em cnt locs self sigs fnames env defs n fr))
-  :hints (("Goal" :do-not-induct t :expand ((gsel-sem x k em cnt locs self sigs fnames env defs n fr)
+           (gsel-sem x k em cnt locs self sigs fnames env defs cs n fr))
+  :hints (("Goal" :do-not-induct t :expand ((gsel-sem x k em cnt locs self sigs fnames env defs cs n fr)
                                             (g-select x k em cnt locs self sigs fnames))
            :in-theory (disable g-ret g-select a-ev fx-list no-calls em-ok dty))))
 
 (defthm gsel-cons
   (implies (and (not (zp k)) (consp x) (true-listp x) (= (len x) 4)
-                (gr-sem (caddr x) em cnt locs self sigs fnames env defs (1- n) fr)
-                (gsel-sem (cadddr x) (1- k) em (gr1 2) (gr1 3) self sigs fnames env defs (1- n) fr))
-           (gsel-sem x k em cnt locs self sigs fnames env defs n fr))
-  :hints (("Goal" :do-not-induct t :cases ((zp (1- k))) :expand ((gsel-sem x k em cnt locs self sigs fnames env defs n fr)
+                (gr-sem (caddr x) em cnt locs self sigs fnames env defs cs (1- n) fr)
+                (gsel-sem (cadddr x) (1- k) em (gr1 2) (gr1 3) self sigs fnames env defs cs (1- n) fr))
+           (gsel-sem x k em cnt locs self sigs fnames env defs cs n fr))
+  :hints (("Goal" :do-not-induct t :cases ((zp (1- k))) :expand ((gsel-sem x k em cnt locs self sigs fnames env defs cs n fr)
                                             (g-select x k em cnt locs self sigs fnames)
                                             (chain-on (chain-v x) x k))
            :in-theory (disable g-ret g-select g-case-key int-lit-p a-ev fx-list fv no-calls em-ok scalar-ok dty fx
@@ -422,8 +422,8 @@
                  (:instance decl-ok-sel-locs (x (cadddr x)) (k (1- k)) (cnt (gr1 2)) (locs (gr1 3)))))))
 
 (defthm gr-sem-thm
-  (if (eq flag :sel) (gsel-sem x k em cnt locs self sigs fnames env defs n fr)
-    (gr-sem x em cnt locs self sigs fnames env defs n fr))
+  (if (eq flag :sel) (gsel-sem x k em cnt locs self sigs fnames env defs cs n fr)
+    (gr-sem x em cnt locs self sigs fnames env defs cs n fr))
   :rule-classes nil
-  :hints (("Goal" :induct (gr-ind flag x k em cnt locs self sigs fnames env defs n fr) :do-not-induct t
+  :hints (("Goal" :induct (gr-ind flag x k em cnt locs self sigs fnames env defs cs n fr) :do-not-induct t
            :in-theory (disable g-ret g-select g-expr g-tail g-case-key g-chain int-lit-p fr-after))))

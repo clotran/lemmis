@@ -124,7 +124,7 @@
 (defthm grc-ok-thm
   (grc-ok flag x k em cnt locs self sigs fnames)
   :rule-classes nil
-  :hints (("Goal" :induct (gr-ind flag x k em cnt locs self sigs fnames env defs n fr) :do-not-induct t
+  :hints (("Goal" :induct (gr-ind flag x k em cnt locs self sigs fnames env defs cs n fr) :do-not-induct t
            :in-theory (disable g-ret g-select g-expr g-tail g-case-key g-chain int-lit-p fr-after))))
 
 (defthm g-ret-cf

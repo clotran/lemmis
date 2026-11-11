@@ -15,12 +15,12 @@
 
 ; ---- the source: calls of translated functions only as a tail self-call
 
-(defun tail-only (x self sigs)
+(defun tail-only (x self sigs cs)
   (declare (xargs :measure (acl2-count x)))
   (cond ((and (consp x) (eq (car x) 'if) (true-listp x) (= (len x) 4))
-         (and (no-calls :term (cadr x) sigs nil) (tail-only (caddr x) self sigs) (tail-only (cadddr x) self sigs)))
-        ((and (consp x) (eq (car x) self)) (no-calls :list (cdr x) sigs nil))
-        (t (no-calls :term x sigs nil))))
+         (and (no-calls :term (cadr x) sigs cs) (tail-only (caddr x) self sigs cs) (tail-only (cadddr x) self sigs cs)))
+        ((and (consp x) (eq (car x) self)) (no-calls :list (cdr x) sigs cs))
+        (t (no-calls :term x sigs cs))))
 
 ; a-ev of a call of a defined function
 (defthm a-ev-defined-call
@@ -67,8 +67,8 @@
 
 (defthm no-calls-list-cons
   (implies (consp xs)
-           (equal (no-calls :list xs sigs nil) (and (no-calls :term (car xs) sigs nil) (no-calls :list (cdr xs) sigs nil))))
-  :hints (("Goal" :expand ((no-calls :list xs sigs nil)))))
+           (equal (no-calls :list xs sigs cs) (and (no-calls :term (car xs) sigs cs) (no-calls :list (cdr xs) sigs cs))))
+  :hints (("Goal" :expand ((no-calls :list xs sigs cs)))))
 
 (defthm as-srcs-strip
   (implies (subsetp-equal (as-srcs as) (strip-cars l)) (subsetp-equal (as-srcs as) (strip-cars (cons p l)))))
@@ -220,33 +220,33 @@
 
 ; ---- g-tail's statements' run: each temporary holds its argument's value
 
-(defun gt-sem (vars xs em cnt locs sigs fnames env defs n fr)
+(defun gt-sem (vars xs em cnt locs sigs fnames env defs cs n fr)
   (declare (xargs :verify-guards nil))
   (mv-let (e s as cnt2 locs2) (g-tail vars xs em cnt locs sigs fnames)
     (declare (ignore cnt2))
     (mv-let (ae vs) (a-ev-list xs env defs n)
-      (implies (and (not e) (not ae) (no-calls :list xs sigs nil) (em-ok em env fr) (decl-ok locs2 fr) (no-prim-defs defs))
+      (implies (and (not e) (not ae) (no-calls :list xs sigs cs) (a-orc defs sigs cs) (em-ok em env fr) (decl-ok locs2 fr) (no-prim-defs defs))
                (mv-let (st fr2) (fx-list s fr)
                  (and (equal st :normal) (em-ok em env fr2) (tl-ok as vs fr2)))))))
 
-(defun-nx gt-ind (vars xs em cnt locs sigs fnames env defs n fr)
+(defun-nx gt-ind (vars xs em cnt locs sigs fnames env defs cs n fr)
   (declare (xargs :measure (acl2-count xs) :verify-guards nil))
   (if (or (atom vars) (atom xs)) (list fr n)
-    (gt-ind (cdr vars) (cdr xs) em (gtf 2) (gtf 3) sigs fnames env defs (1- n)
+    (gt-ind (cdr vars) (cdr xs) em (gtf 2) (gtf 3) sigs fnames env defs cs (1- n)
             (fr-after (append (gt1 1) (list (list :assign (list :var (gtf 1)) (gt1 2)))) fr))))
 
 (defthm ge-sem-int
-  (implies (and (ge-sem x em cnt locs sigs fnames env defs n fr nil) (equal (ge 3) :int64)
-                (not (ge 0)) (not (car (a-ev x env defs n))) (no-calls :term x sigs nil) (em-ok em env fr)
+  (implies (and (ge-sem x em cnt locs sigs fnames env defs n fr cs) (equal (ge 3) :int64)
+                (not (ge 0)) (not (car (a-ev x env defs n))) (no-calls :term x sigs cs) (a-orc defs sigs cs) (em-ok em env fr)
                 (decl-ok (ge 5) fr) (no-prim-defs defs))
            (int64p (mv-nth 1 (a-ev x env defs n))))
-  :hints (("Goal" :use (:instance ge-sem-use (cs nil)) :in-theory (disable ge-sem-use g-expr a-ev fx-list fv no-calls em-ok decl-ok))))
+  :hints (("Goal" :use ge-sem-use :in-theory (disable ge-sem-use g-expr a-ev fx-list fv no-calls em-ok decl-ok))))
 
 (defmacro gto (k) `(mv-nth ,k (g-tail vars xs em cnt locs sigs fnames)))
 
 (defthm gt-sem-use
-  (implies (and (gt-sem vars xs em cnt locs sigs fnames env defs n fr)
-                (not (gto 0)) (not (car (a-ev-list xs env defs n))) (no-calls :list xs sigs nil) (em-ok em env fr)
+  (implies (and (gt-sem vars xs em cnt locs sigs fnames env defs cs n fr)
+                (not (gto 0)) (not (car (a-ev-list xs env defs n))) (no-calls :list xs sigs cs) (a-orc defs sigs cs) (em-ok em env fr)
                 (decl-ok (gto 4) fr) (no-prim-defs defs))
            (and (equal (car (fx-list (gto 1) fr)) :normal)
                 (em-ok em env (mv-nth 1 (fx-list (gto 1) fr)))
@@ -254,16 +254,16 @@
   :hints (("Goal" :in-theory (e/d (gt-sem) (g-tail a-ev-list fx-list em-ok decl-ok no-calls tl-ok)))))
 
 (defthm gt-sem-base
-  (implies (or (atom vars) (atom xs)) (gt-sem vars xs em cnt locs sigs fnames env defs n fr))
+  (implies (or (atom vars) (atom xs)) (gt-sem vars xs em cnt locs sigs fnames env defs cs n fr))
   :hints (("Goal" :expand ((g-tail vars xs em cnt locs sigs fnames) (fx-list nil fr)))))
 
 (defthm gt-sem-step
   (implies (and (consp vars) (consp xs)
-                (ge-sem (car xs) em cnt locs sigs fnames env defs (1- n) fr nil)
-                (gt-sem (cdr vars) (cdr xs) em (gtf 2) (gtf 3) sigs fnames env defs (1- n)
+                (ge-sem (car xs) em cnt locs sigs fnames env defs (1- n) fr cs)
+                (gt-sem (cdr vars) (cdr xs) em (gtf 2) (gtf 3) sigs fnames env defs cs (1- n)
                         (fr-after (append (gt1 1) (list (list :assign (list :var (gtf 1)) (gt1 2)))) fr)))
-           (gt-sem vars xs em cnt locs sigs fnames env defs n fr))
-  :hints (("Goal" :do-not-induct t :expand ((gt-sem vars xs em cnt locs sigs fnames env defs n fr))
+           (gt-sem vars xs em cnt locs sigs fnames env defs cs n fr))
+  :hints (("Goal" :do-not-induct t :expand ((gt-sem vars xs em cnt locs sigs fnames env defs cs n fr))
            :in-theory (e/d (gt-new gt-locs)
                            (g-expr g-tail g-fresh a-ev fx-list fv no-calls em-ok decl-ok-subset fx-list-append
                                g-tmp nfix scalar-ok dty gt-sem g-expr-names tl-ok-put gt-new-thm gt-locs-thm))
@@ -277,9 +277,9 @@
                  (:instance decl-ok-subset (a (gtf 3)) (b (gtr 4)))
                  (:instance decl-ok-subset (a (gt1 5)) (b (gtr 4)))))))
 
-(defthm ge-sem-t (ge-sem x em cnt locs sigs fnames env defs n fr nil) :hints (("Goal" :use ge-sem-all)))
+(defthm ge-sem-t (ge-sem x em cnt locs sigs fnames env defs n fr cs) :hints (("Goal" :use ge-sem-all)))
 
 (defthm gt-sem-thm
-  (gt-sem vars xs em cnt locs sigs fnames env defs n fr)
-  :hints (("Goal" :induct (gt-ind vars xs em cnt locs sigs fnames env defs n fr)
+  (gt-sem vars xs em cnt locs sigs fnames env defs cs n fr)
+  :hints (("Goal" :induct (gt-ind vars xs em cnt locs sigs fnames env defs cs n fr)
            :in-theory (disable gt-sem g-expr g-tail g-fresh fr-after))))

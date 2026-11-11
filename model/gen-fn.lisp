@@ -123,13 +123,13 @@
   :hints (("Goal" :do-not-induct t
            :in-theory (disable g-ret gr-sem-use g-ret-cf fn-frame-em-ok fn-frame-decl undef-locals g-locals
                                fx-list a-ev no-calls em-ok decl-ok dty ret-ok lf-ok)
-           :use ((:instance g-ret-cf (x body) (em (g-em vs)) (cnt 0) (locs nil) (self fn) (fnames (g-formals vs)))
+           :use (a-orc-nil (:instance member-equal-nil (a fn)) (:instance g-ret-cf (x body) (em (g-em vs)) (cnt 0) (locs nil) (self fn) (fnames (g-formals vs)))
                  (:instance fn-frame-em-ok (locs (gfr 3)) (rt (kadr (cdr (lkp fn sigs)))))
                  (:instance fn-frame-decl (locs (gfr 3)) (rt (kadr (cdr (lkp fn sigs)))) (fnames (g-formals vs)))
-                 (:instance gr-sem-thm (flag :ret) (x body) (em (g-em vs)) (cnt 0) (locs nil) (self fn)
+                 (:instance gr-sem-thm (flag :ret) (x body) (em (g-em vs)) (cnt 0) (locs nil) (self fn) (cs nil)
                             (fnames (g-formals vs)) (env (pairlis$ vs ks))
                             (fr (undef-locals (cons (list "r" (kadr (cdr (lkp fn sigs)))) (g-locals (gfr 3))) (fb vs ks nil))))
-                 (:instance gr-sem-use (x body) (em (g-em vs)) (cnt 0) (locs nil) (self fn)
+                 (:instance gr-sem-use (x body) (em (g-em vs)) (cnt 0) (locs nil) (self fn) (cs nil)
                             (fnames (g-formals vs)) (env (pairlis$ vs ks)) (rt (kadr (cdr (lkp fn sigs))))
                             (fr (undef-locals (cons (list "r" (kadr (cdr (lkp fn sigs)))) (g-locals (gfr 3))) (fb vs ks nil))))))))
 

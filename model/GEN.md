@@ -302,7 +302,9 @@ is how `fx-is-f-ex` went through after two monolithic attempts ran out.
   error within fuel n, then for every fuel
   `> 6 + (len args) + n * (2 + (acl2-count proc))`,
   `(f-invoke proc (g-lits args) caller heap procs fuel)` = `(mv nil v heap)`.
-  This is the bound `m >= n * K`, K the procedure's size plus 2.
+  This is the bound `m >= n * K`, K the procedure's size plus 2. (Since
+  calls (d) the bound is `> 6 + (len args) + n * c`, `c >= (3 + b) * (2 + size)`;
+  see below.)
 - **Hypotheses added, explicit:** `tail-only` (subsumes `no-calls`);
   `fn` is not `if` (ACL2 cannot define `if`; a-ev reads a term headed
   `if` as an if, so a self-call named `if` would mean two things). The
@@ -320,7 +322,7 @@ is how `fx-is-f-ex` went through after two monolithic attempts ran out.
   `p <= 2^40`, so both stay int64 (no :range), whatever the arguments --
   the guard is not needed. With m = 150 (c >= 0),
   **`hpg-size-class-fortran-correct`**: on int64 n, c, p and fuel
-  `> 9 + 150 * (2 + (acl2-count proc))`, f-invoke of the generated
+  `> 9 + 450 * (2 + (acl2-count proc))` (450 = 150 * (3 + b), b = 0, since calls (d)), f-invoke of the generated
   procedure answers `(mv nil (hpg-size-class n c p) heap)`.
 - **gen-callarg.lisp, proved (calls, first piece):** `f-bind-g-dummies-args`
   and `f-invoke-args`: f-invoke of a g-fn procedure on argument
@@ -359,6 +361,24 @@ is how `fx-is-f-ex` went through after two monolithic attempts ran out.
   `fvs-ok-fv-list`, `fvs-ok-int64`) and `ge-prim-call`, combined as
   `ge-call`; `a-orc-nil` makes the hypothesis vanish for `cs = nil`.
   `int64-listp` moved here from gen-fn.
+- **calls (d), proved: g-fn-sem-loop with calls.** `tail-only x self sigs cs`
+  allows calls of functions in cs in tests, arguments and plain arms;
+  gr-sem, gt-sem, grt-sem (gen-ret, gen-tail, gen-loop, gen-loop2) take cs and
+  assume `a-orc defs sigs cs` and `(not (member-equal self cs))` (a self call
+  is the loop). gen-fn passes cs = nil. **gen-ccout.lisp** (gen-cfout's
+  induction again: g-expr's output is cc-stmts/ce-ok under `no-calls ... cs`)
+  and **gen-loopcc.lisp** (gen-loop2's grct again: `g-ret-tail-cc`, g-ret's
+  output on tail-only source with calls is cc-stmts, temporaries fresh).
+  gen-loopfn: the DO's statements are `s-ok s procs heap b c` (cc-stmts, and
+  cf-stmts or `p-orc procs heap b`, natp b, `c >= (3 + b) * (2 + size s)`), and
+  fx is f-ex by `f-ex-list-either` (gen-cf's fx-list-is-f-ex-list on cf
+  statements, else gen-callev's fx-list-is-f-ex-list-c). **`g-fn-sem-loop`**
+  now takes cs, `a-orc defs sigs cs`, `fn` not in cs, `(or (null cs) (p-orc
+  procs heap b))`, natp b, natp c with `c >= (3 + b) * (2 + size proc)`, and
+  fuel `> 6 + (len args) + n * c`. a-orc now also requires `(len vals)` =
+  the signature's arity (without it no oracle satisfies both a-orc and p-orc:
+  a-ev ignores extra arguments, f-bind rejects them; ge-fcall gets the length
+  from fvs-ok, `fvs-ok-len`).
 
 ## What remains, in order (estimated in lanes)
 
@@ -400,7 +420,7 @@ is how `fx-is-f-ex` went through after two monolithic attempts ran out.
    a-ev of f's body on vals whenever that answers without error at fuel
    below n (needs a-ev fuel monotonicity: no error at n, same answer at
    every n' >= n). g-expr's :fcall case is then fv's.
-   (d) [next] g-fn-sem-loop with tail-only allowing non-self calls in tests and
+   (d) [done, see above] g-fn-sem-loop with tail-only allowing non-self calls in tests and
    arguments.
    (e) [clotran's hpg-class-len is copied into gen-disch-loop.lisp and
    check-gen compares it; the theorem is left] hpg-class-len: functionally instantiate f-call-val with

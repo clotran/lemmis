@@ -83,7 +83,7 @@
 
 (defthm tail-run
   (implies (and (not (car (g-tail vars xs em cnt locs sigs fnames))) (equal (len xs) (len vars))
-                (not (car (a-ev-list xs env defs n))) (no-calls :list xs sigs nil) (em-ok em env fr)
+                (not (car (a-ev-list xs env defs n))) (no-calls :list xs sigs cs) (a-orc defs sigs cs) (em-ok em env fr)
                 (decl-ok (gto 4) fr) (no-prim-defs defs)
                 (equal fnames (g-formals vars)) (no-duplicatesp-equal fnames) (int-dums vars fr))
            (let ((r (fx-list (append (gto 1) (append (gto 2) (list '(:cycle)))) fr)))
@@ -104,11 +104,11 @@
 ; ---- what g-ret's statements do on tail-only source: lp-ok
 
 (defmacro grt-hyps (locs2)
-  `(and (tail-only x self sigs) (consp (lkp self sigs)) (symbolp self) (not (equal self 'quote))
+  `(and (tail-only x self sigs cs) (a-orc defs sigs cs) (not (member-equal self cs)) (consp (lkp self sigs)) (symbolp self) (not (equal self 'quote))
         (em-ok em env fr) (decl-ok ,locs2 fr) (no-prim-defs defs) (equal (dty "r" fr) (list (rty)))
         (lp-hyps self sigs defs fnames fr)))
 
-(defun grt-sem (x em cnt locs self sigs fnames env defs n fr)
+(defun grt-sem (x em cnt locs self sigs fnames env defs cs n fr)
   (declare (xargs :verify-guards nil))
   (mv-let (e s cnt2 locs2) (g-ret x em cnt locs self sigs fnames)
     (declare (ignore cnt2))
@@ -117,7 +117,7 @@
                (mv-let (st fr2) (fx-list s fr)
                  (lp-ok st fr2 (rty) v self sigs defs n))))))
 
-(defun gselt-sem (x k em cnt locs self sigs fnames env defs n fr)
+(defun gselt-sem (x k em cnt locs self sigs fnames env defs cs n fr)
   (declare (xargs :verify-guards nil))
   (mv-let (e arms dflt cnt2 locs2) (g-select x k em cnt locs self sigs fnames)
     (declare (ignore cnt2))
@@ -127,14 +127,14 @@
                  (lp-ok st fr2 (rty) v self sigs defs n))))))
 
 (defthm grt-sem-use
-  (implies (and (grt-sem x em cnt locs self sigs fnames env defs n fr)
+  (implies (and (grt-sem x em cnt locs self sigs fnames env defs cs n fr)
                 (not (gro 0)) (not (car (a-ev x env defs n))) (grt-hyps (gro 3)) (equal rt (rty)))
            (lp-ok (car (fx-list (gro 1) fr)) (mv-nth 1 (fx-list (gro 1) fr)) rt (mv-nth 1 (a-ev x env defs n))
                   self sigs defs n))
   :hints (("Goal" :in-theory (e/d (grt-sem) (g-ret a-ev fx-list tail-only em-ok decl-ok dty)))))
 
 (defthm gselt-sem-use
-  (implies (and (gselt-sem x k em cnt locs self sigs fnames env defs n fr)
+  (implies (and (gselt-sem x k em cnt locs self sigs fnames env defs cs n fr)
                 (not (gso 0)) (not (car (a-ev x env defs n))) (grt-hyps (gso 4)) (chain-on (chain-v x) x k)
                 (equal val (cdr (lkp (chain-v x) env))) (equal rt (rty)))
            (lp-ok (car (fx-arms val (gso 1) (gso 2) fr)) (mv-nth 1 (fx-arms val (gso 1) (gso 2) fr)) rt
@@ -142,7 +142,7 @@
   :hints (("Goal" :in-theory (e/d (gselt-sem) (g-select a-ev fx-arms tail-only em-ok decl-ok dty chain-on chain-v)))))
 
 (defthm gselt-sem-use0
-  (implies (and (gselt-sem x k em cnt locs self sigs fnames env defs n fr) (zp k)
+  (implies (and (gselt-sem x k em cnt locs self sigs fnames env defs cs n fr) (zp k)
                 (not (gso 0)) (not (car (a-ev x env defs n))) (grt-hyps (gso 4)) (equal rt (rty)))
            (lp-ok (car (fx-list (gso 2) fr)) (mv-nth 1 (fx-list (gso 2) fr)) rt
                   (mv-nth 1 (a-ev x env defs n)) self sigs defs n))
@@ -151,24 +151,24 @@
 (in-theory (disable grt-sem gselt-sem))
 
 (defthm tail-only-plain
-  (implies (and (tail-only x self sigs)
+  (implies (and (tail-only x self sigs cs)
                 (not (and (consp x) (eq (car x) 'if) (true-listp x) (= (len x) 4)))
                 (not (and (consp x) (eq (car x) self))))
-           (no-calls :term x sigs nil)))
+           (no-calls :term x sigs cs)))
 
 (defthm tail-only-if
-  (implies (and (tail-only x self sigs) (consp x) (eq (car x) 'if) (true-listp x) (= (len x) 4))
-           (and (no-calls :term (cadr x) sigs nil) (tail-only (caddr x) self sigs) (tail-only (cadddr x) self sigs))))
+  (implies (and (tail-only x self sigs cs) (consp x) (eq (car x) 'if) (true-listp x) (= (len x) 4))
+           (and (no-calls :term (cadr x) sigs cs) (tail-only (caddr x) self sigs cs) (tail-only (cadddr x) self sigs cs))))
 
 (defthm tail-only-self
-  (implies (and (tail-only x self sigs) (consp x) (eq (car x) self) (not (eq self 'if)))
-           (no-calls :list (cdr x) sigs nil)))
+  (implies (and (tail-only x self sigs cs) (consp x) (eq (car x) self) (not (eq self 'if)))
+           (no-calls :list (cdr x) sigs cs)))
 
 (defthm grt-plain
   (implies (and (not (and (consp x) (or (<= 3 (g-chain x nil nil))
                                         (and (eq (car x) 'if) (true-listp x) (= (len x) 4)))))
                 (not (and (consp x) (eq (car x) self))))
-           (grt-sem x em cnt locs self sigs fnames env defs n fr))
+           (grt-sem x em cnt locs self sigs fnames env defs cs n fr))
   :hints (("Goal" :do-not-induct t
            :in-theory (e/d (grt-sem) (g-ret g-select g-expr g-tail g-case-key g-chain int-lit-p a-ev fx-list fv
                                tail-only no-calls em-ok scalar-ok dty gr-sem-use))
@@ -189,7 +189,7 @@
 
 (defthm grt-tail
   (implies (and (consp x) (eq (car x) self))
-           (grt-sem x em cnt locs self sigs fnames env defs n fr))
+           (grt-sem x em cnt locs self sigs fnames env defs cs n fr))
   :hints (("Goal" :do-not-induct t
            :in-theory (e/d (a-ev-below grt-sem lp-hyps lp-ok)
                            (g-ret g-select g-expr g-tail g-case-key int-lit-p a-ev fx-list fv tail-run

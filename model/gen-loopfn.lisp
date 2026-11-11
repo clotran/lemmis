@@ -9,7 +9,7 @@
 
 (in-package "ACL2")
 
-(include-book "gen-loop2")
+(include-book "gen-loopcc")
 
 (set-irrelevant-formals-ok t)
 
@@ -72,11 +72,11 @@
 
 (defun nc-stmt (s fr)
   (mv-let (st fr2) (fx s fr) (declare (ignore fr2))
-    (implies (and (cf-stmt s) (not (g-has '(:cycle) s))) (not (equal st :cycle)))))
+    (implies (and (cc-stmt s) (not (g-has '(:cycle) s))) (not (equal st :cycle)))))
 
 (defun nc-list (ss fr)
   (mv-let (st fr2) (fx-list ss fr) (declare (ignore fr2))
-    (implies (and (cf-stmts ss) (not (g-has '(:cycle) ss))) (not (equal st :cycle)))))
+    (implies (and (cc-stmts ss) (not (g-has '(:cycle) ss))) (not (equal st :cycle)))))
 
 (defthm nc-assign
   (implies (eq (kar s) :assign) (nc-stmt s fr))
@@ -84,14 +84,14 @@
 
 (defthm nc-if
   (implies (and (eq (kar s) :if) (nc-list (kaddr s) fr) (nc-list (kadddr s) fr)) (nc-stmt s fr))
-  :hints (("Goal" :expand ((fx s fr)) :in-theory (disable fv fx-list g-has cf-stmts))))
+  :hints (("Goal" :expand ((fx s fr)) :in-theory (disable fv fx-list g-has cc-stmts))))
 
 (defthm select-parts
-  (implies (and (eq (kar s) :select) (cf-stmt s) (not (g-has '(:cycle) s)))
+  (implies (and (eq (kar s) :select) (cc-stmt s) (not (g-has '(:cycle) s)))
            (let ((l (if (lkp k (kaddr s)) (kadr (lkp k (kaddr s))) (kadddr s))))
-             (and (cf-stmts l) (not (g-has '(:cycle) l)))))
-  :hints (("Goal" :in-theory (disable g-has lkp cf-stmt-parts g-has-cycle-lkp g-has-cycle-parts)
-           :use ((:instance cf-stmt-parts)
+             (and (cc-stmts l) (not (g-has '(:cycle) l)))))
+  :hints (("Goal" :in-theory (disable g-has lkp cc-stmt-parts g-has-cycle-lkp g-has-cycle-parts)
+           :use ((:instance cc-stmt-parts)
                  (:instance g-has-cycle-parts (x s)) (:instance g-has-cycle-parts (x (kdr s)))
                  (:instance g-has-cycle-parts (x (kdr (kdr s)))) (:instance g-has-cycle-parts (x (kdr (kdr (kdr s)))))
                  (:instance g-has-cycle-lkp (arms (kaddr s)))
@@ -109,21 +109,21 @@
   (implies (and (eq (kar s) :select) (nc-list (kadddr s) fr)
                 (nc-list (kadr (lkp (mv-nth 1 (fv (kadr s) fr)) (kaddr s))) fr))
            (nc-stmt s fr))
-  :hints (("Goal" :in-theory (disable fv fx-list g-has cf-stmts lkp kadr kaddr kadddr cf-stmt select-parts)
+  :hints (("Goal" :in-theory (disable fv fx-list g-has cc-stmts lkp kadr kaddr kadddr cc-stmt select-parts)
            :cases ((and (not (car (fv (kadr s) fr))) (integerp (mv-nth 1 (fv (kadr s) fr)))))
            :use ((:instance select-parts (k (mv-nth 1 (fv (kadr s) fr))))))
           ("Subgoal 2" :expand ((fx s fr)))))
 
 (defthm nc-other
   (implies (not (member-equal (kar s) '(:assign :if :select))) (nc-stmt s fr))
-  :hints (("Goal" :expand ((fx s fr) (cf-stmt s) (g-has '(:cycle) s)))))
+  :hints (("Goal" :expand ((fx s fr) (cc-stmt s) (g-has '(:cycle) s)))))
 
 (defthm nc-nil (implies (atom ss) (nc-list ss fr)) :hints (("Goal" :expand ((fx-list ss fr)))))
 
 (defthm nc-cons
   (implies (and (consp ss) (nc-stmt (car ss) fr) (nc-list (cdr ss) (mv-nth 1 (fx (car ss) fr))))
            (nc-list ss fr))
-  :hints (("Goal" :in-theory (disable fx cf-stmt g-has) :expand ((fx-list ss fr) (cf-stmts ss) (g-has '(:cycle) ss)))))
+  :hints (("Goal" :in-theory (disable fx cc-stmt g-has) :expand ((fx-list ss fr) (cc-stmts ss) (g-has '(:cycle) ss)))))
 
 (defthm no-cycle-flag
   (if (eq flag :stmt) (nc-stmt s fr) (nc-list s fr))
@@ -134,7 +134,7 @@
                '(:cases ((eq (kar s) :assign) (eq (kar s) :if) (eq (kar s) :select))))))
 
 (defthm no-cycle
-  (implies (and (cf-stmts s) (not (g-has '(:cycle) s))) (not (equal (car (fx-list s fr)) :cycle)))
+  (implies (and (cc-stmts s) (not (g-has '(:cycle) s))) (not (equal (car (fx-list s fr)) :cycle)))
   :hints (("Goal" :use (:instance no-cycle-flag (flag :list)))))
 
 ; ---- the DO, by induction on a-ev's fuel
@@ -142,7 +142,7 @@
 (defmacro lr (k) `(mv-nth ,k (g-ret body (g-em fs) 0 nil fn sigs (g-formals fs))))
 
 (defmacro do-hyps ()
-  '(and (not (lr 0)) (tail-only body fn sigs) (consp (lkp fn sigs)) (symbolp fn) (not (equal fn 'quote)) (not (equal fn 'if))
+  '(and (not (lr 0)) (tail-only body fn sigs cs) (a-orc defs sigs cs) (not (member-equal fn cs)) (consp (lkp fn sigs)) (symbolp fn) (not (equal fn 'quote)) (not (equal fn 'if))
         (no-prim-defs defs) (equal fs (kar (cdr (lkp fn sigs)))) (equal body (kaddr (lkp fn defs)))
         (equal rt (kadr (cdr (lkp fn sigs))))))
 
@@ -151,15 +151,38 @@
            (< (* k c) (+ -1 m)))
   :hints (("Goal" :nonlinearp t)))
 
+(defmacro sok () (quote (and (cc-stmts s) (or (cf-stmts s) (p-orc procs heap b)) (natp b))))
+
+; fx is f-ex: gen-cf's fx-list-is-f-ex-list on call-free statements, else
+; gen-callev's fx-list-is-f-ex-list-c under p-orc
+; the statements, the oracle and the DO's fuel per iteration c
+(defun-nx s-ok (s procs heap b c)
+  (and (sok) (natp c) (<= (* (+ 3 b) (+ 2 (acl2-count s))) c)))
+
+(defthm s-ok-c (implies (s-ok s procs heap b c) (and (natp c) (< 1 c) (cc-stmts s))) :rule-classes :forward-chaining
+  :hints (("Goal" :nonlinearp t)))
+
+(in-theory (disable s-ok))
+
+(defthm f-ex-list-either
+  (implies (and (sok) (integerp k) (< (* (+ 3 b) (acl2-count s)) k) (member-equal (car (fx-list s fr)) (quote (:return :cycle))))
+           (equal (f-ex-list s fr heap procs k) (+h (fx-list s fr) heap)))
+  :rule-classes nil
+  :hints (("Goal" :cases ((cf-stmts s)) :in-theory (disable fx-list f-ex-list fx-list-is-f-ex-list fx-list-is-f-ex-list-c))
+          ("Subgoal 2" :use fx-list-is-f-ex-list-c)
+          ("Subgoal 1" :nonlinearp t :use (:instance fx-list-is-f-ex-list (ss s)))))
+
 (defthm do-return
-  (implies (and (cf-stmts s) (integerp m) (< (+ 1 (acl2-count s)) m) (equal (car (fx-list s fr)) :return))
+  (implies (and (s-ok s procs heap b c) (integerp m) (< c m) (equal (car (fx-list s fr)) :return))
            (equal (f-ex (list :do s) fr heap procs m) (list :return (mv-nth 1 (fx-list s fr)) heap)))
-  :hints (("Goal" :expand ((f-ex (list :do s) fr heap procs m)) :in-theory (disable fx-list f-ex-list-open))))
+  :hints (("Goal" :expand ((f-ex (list :do s) fr heap procs m)) :in-theory (e/d (s-ok) (fx-list f-ex-list-open))
+           :use (:instance f-ex-list-either (k (+ -1 m))))))
 
 (defthm do-cycle
-  (implies (and (cf-stmts s) (integerp m) (< (+ 1 (acl2-count s)) m) (equal (car (fx-list s fr)) :cycle))
+  (implies (and (s-ok s procs heap b c) (integerp m) (< c m) (equal (car (fx-list s fr)) :cycle))
            (equal (f-ex (list :do s) fr heap procs m) (f-ex (list :do s) (mv-nth 1 (fx-list s fr)) heap procs (+ -1 m))))
-  :hints (("Goal" :expand ((f-ex (list :do s) fr heap procs m)) :in-theory (disable fx-list f-ex-list-open))))
+  :hints (("Goal" :expand ((f-ex (list :do s) fr heap procs m)) :in-theory (e/d (s-ok) (fx-list f-ex-list-open))
+           :use (:instance f-ex-list-either (k (+ -1 m))))))
 
 (defmacro inv-hyps ()
   '(and (em-ok (g-em fs) (pairlis$ fs vs) fr) (decl-ok (lr 3) fr) (equal (dty "r" fr) (list rt))
@@ -169,16 +192,16 @@
 ; one iteration, gen-loop2's theorem on the function's body
 (defthm iter-ok
   (implies (and (do-hyps) (inv-hyps))
-           (and (cf-stmts (lr 1))
+           (and (cc-stmts (lr 1))
                 (lp-ok (car (fx-list (lr 1) fr)) (mv-nth 1 (fx-list (lr 1) fr)) rt v fn sigs defs n)))
   :hints (("Goal" :do-not-induct t
            :in-theory (disable g-ret a-ev fx-list tail-only em-ok decl-ok dty lp-hyps lp-ok g-em g-formals
-                               grt-sem-use g-ret-tail-cf)
+                               grt-sem-use g-ret-tail-cc)
            :use ((:instance grt-sem-thm (flag :ret) (x body) (em (g-em fs)) (cnt 0) (locs nil) (self fn)
                             (fnames (g-formals fs)) (env (pairlis$ fs vs)) (k 0))
                  (:instance grt-sem-use (x body) (em (g-em fs)) (cnt 0) (locs nil) (self fn)
                             (fnames (g-formals fs)) (env (pairlis$ fs vs)))
-                 (:instance g-ret-tail-cf (x body) (em (g-em fs)) (cnt 0) (locs nil) (self fn)
+                 (:instance g-ret-tail-cc (x body) (em (g-em fs)) (cnt 0) (locs nil) (self fn)
                             (fnames (g-formals fs)))))))
 
 (defthm lp-ok-cases
@@ -231,17 +254,17 @@
 (defthm times-ge (implies (and (posp n) (natp c)) (<= c (* n c))) :hints (("Goal" :nonlinearp t)))
 
 (defthm dr-ret
-  (implies (and (cf-stmts s) (integerp m) (natp c) (<= (+ 2 (acl2-count s)) c) (< (* n c) m) (posp n)
+  (implies (and (s-ok s procs heap b c) (integerp m) (natp c) (< (* n c) m) (posp n)
                 (equal (car (fx-list s fr)) :return) (ret-ok (mv-nth 1 (fx-list s fr)) rt v))
            (do-ok s fr heap procs m rt v))
-  :hints (("Goal" :in-theory (disable fx-list f-ex ret-ok times-ge) :use times-ge)))
+  :hints (("Goal" :in-theory (disable fx-list f-ex ret-ok times-ge do-return do-cycle s-ok) :use (times-ge do-return do-cycle))))
 
 (defthm dr-cyc
-  (implies (and (cf-stmts s) (integerp m) (natp c) (<= (+ 2 (acl2-count s)) c) (< (* n c) m) (posp n)
+  (implies (and (s-ok s procs heap b c) (integerp m) (natp c) (< (* n c) m) (posp n)
                 (equal (car (fx-list s fr)) :cycle)
                 (do-ok s (mv-nth 1 (fx-list s fr)) heap procs (+ -1 m) rt v))
            (do-ok s fr heap procs m rt v))
-  :hints (("Goal" :in-theory (disable fx-list f-ex ret-ok times-ge) :use times-ge)))
+  :hints (("Goal" :in-theory (disable fx-list f-ex ret-ok times-ge do-return do-cycle s-ok) :use (times-ge do-return do-cycle))))
 
 (defthm iter-lp
   (implies (and (iter-all s fs fn sigs defs rt locs2 body) (inv fs fn sigs defs rt locs2 body fr vs n v))
@@ -256,10 +279,10 @@
 (in-theory (disable do-ok iter-all))
 
 (defmacro do-h (fr vs n m)
-  `(and (iter-all s fs fn sigs defs rt locs2 body) (cf-stmts s)
+  `(and (iter-all s fs fn sigs defs rt locs2 body) (s-ok s procs heap b c)
         (equal fs (kar (cdr (lkp fn sigs)))) (equal body (kaddr (lkp fn defs)))
         (inv fs fn sigs defs rt locs2 body ,fr ,vs ,n v)
-        (integerp ,m) (natp c) (<= (+ 2 (acl2-count s)) c) (< (* (nfix ,n) c) ,m)))
+        (integerp ,m) (natp c) (< (* (nfix ,n) c) ,m)))
 
 (defmacro fr2 () '(mv-nth 1 (fx-list s fr)))
 (defmacro kk () '(below-k body (pairlis$ fs (dvals fs (fr2))) defs n v))
@@ -271,7 +294,7 @@
            (do-ok s fr heap procs m rt v))
   :hints (("Goal" :do-not-induct t
            :in-theory (disable a-ev fx-list f-ex lp-ok inv iter-all do-ok dvals dums-ok a-ev-below below-k ret-ok
-                               cf-stmts em-ok decl-ok lp-hyps acl2-count iter-lp inv-next fuel-step dr-ret dr-cyc)
+                               s-ok em-ok decl-ok lp-hyps acl2-count iter-lp inv-next fuel-step dr-ret dr-cyc)
            :use ((:instance lp-ok-cases (st (car (fx-list s fr))) (fr2 (fr2)) (self fn))
                  (:instance iter-lp)
                  (:instance inv-next)
@@ -283,7 +306,7 @@
   (implies (and (do-h fr vs n m) (not (< (kk) n))) (do-ok s fr heap procs m rt v))
   :hints (("Goal" :do-not-induct t
            :in-theory (disable a-ev fx-list f-ex lp-ok inv iter-all do-ok dvals dums-ok a-ev-below below-k ret-ok
-                               cf-stmts em-ok decl-ok lp-hyps acl2-count iter-lp inv-next fuel-step dr-ret dr-cyc)
+                               s-ok em-ok decl-ok lp-hyps acl2-count iter-lp inv-next fuel-step dr-ret dr-cyc)
            :use ((:instance lp-ok-cases (st (car (fx-list s fr))) (fr2 (fr2)) (self fn))
                  (:instance iter-lp) (:instance inv-next) (:instance dr-ret)))))
 
@@ -291,5 +314,12 @@
   (implies (do-h fr vs n m) (do-ok s fr heap procs m rt v))
   :hints (("Goal" :induct (do-ind s fs body defs v n vs fr m)
            :in-theory (disable a-ev fx-list f-ex lp-ok inv iter-all do-ok dvals dums-ok a-ev-below below-k ret-ok
-                               cf-stmts em-ok decl-ok lp-hyps acl2-count iter-lp inv-next fuel-step dr-ret dr-cyc
+                               s-ok em-ok decl-ok lp-hyps acl2-count iter-lp inv-next fuel-step dr-ret dr-cyc
                                lkp kar kdr kaddr))))
+
+; fx is f-ex on s-ok statements, at fuel past c
+(defthm s-ok-f-ex-list
+  (implies (and (s-ok s procs heap b c) (integerp k) (< c k) (member-equal (car (fx-list s fr)) '(:return :cycle)))
+           (equal (f-ex-list s fr heap procs k) (+h (fx-list s fr) heap)))
+  :rule-classes nil
+  :hints (("Goal" :in-theory (e/d (s-ok) (fx-list f-ex-list)) :use f-ex-list-either)))

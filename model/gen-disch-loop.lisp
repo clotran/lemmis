@@ -39,12 +39,15 @@
         (p (find-proc "hpg_size_class" (mv-nth 1 (g-module *heapgn-raw* *heapgn-bools*)))))
     (implies (and (int64-listp args) (equal (len args) (len (kadr d)))
                   (not (mv-nth 0 (a-ev (kaddr d) (pairlis$ (kadr d) args) (g-defs *heapgn-raw*) n)))
-                  (integerp fuel) (< (+ 6 (len args) (* (nfix n) (+ 2 (acl2-count p)))) fuel))
+                  (integerp fuel) (< (+ 6 (len args) (* (nfix n) (* 3 (+ 2 (acl2-count p))))) fuel))
              (equal (f-invoke p (g-lits args) caller heap procs fuel)
                     (mv nil (mv-nth 1 (a-ev (kaddr d) (pairlis$ (kadr d) args) (g-defs *heapgn-raw*) n)) heap))))
   :hints (("Goal" :in-theory (disable a-ev f-invoke int64-listp g-lits pairlis$ len)
-           :use (:instance g-fn-sem-loop (fn 'hpg-size-class) (defs (g-defs *heapgn-raw*))
-                           (sigs (g-sigs *heapgn-raw* *heapgn-bools*))))))
+           :use ((:instance a-orc-nil (defs (g-defs *heapgn-raw*)) (sigs (g-sigs *heapgn-raw* *heapgn-bools*)))
+                 (:instance member-equal-nil (a 'hpg-size-class))
+                 (:instance g-fn-sem-loop (fn 'hpg-size-class) (defs (g-defs *heapgn-raw*))
+                           (sigs (g-sigs *heapgn-raw* *heapgn-bools*)) (cs nil) (b 0)
+                           (c (* 3 (+ 2 (acl2-count (find-proc "hpg_size_class" (mv-nth 1 (g-module *heapgn-raw* *heapgn-bools*))))))))))))
 
 ; ---- a-ev of the body: one iteration, then the induction
 
@@ -125,7 +128,7 @@
 (defthm hpg-size-class-fortran-correct
   (let ((pr (find-proc "hpg_size_class" (mv-nth 1 (g-module *heapgn-raw* *heapgn-bools*)))))
     (implies (and (int64p n) (int64p c) (int64p p)
-                  (integerp fuel) (< (+ 9 (* 150 (+ 2 (acl2-count pr)))) fuel))
+                  (integerp fuel) (< (+ 9 (* 450 (+ 2 (acl2-count pr)))) fuel))
              (equal (f-invoke pr (g-lits (list n c p)) caller heap procs fuel)
                     (mv nil (hpg-size-class n c p) heap))))
   :hints (("Goal" :in-theory (disable a-ev f-invoke g-lits hpg-size-class hpg-size-class-gen hpg-size-class-a-ev hpg-size-class-a-ev-m hsc-step a-ev-if a-ev-list-open a-ev-prim a-ev-sym a-ev-quote)

@@ -1,7 +1,9 @@
 ; gen-loopthm: g-fn-sem-loop, the function-level theorem for tail-only
 ; bodies (GEN.md, layer 3): f-invoke of g-fn's output on int64 literals
 ; answers a-ev's value of the body, whenever a-ev answers without an error
-; within fuel n, at any fsem fuel past 6 + (len args) + n * (size + 2).
+; within fuel n, at any fsem fuel past 6 + (len args) + n * c, c >= (3 + b) * (size + 2).
+; The source may call functions in cs (not fn) under a-orc; then the
+; procedures must answer the oracle (p-orc, b its fuel), unless cs is nil.
 
 (in-package "ACL2")
 
@@ -28,11 +30,19 @@
 
 (defthm do-run
   (implies (and (do-hyps) (inv fs fn sigs defs rt (lr 3) body fr vs n v)
-                (integerp m) (natp c) (<= (+ 2 (acl2-count (lr 1))) c) (< (* (nfix n) c) m))
+                (integerp m) (s-ok (lr 1) procs heap b c) (< (* (nfix n) c) m))
            (do-ok (lr 1) fr heap procs m rt v))
-  :hints (("Goal" :in-theory (disable g-ret do-run-abs iter-all-lr g-ret-tail-cf inv do-ok iter-all)
+  :hints (("Goal" :in-theory (disable g-ret do-run-abs iter-all-lr inv do-ok iter-all s-ok)
            :use ((:instance do-run-abs (s (lr 1)) (locs2 (lr 3)))
-                 (:instance iter-all-lr)
+                 (:instance iter-all-lr)))))
+
+; the statements are s-ok: cc-stmts, and cf-stmts when cs is nil
+(defthm s-ok-lr
+  (implies (and (do-hyps) (or (null cs) (p-orc procs heap b)) (natp b) (natp c)
+                (<= (* (+ 3 b) (+ 2 (acl2-count (lr 1)))) c))
+           (s-ok (lr 1) procs heap b c))
+  :hints (("Goal" :cases ((null cs)) :in-theory (e/d (s-ok) (g-ret tail-only g-ret-tail-cc g-ret-tail-cf))
+           :use ((:instance g-ret-tail-cc (x body) (em (g-em fs)) (cnt 0) (locs nil) (self fn) (fnames (g-formals fs)))
                  (:instance g-ret-tail-cf (x body) (em (g-em fs)) (cnt 0) (locs nil) (self fn) (fnames (g-formals fs)))))))
 
 ; ---- the procedure's body: the DO, or (no CYCLE in it) the statements
@@ -59,9 +69,9 @@
 (defthm inv-frame
   (implies (fr-hyps) (inv fs fn sigs defs rt (lr 3) body (lfr) args n (mv-nth 1 (a-ev body (pairlis$ fs args) defs n))))
   :hints (("Goal" :do-not-induct t
-           :in-theory (e/d (inv lp-hyps) (g-ret a-ev fn-frame-em-ok fn-frame-decl em-ok-int-dums g-ret-tail-cf
+           :in-theory (e/d (inv lp-hyps) (g-ret a-ev fn-frame-em-ok fn-frame-decl em-ok-int-dums g-ret-tail-cc
                                           undef-locals g-locals fb em-ok decl-ok dty g-formals g-em tail-only))
-           :use ((:instance g-ret-tail-cf (x body) (em (g-em fs)) (cnt 0) (locs nil) (self fn) (fnames (g-formals fs)))
+           :use ((:instance g-ret-tail-cc (x body) (em (g-em fs)) (cnt 0) (locs nil) (self fn) (fnames (g-formals fs)))
                  (:instance fn-frame-em-ok (vs fs) (ks args) (locs (lr 3)))
                  (:instance fn-frame-decl (vs fs) (ks args) (locs (lr 3)) (fnames (g-formals fs)))
                  (:instance em-ok-int-dums (fs0 fs) (ks args) (fr (lfr)))))))
@@ -76,23 +86,23 @@
                  (:instance iter-lp (s (lr 1)) (locs2 (lr 3)) (fr (lfr)) (vs args) (v (av)))))))
 
 (defthm body-plain
-  (implies (and (fr-hyps) (not (g-has '(:cycle) (lr 1))) (integerp k) (< (+ 1 (* (nfix n) (+ 2 (acl2-count (lr 1))))) k))
+  (implies (and (fr-hyps) (not (g-has '(:cycle) (lr 1))) (s-ok (lr 1) procs heap b c) (integerp k) (< (+ 1 (* (nfix n) c)) k))
            (and (equal (car (f-ex-list (lr 1) (lfr) heap procs k)) :return)
                 (equal (caddr (f-ex-list (lr 1) (lfr) heap procs k)) heap)
                 (ret-ok (mv-nth 1 (f-ex-list (lr 1) (lfr) heap procs k)) rt (av))))
   :hints (("Goal" :do-not-induct t
-           :in-theory (disable g-ret a-ev body-lp g-ret-tail-cf no-cycle undef-locals g-locals fb lp-ok ret-ok
-                               f-ex-list fx-list fx-list-is-f-ex-list times-ge g-has)
+           :in-theory (disable g-ret a-ev body-lp no-cycle undef-locals g-locals fb lp-ok ret-ok
+                               f-ex-list fx-list times-ge g-has s-ok)
            :use ((:instance body-lp)
                  (:instance lp-ok-cases (st (car (fx-list (lr 1) (lfr)))) (fr2 (mv-nth 1 (fx-list (lr 1) (lfr))))
                             (self fn) (v (av)))
                  (:instance no-cycle (s (lr 1)) (fr (lfr)))
-                 (:instance fx-list-is-f-ex-list (ss (lr 1)) (fr (lfr)))
-                 (:instance times-ge (c (+ 2 (acl2-count (lr 1)))))
-                 (:instance g-ret-tail-cf (x body) (em (g-em fs)) (cnt 0) (locs nil) (self fn) (fnames (g-formals fs)))))))
+                 (:instance s-ok-f-ex-list (s (lr 1)) (fr (lfr)))
+                 (:instance count-pos-n (env (pairlis$ fs args)))
+                 (:instance times-ge (n (nfix n)))))))
 
 (defthm body-do
-  (implies (and (fr-hyps) (integerp k) (< (+ 1 (* (nfix n) (+ 2 (acl2-count (lr 1))))) k))
+  (implies (and (fr-hyps) (s-ok (lr 1) procs heap b c) (integerp k) (< (+ 1 (* (nfix n) c)) k))
            (and (equal (car (f-ex-list (list (list :do (lr 1))) (lfr) heap procs k)) :return)
                 (equal (caddr (f-ex-list (list (list :do (lr 1))) (lfr) heap procs k)) heap)
                 (ret-ok (mv-nth 1 (f-ex-list (list (list :do (lr 1))) (lfr) heap procs k)) rt (av))))
@@ -100,7 +110,7 @@
            :in-theory (e/d (do-ok) (g-ret a-ev inv-frame do-run undef-locals g-locals fb ret-ok f-ex f-ex-list
                                    f-ex-list-open inv))
            :use ((:instance inv-frame)
-                 (:instance do-run (fr (lfr)) (vs args) (v (av)) (m (1- k)) (c (+ 2 (acl2-count (lr 1)))))))))
+                 (:instance do-run (fr (lfr)) (vs args) (v (av)) (m (1- k)))))))
 
 ;; ---- the function: f-invoke, once its body's run is known
 
@@ -113,7 +123,7 @@
            (equal (f-invoke (list :function nm pure rec (g-dummies fs) rt locs b) (g-lits args) caller heap procs fuel)
                   (mv nil v heap)))
   :hints (("Goal" :do-not-induct t :in-theory (e/d (ret-ok) (f-ex-list undef-locals f-bind fb g-dummies g-lits))
-           :expand ((f-invoke (list :function nm pure rec (g-dummies fs) rt locs b) (g-lits args) caller heap procs fuel)))))
+           :expand ((:free (rt) (f-invoke (list :function nm pure rec (g-dummies fs) rt locs b) (g-lits args) caller heap procs fuel))))))
 
 (defmacro gfs () '(kadr (lkp fn defs)))
 (defmacro gr0 (k) `(mv-nth ,k (g-ret (kaddr (lkp fn defs)) (g-em (gfs)) 0 nil fn sigs (g-formals (gfs)))))
@@ -139,59 +149,67 @@
   :rule-classes nil
   :hints (("Goal" :in-theory (disable acl2-count) :cases (c))))
 
-(defmacro sem-hyps ()
+(defmacro sem-core ()
   '(and (not (mv-nth 0 (g-fn fn defs sigs)))
         (consp (lkp fn sigs)) (symbolp fn) (not (equal fn 'quote)) (not (equal fn 'if))
-        (tail-only (kaddr (fd)) fn sigs) (no-prim-defs defs)
+        (tail-only (kaddr (fd)) fn sigs cs) (no-prim-defs defs)
+        (a-orc defs sigs cs) (not (member-equal fn cs))
         (int64-listp args) (equal (len args) (len (kadr (fd))))
         (not (mv-nth 0 (a-ev (kaddr (fd)) (pairlis$ (kadr (fd)) args) defs n)))
         (integerp fuel)
-        (< (+ 6 (len args) (* (nfix n) (+ 2 (acl2-count (mv-nth 1 (g-fn fn defs sigs)))))) fuel)))
+        (< (+ 6 (len args) (* (nfix n) c)) fuel)))
+
+(defmacro sem-hyps ()
+  '(and (sem-core) (or (null cs) (p-orc procs heap b)) (natp b)
+        (natp c) (<= (* (+ 3 b) (+ 2 (acl2-count (mv-nth 1 (g-fn fn defs sigs))))) c)))
+
+; the procedure's statements are s-ok at c
+(defthm sem-s-ok
+  (implies (sem-hyps) (s-ok (gr0 1) procs heap b c))
+  :hints (("Goal" :do-not-induct t
+     :in-theory (disable g-fn g-ret g-reaches g-called g-fcalls g-has g-sym g-dummies g-lits g-locals g-em g-formals
+                         a-ev tail-only times-mono acl2-count kar kdr kadr kaddr s-ok s-ok-lr p-orc a-orc)
+     :use ((:instance s-ok-lr (fs (gfs)) (body (kaddr (lkp fn defs))) (rt (kadr (cdr (lkp fn sigs)))))
+           (:instance count-body-sub (s (gr0 1)) (c (g-has '(:cycle) (gr0 1))) (nm (g-sym fn nil)) (pure t)
+                      (rec (if (g-reaches (g-called (strip-cars sigs) (g-fcalls (gr0 1))) fn defs (1+ (len defs))) t nil))
+                      (dums (g-dummies (gfs))) (rt (kadr (cdr (lkp fn sigs)))) (locs (g-locals (gr0 3))))
+           (:instance times-mono (n (+ 3 b)) (a (+ 2 (acl2-count (gr0 1))))
+                      (b (+ 2 (acl2-count (mv-nth 1 (g-fn fn defs sigs))))))))))
 
 (defthm g-fn-sem-loop-plain
-  (implies (and (sem-hyps) (not (g-has '(:cycle) (gr0 1))))
+  (implies (and (sem-core) (s-ok (gr0 1) procs heap b c) (not (g-has '(:cycle) (gr0 1))))
            (equal (f-invoke (mv-nth 1 (g-fn fn defs sigs)) (g-lits args) caller heap procs fuel)
                   (mv nil (mv-nth 1 (a-ev (kaddr (fd)) (pairlis$ (kadr (fd)) args) defs n)) heap)))
   :hints (("Goal" :do-not-induct t
      :in-theory (disable g-fn g-ret g-reaches g-called g-fcalls g-has g-sym g-dummies g-lits g-locals g-em g-formals
                          fx-list a-ev tail-only undef-locals f-bind f-ex-list fb times-mono f-invoke ret-ok
-                         acl2-count f-invoke-fn body-plain body-do kar kdr kadr kaddr)
+                         acl2-count f-invoke-fn body-plain body-do kar kdr kadr kaddr s-ok s-ok-lr p-orc a-orc)
      :use ((:instance body-plain (fs (gfs)) (body (kaddr (lkp fn defs))) (rt (kadr (cdr (lkp fn sigs)))) (k (1- fuel)))
            (:instance f-invoke-fn (fs (gfs)) (rt (kadr (cdr (lkp fn sigs))))
                       (v (mv-nth 1 (a-ev (kaddr (fd)) (pairlis$ (kadr (fd)) args) defs n)))
                       (nm (g-sym fn nil)) (pure t)
                       (rec (if (g-reaches (g-called (strip-cars sigs) (g-fcalls (gr0 1))) fn defs (1+ (len defs))) t nil))
-                      (locs (g-locals (gr0 3))) (b (gbody)))
-           (:instance count-body-sub (s (gr0 1)) (c (g-has '(:cycle) (gr0 1))) (nm (g-sym fn nil)) (pure t)
-                      (rec (if (g-reaches (g-called (strip-cars sigs) (g-fcalls (gr0 1))) fn defs (1+ (len defs))) t nil))
-                      (dums (g-dummies (gfs))) (rt (kadr (cdr (lkp fn sigs)))) (locs (g-locals (gr0 3))))
-           (:instance times-mono (n (nfix n)) (a (+ 2 (acl2-count (gr0 1))))
-                      (b (+ 2 (acl2-count (mv-nth 1 (g-fn fn defs sigs))))))))))
+                      (locs (g-locals (gr0 3))) (b (gbody)))))))
 
 (defthm g-fn-sem-loop-do
-  (implies (and (sem-hyps) (g-has '(:cycle) (gr0 1)))
+  (implies (and (sem-core) (s-ok (gr0 1) procs heap b c) (g-has '(:cycle) (gr0 1)))
            (equal (f-invoke (mv-nth 1 (g-fn fn defs sigs)) (g-lits args) caller heap procs fuel)
                   (mv nil (mv-nth 1 (a-ev (kaddr (fd)) (pairlis$ (kadr (fd)) args) defs n)) heap)))
   :hints (("Goal" :do-not-induct t
      :in-theory (disable g-fn g-ret g-reaches g-called g-fcalls g-has g-sym g-dummies g-lits g-locals g-em g-formals
                          fx-list a-ev tail-only undef-locals f-bind f-ex-list fb times-mono f-invoke ret-ok
-                         acl2-count f-invoke-fn body-plain body-do kar kdr kadr kaddr)
+                         acl2-count f-invoke-fn body-plain body-do kar kdr kadr kaddr s-ok s-ok-lr p-orc a-orc)
      :use ((:instance body-do (fs (gfs)) (body (kaddr (lkp fn defs))) (rt (kadr (cdr (lkp fn sigs)))) (k (1- fuel)))
            (:instance f-invoke-fn (fs (gfs)) (rt (kadr (cdr (lkp fn sigs))))
                       (v (mv-nth 1 (a-ev (kaddr (fd)) (pairlis$ (kadr (fd)) args) defs n)))
                       (nm (g-sym fn nil)) (pure t)
                       (rec (if (g-reaches (g-called (strip-cars sigs) (g-fcalls (gr0 1))) fn defs (1+ (len defs))) t nil))
-                      (locs (g-locals (gr0 3))) (b (gbody)))
-           (:instance count-body-sub (s (gr0 1)) (c (g-has '(:cycle) (gr0 1))) (nm (g-sym fn nil)) (pure t)
-                      (rec (if (g-reaches (g-called (strip-cars sigs) (g-fcalls (gr0 1))) fn defs (1+ (len defs))) t nil))
-                      (dums (g-dummies (gfs))) (rt (kadr (cdr (lkp fn sigs)))) (locs (g-locals (gr0 3))))
-           (:instance times-mono (n (nfix n)) (a (+ 2 (acl2-count (gr0 1))))
-                      (b (+ 2 (acl2-count (mv-nth 1 (g-fn fn defs sigs))))))))))
+                      (locs (g-locals (gr0 3))) (b (gbody)))))))
 
 (defthm g-fn-sem-loop
   (implies (sem-hyps)
            (equal (f-invoke (mv-nth 1 (g-fn fn defs sigs)) (g-lits args) caller heap procs fuel)
                   (mv nil (mv-nth 1 (a-ev (kaddr (fd)) (pairlis$ (kadr (fd)) args) defs n)) heap)))
   :hints (("Goal" :cases ((g-has '(:cycle) (gr0 1)))
-           :in-theory (disable g-fn g-ret f-invoke a-ev g-has g-fn-sem-loop-plain g-fn-sem-loop-do)
-           :use (g-fn-sem-loop-plain g-fn-sem-loop-do))))
+           :in-theory (disable g-fn g-ret f-invoke a-ev g-has g-fn-sem-loop-plain g-fn-sem-loop-do sem-s-ok s-ok p-orc a-orc tail-only)
+           :use (g-fn-sem-loop-plain g-fn-sem-loop-do sem-s-ok))))

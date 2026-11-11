@@ -111,11 +111,12 @@
   (let ((d (lkp f defs)))
     (if (consp d) (a-ev (kaddr d) (pairlis$ (true-list-fix (kadr d)) vals) defs n) (a-prim f vals))))
 
-; the oracle is a-ev's: on int64 arguments, wherever a-ev of a call of an f
+; the oracle is a-ev's: on int64 arguments, as many as f's signature has, wherever a-ev of a call of an f
 ; in cs answers without an error, f-call-val answers that value, of f's type
 (defun-sk a-orc (defs sigs cs)
   (forall (f vals n)
-    (implies (and (member-equal f cs) (int64-listp vals) (not (mv-nth 0 (a-call f vals defs n))))
+    (implies (and (member-equal f cs) (int64-listp vals) (equal (len vals) (len (kar (cdr (lkp f sigs)))))
+                  (not (mv-nth 0 (a-call f vals defs n))))
              (and (equal (f-call-val (g-sym f nil) vals) (mv nil (mv-nth 1 (a-call f vals defs n))))
                   (scalar-ok (kadr (cdr (lkp f sigs))) (mv-nth 1 (a-call f vals defs n)))))))
 
@@ -343,6 +344,8 @@
            (if err (mv err nil) (mv-let (err v) (f-call-val name vs) (if err (mv err nil) (mv nil v))))))
   :hints (("Goal" :expand ((fv (list :fcall name cs) fr)))))
 
+(defthm fvs-ok-len (implies (fvs-ok cs ts vs fr) (equal (len vs) (len cs))) :rule-classes nil)
+
 (defthm ge-fcall
   (implies (and (equal (gkind x) :call) (consp (lkp (car x) sigs))
                 (ga-sem (cdr x) em cnt locs sigs fnames env defs (1- n) fr cs))
@@ -352,6 +355,10 @@
                                a-orc-necc)
            :expand ((no-calls :term x sigs cs))
            :use (a-ev-call
+                 (:instance fvs-ok-len (cs (mv-nth 2 (g-args (cdr x) em cnt locs sigs fnames)))
+                            (ts (mv-nth 3 (g-args (cdr x) em cnt locs sigs fnames)))
+                            (vs (mv-nth 1 (a-ev-list (cdr x) env defs (1- n))))
+                            (fr (mv-nth 1 (fx-list (mv-nth 1 (g-args (cdr x) em cnt locs sigs fnames)) fr))))
                  (:instance a-orc-necc (f (car x)) (vals (mv-nth 1 (a-ev-list (cdr x) env defs (1- n)))) (n (1- n)))))))
 
 (defthm ge-call
