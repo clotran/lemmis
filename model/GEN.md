@@ -549,6 +549,23 @@ Two findings from acl2-fortran's `stmt`:
    a-sx/a-st on sv/sx, fuel-free. Chosen over f-ex at large fuel because
    every per-case lemma would otherwise carry a fuel bound, and over
    extending fv/fx because every layer-2 lemma reasons through them.
+   Started, gen-stx.lisp: `sv` (cs-expr: cf-expr's forms plus :comp,
+   :size, :elem; no :fcall yet) with **`sv-is-f-ev`** (f-ev at fuel past
+   the expression's size is sv) and `sv-is-fv` (stobj-free: sv is fv);
+   `sx`/`sx-list` (cs-stmt: :assign to :var/:comp/:elem, :if, :return,
+   :cycle, :exit) with **`sx-is-f-ex`**/`sx-list-is-f-ex-list`, by the
+   flag induction of fx-is-f-ex and an opener `f-ex-assign-obj`.
+   sv-is-f-ev takes 254 s in the full theory (it expands all of f-ev);
+   split it per case if it grows. Next, in order: (1) per-case lemmas
+   g-sexpr vs a-sx on sv: a field, size, element read (the element's
+   :bounds both sides), primitives, if, lambda (em agreeing with env, as
+   ge-sem's hypotheses do); (2) g-stmt vs a-st on sx-list for :set (side
+   condition: v reads no component the inner update writes -- finding 1),
+   :seti (bounds), if, lambda (side condition: the update terms read no
+   var the lambda rebinds -- finding 2); (3) :do/:call/the mv lambda need
+   sx cases for :do and :call (f-invoke on a subroutine: an oracle like
+   f-call-val, now with heap); (4) a g-st-fn theorem as g-fn-sem, and
+   hpg-spush-fortran-correct re-derived as its instance.
 5. Values and the runtime shims (`type(value)`, `rt_*`): fsyn/fsem first need
    an abstract runtime. Two lanes.
 6. Switch acl2-fortran to print g-module's output, and fix or confirm the
