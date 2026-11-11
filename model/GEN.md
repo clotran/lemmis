@@ -379,11 +379,30 @@ is how `fx-is-f-ex` went through after two monolithic attempts ran out.
   the signature's arity (without it no oracle satisfies both a-orc and p-orc:
   a-ev ignores extra arguments, f-bind rejects them; ge-fcall gets the length
   from fvs-ok, `fvs-ok-len`).
+- **gen-disch-call.lisp, proved (calls (e)): `hpg-class-len`, the 12th of the
+  12.** `hpg-class-len-gen` is g-fn-sem-loop at cs = (hpg-n40); its a-orc and
+  p-orc are about the unconstrained f-call-val, so `hpg-class-len-gen-h`
+  functionally instantiates it with `hcl-orc` (answers `(hpg-n40 x)` on
+  "hpg_n40" and one int64 x, else an error) and copies of the two
+  defun-sks, `a-orc-h`, `p-orc-h` (the obligations: their definitions and
+  witness constraints, by the copies' definitions and -necc). Discharged:
+  `a-orc-h-hcl` (a-ev of hpg-n40's body, opened at every fuel,
+  `n40-a-ev-any`); `p-orc-h-hcl` with b = 8 + size of hpg_n40's procedure,
+  when `(find-proc "hpg_n40" procs)` is the generated one (f-ev's call case,
+  `evs-at-args-at`, f-invoke-args, hpg-n40-fortran-correct); the a-ev
+  induction `hcl-step`/`hpg-class-len-a-ev-m` (at most 64 iterations,
+  2 fuel each; `2 * (hpg-n40 p) <= 2^41`, int64). **`hpg-class-len-fortran-correct`**:
+  on int64 c, k, p, with procs' hpg_n40 the generated one, at fuel
+  `> 9 + 200 * (11 + size(hpg_n40)) * (2 + size(hpg_class_len))`, f-invoke
+  of the generated procedure answers `(mv nil (hpg-class-len c k p) heap)`.
+  The sizes are acl2-counts, which count an integer literal by its
+  magnitude: hpg_n40 holds 2^40, so b is about 2^40 (a large but finite
+  fuel; a literal-blind size would shrink it).
 
 ## What remains, in order (estimated in lanes)
 
 1. Layer 2 is done: g-expr, g-ret and the function (`g-fn-sem`), with
-   10 of the 12 checked functions proved (gen-inst.lisp); hpg-size-class by g-fn-sem-loop (gen-disch-loop.lisp): 11 of 12.
+   10 of the 12 checked functions proved (gen-inst.lisp); hpg-size-class by g-fn-sem-loop (gen-disch-loop.lisp), hpg-class-len with calls (gen-disch-call.lisp): 12 of 12.
 2. Layer 3: calls (the frame-agreement lemma over fsem's clique -- proved,
    gen-call.lisp's `f-ev-agree`: for expressions of cf-expr's forms plus
    `:fcall`, two frames agreeing on the names read (`ce-names`) give the
@@ -394,7 +413,7 @@ is how `fx-is-f-ex` went through after two monolithic attempts ran out.
    evaluates them at (`args-at`) answers what it answers on `(g-lits ks)`,
    from any caller). Tail-recursive loops: done (`g-fn-sem-loop`,
    above), and `hpg-size-class` instantiated and discharged
-   (gen-disch-loop.lisp). Left: calls (`hpg-class-len` calls hpg-n40).
+   (gen-disch-loop.lisp). Calls: done ((a)-(e) below; `hpg-class-len`, which calls hpg-n40, in gen-disch-call.lisp).
    **Approach chosen: an oracle case in fv**, not ge-sem redone on f-ev.
    fv and fx are free of fuel, heap and procs, and every ge-sem/gs-sem
    lemma (gen-proof, gen-proof2, gen-ret, gen-tail, gen-loop*) reasons
@@ -422,18 +441,16 @@ is how `fx-is-f-ex` went through after two monolithic attempts ran out.
    every n' >= n). g-expr's :fcall case is then fv's.
    (d) [done, see above] g-fn-sem-loop with tail-only allowing non-self calls in tests and
    arguments.
-   (e) [clotran's hpg-class-len is copied into gen-disch-loop.lisp and
-   check-gen compares it; the theorem is left] hpg-class-len: functionally instantiate f-call-val with
-   `(lambda (name vals) (if (equal name "hpg_n40") (mv nil (hpg-n40 (car vals))) (mv :unknown nil)))`
-   (no constraints, so no obligations); the oracle hypotheses from
-   hpg-n40-a-ev and hpg-n40-fortran-correct (the call graph here is a
-   DAG, so the cross-function induction is just this order); the a-ev
-   induction as hsc-step (at most 64 iterations; `2 * (hpg-n40 p)` is at
-   most 2^41, int64). One lane.
-3. Per-function discharge of the hypotheses: done for 11 of the 12
-   (gen-disch.lisp's 10, gen-disch-loop.lisp's hpg-size-class;
-   `<fn>-fortran-correct`, no hypothesis past int64 arguments and the
-   guard). Left: hpg-class-len once layer 3 covers calls, and each
+   (e) [done, gen-disch-call.lisp, see layer 3 above] hpg-class-len. The
+   previous plan said functionally instantiating f-call-val needs no
+   obligations; it does: p-orc and a-orc (defun-sks naming f-call-val) are
+   in the statement, so they and their witnesses are substituted too, by
+   copies (`p-orc-h`, `a-orc-h`) with the oracle `hcl-orc` in its place.
+3. Per-function discharge of the hypotheses: done for all 12
+   (gen-disch.lisp's 10, gen-disch-loop.lisp's hpg-size-class,
+   gen-disch-call.lisp's hpg-class-len; `<fn>-fortran-correct`, no
+   hypothesis past int64 arguments and the guard, plus, for hpg-class-len,
+   that the procedures' hpg_n40 is the generated one). Left: each
    function later slices add.
 4. Stobjs: fields, arrays (the bounds error), subroutines, `mv` and the
    `intent(out)` results. fsyn has them already. Two lanes.
