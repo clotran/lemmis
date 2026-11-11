@@ -31,12 +31,12 @@ In the table, "fsyn" says whether fsyn/fsem already has the target construct.
 | call of a translated function (an expression) | `f(args)`; `recursive` if it reaches back | `:fcall` | yes |
 | tail self-call (return position) | the arguments into temporaries, then the formals, then `cycle`; the body in `do ... end do` | `:do :cycle` | yes |
 | other self-recursion | a `recursive` function | `:fcall` | yes |
-| stobj formal | `type(T), intent(in\|inout) :: st` | `:in :inout` dummies | no |
-| stobj field read/update (`v-pc`, `update-v-pc`) | `st%pc`, `st%pc = e` | `:comp`, `:assign` | no |
-| stobj array (`v-codei`, `update-v-codei`, `-length`) | `st%code(i)`, `st%code(i) = e`, `size(st%code, kind=int64)` | `:elem :size` | no |
+| stobj formal | `type(T), intent(in\|inout) :: st` | `:in :inout` dummies | yes (gen-st) |
+| stobj field read/update (`v-pc`, `update-v-pc`) | `st%pc`, `st%pc = e` | `:comp`, `:assign` | yes (gen-st) |
+| stobj array (`v-codei`, `update-v-codei`, `-length`) | `st%code(i)`, `st%code(i) = e`, `size(st%code, kind=int64)` | `:elem :size` | yes (gen-st) |
 | `resize-X` | `call rt_resize_int/_val(...)` | no | no |
 | extern fields/arrays (GC's pools) | `hp_x()`, `call hp_set_x(..)` | no | no |
-| a function answering a stobj | a subroutine; its other results `intent(out)` `r`, `r1 r2 ..` | `:subroutine :out` | no |
+| a function answering a stobj | a subroutine; its other results `intent(out)` `r`, `r1 r2 ..` | `:subroutine :out` | subroutine yes, results no |
 | `mv` (`cons` tuple), `mv-nth` of a call | assignments to the outs; `call` into `mv_n` temporaries | `:out`, `:call` | no |
 | value formals/results (`type(value)`) | `type(value)` | no | no |
 | runtime shims `rt-*`, `rt-prim` on 1-3 items, `vmg-stk-from` | `rt_*(..)`, `rt_prim1..3`, `rt_list_from(st, ..)` | no | no |
@@ -399,6 +399,37 @@ is how `fx-is-f-ex` went through after two monolithic attempts ran out.
   magnitude: hpg_n40 holds 2^40, so b is about 2^40 (a large but finite
   fuel; a literal-blind size would shrink it).
 
+## Stobjs: gen-st.lisp (what remains, 4)
+
+`g-st-module raw bools fns st` translates the functions answering stobjs,
+as acl2-fortran's `stmt` does, into SUBROUTINEs; `st` is the
+configuration (`g-st-cfg`: stobjs, plain fields, plain arrays, as
+acl2-fortran's config names them). `g-sexpr` is g-expr plus the stobj
+reads (`hs%f`, `hs%a(i)`, `size(hs%a, kind=int64)`): a term with no stobj
+in it goes to g-expr whole, so the counter and the names are g-expr's.
+`g-stmt` takes the stobj itself, a field or array update, `if`, and a
+lambda (the values into temporaries, then the stobjs' updates, then the
+body). Refused for now: calls answering stobjs (`call`), `mv`/`mv-nth`
+and intent(out) results, tail self-calls, extern fields/arrays (GC's
+`hp_*`), a SELECT in statement position, and stobj-reading functions
+answering a value. check-gen: `hpg-spush` (22 lines) agrees.
+
+Two findings from acl2-fortran's `stmt`:
+
+- **A field update reads its value after the inner update.** For
+  `(update-f v s)` the lines are s's, then v's, then `st%f = v`; ACL2
+  evaluates v first, on the stobj before s. They differ when v reads a
+  component that s writes. Its proof needs v not to read what s writes
+  (hpg-spush's v reads none). An array update puts i and v in
+  temporaries first, as ACL2 does.
+- **A lambda's stobj updates see its new values.** The values' bindings
+  are added to the env before the updates are translated, so in
+  `((lambda (x hs) b) (f x) (update-h-msp x hs))` the update would read
+  the temporary of `(f x)`, not `x_`. gen-st copies this (to match the
+  text) and its proof needs the update terms not to read a rebound
+  variable; hpg-spush has none. To fix in acl2-fortran with the
+  expression lambda's leak (6 below).
+
 ## What remains, in order (estimated in lanes)
 
 1. Layer 2 is done: g-expr, g-ret and the function (`g-fn-sem`), with
@@ -453,7 +484,8 @@ is how `fx-is-f-ex` went through after two monolithic attempts ran out.
    that the procedures' hpg_n40 is the generated one). Left: each
    function later slices add.
 4. Stobjs: fields, arrays (the bounds error), subroutines, `mv` and the
-   `intent(out)` results. fsyn has them already. Two lanes.
+   `intent(out)` results. fsyn has them already. Two lanes. Translation
+   started (gen-st.lisp, above; hpg-spush checked).
 5. Values and the runtime shims (`type(value)`, `rt_*`): fsyn/fsem first need
    an abstract runtime. Two lanes.
 6. Switch acl2-fortran to print g-module's output, and fix or confirm the

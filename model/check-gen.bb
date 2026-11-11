@@ -24,7 +24,9 @@
     :fns '[hpg-add hpg-text-tag hpg-s64 hpg-n40 hpg-size-class hpg-class-len] :bools '[hpg-text-tag] :raw "*heapgn-raw*"}
    {:book "vmfg" :file "src/f/gen/vm_gen.f90"
     :fns '[bnd40p sk-step sk-more ex-aplook ex-apstep] :bools '[bnd40p sk-more] :raw "*vmfg-raw*"}
-   {:book "vmicg" :file "src/f/gen/vmc_gen.f90" :fns '[vmicg-sat] :bools '[] :raw "*vmicg-raw*"}])
+   {:book "vmicg" :file "src/f/gen/vmc_gen.f90" :fns '[vmicg-sat] :bools '[] :raw "*vmicg-raw*"}
+   ;; stobj subroutines (gen-st.lisp's g-st-module, its configuration :st)
+   {:book "heapgn" :file "src/f/gen/heap_gen.inc" :fns '[hpg-spush] :bools '[] :raw "*spush-raw*" :st "*heapg-st*"}])
 
 (defn acl2! [dir input]
   (let [r (p/shell {:dir dir :in input :out :string :err :string :continue true} acl2)] (:out r)))
@@ -50,14 +52,15 @@
       (println "check-gen: ACL2 did not hand over" book "'s functions") (System/exit 1))
     blocks))
 
-(defn translate [raws bools const]
+(defn translate [raws bools const fns st]
   (let [out (acl2! "."
-                   (str "(include-book \"gen-inst\")\n(set-print-case :downcase state)\n"
+                   (str "(include-book \"gen-inst\")\n(include-book \"gen-st\")\n(set-print-case :downcase state)\n"
                         "(defun g-show (ps) (declare (xargs :mode :program))\n"
                         "  (if (endp ps) nil (prog2$ (cw \"~%PROC ~x0~%\" (car ps)) (g-show (cdr ps)))))\n"
                         "(set-iprint nil)\n"
                         "(cw \"~%RAWS ~x0~%\" (equal '(" (str/join "\n" raws) ") " const "))\n"
-                        "(mv-let (e ps) (g-module '(" (str/join "\n" raws) ") '(" (str/join " " bools) "))\n"
+                        "(mv-let (e ps) " (if st (str "(g-st-module '(" (str/join "\n" raws) ") '(" (str/join " " bools) ") '(" (str/join " " fns) ") " st ")")
+                                             (str "(g-module '(" (str/join "\n" raws) ") '(" (str/join " " bools) "))")) "\n"
                         "  (if e (cw \"~%GENERR ~x0~%\" e) (g-show ps)))\n(good-bye)\n"))]
     (when-not (re-find #"RAWS t" out)
       (println "check-gen: gen-inst.lisp's" const "is not what ACL2 hands over") (System/exit 1))
@@ -65,17 +68,18 @@
     (map #(edn/read-string (form-text %)) (rest (str/split out #"\nPROC\s+")))))
 
 (defn generated [lines fname]
-  (let [start (first (keep-indexed #(when (re-find (re-pattern (str "^  (recursive )?(pure )?function " fname "\\(")) %2) %1) lines))
-        end (first (keep-indexed #(when (and start (> %1 start) (= %2 (str "  end function " fname))) %1) lines))]
+  (let [start (first (keep-indexed #(when (re-find (re-pattern (str "^  (recursive )?(pure )?(function|subroutine) " fname "\\(")) %2) %1) lines))
+        end (first (keep-indexed #(when (and start (> %1 start) (re-matches (re-pattern (str "  end (function|subroutine) " fname)) %2)) %1) lines))]
     (when (and start end) (subvec lines start (inc end)))))
 
 (def failures (atom 0))
-(doseq [{:keys [book file fns bools raw] :as b} books]
-  (let [procs (translate (dump b) bools raw)
+(doseq [{:keys [book file fns bools raw st] :as b} books]
+  (let [procs (translate (dump b) bools raw fns st)
         lines (vec (str/split-lines (slurp (str clotran "/" file))))]
     (doseq [[fn pr] (map vector fns procs)]
       (let [pr (vec pr)
-            pr (assoc pr 6 (sort-by first (nth pr 6)))
+            li (if (= :function (first pr)) 6 4)
+            pr (assoc pr li (sort-by first (nth pr li)))
             ours (map #(str "  " %) (fproc pr))
             theirs (generated lines (nth pr 1))]
         (if (= ours theirs)

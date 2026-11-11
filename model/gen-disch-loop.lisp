@@ -24,7 +24,7 @@
     (hpg-size-class n (+ 1 c) (* 2 p))))
 
 ;; clotran's definition (model/heaprn there; check-gen.bb checks the copy);
-;; its theorem waits for calls (d), (e) (GEN.md)
+;; its theorem is gen-disch-call.lisp's hpg-class-len-fortran-correct (GEN.md)
 (defun hpg-class-len (c k p)
   (declare (xargs :measure (nfix (- (nfix c) (nfix k)))
                   :guard (and (natp c) (<= c 64) (natp k) (natp p) (<= p 1099511627776))))
