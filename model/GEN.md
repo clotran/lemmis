@@ -272,6 +272,46 @@ is how `fx-is-f-ex` went through after two monolithic attempts ran out.
   duplicate formals, as ACL2's translated terms never have; the check-gen
   texts are unchanged.
 
+## Layer 3: tail recursion (lane 2 of layer 3)
+
+- **gen-cf.lisp, changed:** fx and cf-stmt take `(:cycle)` (fx answers
+  :cycle; cf-stmt accepts exactly `'(:cycle)`), with `fx-f-ex-cycle` in
+  the fx-is-f-ex dispatch. Everything above recertifies unchanged.
+- **gen-tail.lisp, proved:** `tail-only` (the source calls translated
+  functions only as a self-call in tail position, through if-chains);
+  g-tail's facts, each its own induction on g-tail (`gt-fact`):
+  `gt-locs`, `gt-new` (its statements write only new temporaries),
+  `gt-as` (the assignments copy temporary i into formal i's dummy, none
+  of the temporaries a formal), `gt-cf`, `gt-lf`; the run `gt-sem-thm`
+  (each temporary holds its argument's a-ev value) and `as-run` (the
+  dummies then hold them).
+- **gen-loop.lisp, gen-loop2.lisp, proved:** one iteration. `lp-ok`:
+  g-ret's statements answer :return with "r" = a-ev's value, or :cycle
+  with the dummies holding int64s on which a-ev of the function's body,
+  with some fuel below n (`a-ev-below`), answers the same value.
+  `grt-sem-thm` by gr-ind (cases grt-plain via gen-ret's gr-other,
+  grt-tail via `tail-run`, grt-if, grt-chain, gselt-*), and
+  `g-ret-tail-cf` (the output is cf-stmts with CYCLE, temporaries lf-ok).
+- **gen-loopfn.lisp, proved:** the DO. `no-cycle` (cf statements with no
+  `(:cycle)` subtree never answer :cycle, so the unwrapped shape is sound
+  too); `do-run-abs`: for any statement list whose every iteration is
+  lp-ok (`iter-all`), f-ex of the DO at any fuel m > n * c, c >= size + 2,
+  answers :return with "r" = the value, by induction on a-ev's fuel n
+  (`do-step`: one iteration costs one DO level, i.e. 1 fuel, and a-ev at
+  least 1).
+- **gen-loopthm.lisp, proved:** **`g-fn-sem-loop`**, g-fn-sem with
+  `no-calls` replaced by `tail-only`: if g-fn succeeds, fn is a symbol
+  other than `quote` and `if` with a signature, its body is tail-only,
+  no-prim-defs, int64 arguments, and a-ev of the body answers without an
+  error within fuel n, then for every fuel
+  `> 6 + (len args) + n * (2 + (acl2-count proc))`,
+  `(f-invoke proc (g-lits args) caller heap procs fuel)` = `(mv nil v heap)`.
+  This is the bound `m >= n * K`, K the procedure's size plus 2.
+- **Hypotheses added, explicit:** `tail-only` (subsumes `no-calls`);
+  `fn` is not `if` (ACL2 cannot define `if`; a-ev reads a term headed
+  `if` as an if, so a self-call named `if` would mean two things). The
+  fuel bound is now n-dependent, as GEN.md's theorem states.
+
 ## What remains, in order (estimated in lanes)
 
 1. Layer 2 is done: g-expr, g-ret and the function (`g-fn-sem`), with
@@ -282,8 +322,14 @@ is how `fx-is-f-ex` went through after two monolithic attempts ran out.
    same f-ev at every fuel, by `ag-ok-thm` over f-ev, f-bind and f-invoke;
    left: g-expr's run with fuel and calls, f-bind of argument expressions
    (g-fn-sem binds literals), the cross-function induction on a-ev's fuel,
-   and the fuel bound), then tail-recursive loops; the whole theorem for the slice.
-   One to two lanes.
+   and the fuel bound). Tail-recursive loops: done (`g-fn-sem-loop`,
+   above). Left: `hpg-size-class` instantiated and discharged (it is
+   tail-only: gen-inst's macro with g-fn-sem-loop, then gen-disch's with
+   the n-dependent fuel bound); calls (`hpg-class-len` calls hpg-n40):
+   g-expr's run with :fcall -- fv/fx have no :fcall case, so either fv
+   gets one (an oracle for the callee's value, related to f-ev by
+   gen-call's f-ev-agree and the callee's g-fn-sem) or ge-sem is redone
+   on f-ev with fuel -- and the cross-function induction. One to two lanes.
 3. Per-function discharge of the hypotheses: done for gen-inst's 10
    (gen-disch.lisp, `<fn>-fortran-correct`; ex-aplook needs
    `req < 2^63 - 1`, above). Left: the same for hpg-size-class and

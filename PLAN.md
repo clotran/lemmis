@@ -284,8 +284,14 @@ hold, before any extension.
    theorem states `req < 2^63 - 1` (GEN.md).
    Layer 3 begun: `gen-call.lisp`, f-ev's frame agreement over fsem's
    clique with calls (`f-ev-agree`).
-   Left, in order: calls (frame agreement over fsem's clique, the fuel
-   bound) and loops; the per-function discharge for the 2 loop functions;
+   Tail recursion proved: `gen-tail`, `gen-loop`, `gen-loop2`,
+   `gen-loopfn`, `gen-loopthm`: `g-fn-sem-loop`, f-invoke of a
+   tail-recursive function's DO loop answers a-ev's value, at any fuel
+   past n * (size + 2), n a-ev's fuel (the source's self-calls only in
+   tail position, `tail-only`; the function not named `if`).
+   Left, in order: hpg-size-class instantiated and discharged with
+   g-fn-sem-loop; calls (g-expr's run with :fcall, the cross-function
+   induction), then hpg-class-len;
    stobjs (fields, arrays and the bounds error, subroutines, mv);
    values and the runtime shims; then acl2-fortran prints g-module's
    output (and its lambda scoping, which leaks a binding to later

@@ -63,6 +63,7 @@
      (:if (and (cf-expr (kadr s)) (cf-stmts (kaddr s)) (cf-stmts (kadddr s))))
      (:select (and (cf-expr (kadr s)) (cf-arms (kaddr s)) (cf-stmts (kadddr s))))
      (:return t)
+     (:cycle (equal s '(:cycle)))
      (otherwise nil)))
  (defun cf-arms (arms)
    (declare (xargs :guard t :measure (acl2-count arms)))
@@ -91,6 +92,7 @@
                       ((not (integerp k)) (mv (errst :type) fr))
                       (t (fx-arms k (kaddr s) (kadddr s) fr)))))
      (:return (mv :return fr))
+     (:cycle (mv :cycle fr))
      (otherwise (mv (errst :syntax) fr))))
  (defun fx-arms (k arms dflt fr)
    ; fsem's (lkp k arms), then its statements
@@ -193,13 +195,14 @@
 (defthm +h-list (equal (+h (list a b) heap) (list a b heap)))
 
 (defthm cf-stmt-kinds
-  (implies (cf-stmt s) (member-eq (kar s) '(:assign :if :select :return)))
+  (implies (cf-stmt s) (member-eq (kar s) '(:assign :if :select :return :cycle)))
   :rule-classes :forward-chaining)
 
 (defthm cf-stmt-other
   (implies (and (not (equal (kar s) :assign)) (not (equal (kar s) :if))
-                (not (equal (kar s) :select)) (not (equal (kar s) :return)))
-           (not (cf-stmt s))))
+                (not (equal (kar s) :select)) (not (equal (kar s) :return)) (not (equal (kar s) :cycle)))
+           (not (cf-stmt s)))
+  :hints (("Goal" :expand ((cf-stmt s)))))
 
 (defthm cf-stmt-consp
   (implies (cf-stmt s) (consp s))
@@ -224,6 +227,11 @@
   (implies (and (eq (kar s) :return) (integerp k) (< (acl2-count s) k))
            (equal (f-ex s fr heap procs k) (+h (fx s fr) heap)))
   :hints (("Goal" :in-theory (disable f-ex) :expand ((fx s fr)))))
+
+(defthm fx-f-ex-cycle
+  (implies (and (eq (kar s) :cycle) (integerp k) (< (acl2-count s) k))
+           (equal (f-ex s fr heap procs k) (+h (fx s fr) heap)))
+  :hints (("Goal" :expand ((fx s fr) (f-ex s fr heap procs k)))))
 
 (defthm fx-f-ex-if
   (implies (and (cf-stmt s) (eq (kar s) :if) (integerp k) (< (acl2-count s) k)
@@ -264,7 +272,8 @@
                                f-ex-assign-var f-ex-if f-ex-select f-ex-return
                                f-ex-list-nil f-ex-list-open kar kadr kaddr kadddr))
           (and stable-under-simplificationp
-               '(:cases ((eq (kar s) :assign) (eq (kar s) :if) (eq (kar s) :select) (eq (kar s) :return))))))
+               '(:cases ((eq (kar s) :assign) (eq (kar s) :if) (eq (kar s) :select) (eq (kar s) :return)
+                         (eq (kar s) :cycle))))))
 
 (defthm fx-is-f-ex
   (implies (and (cf-stmt s) (integerp k) (< (acl2-count s) k))
