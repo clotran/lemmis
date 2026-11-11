@@ -93,8 +93,12 @@
 ;; formals, guard and
 ;; body ACL2 makes of each must equal what clotran's certified books make
 ;; (heapgn and vmfg are read in separate sessions: they clash on sb64p)
-(def disch-groups [["heapgn" '[hpg-add hpg-text-tag hpg-s64 hpg-n40 hpg-size-class hpg-class-len]]
-                   ["vmfg" '[bnd40p sk-step sk-more ex-apstep ex-aplook vmicg-sat]]])
+(def disch-groups [["heapgn" '[hpg-add hpg-text-tag hpg-s64 hpg-n40 hpg-size-class hpg-class-len] "gen-disch-loop"]
+                   ["vmfg" '[bnd40p sk-step sk-more ex-apstep ex-aplook vmicg-sat] "gen-disch-loop"]
+                   ;; gen-st-spush.lisp's copy of the hpg stobj (its recognizer, so every
+                   ;; field's place and type) and of hpg-spush with its guard's functions
+                   ["heapgn" '[hpgp hpg-lens hpg-ok hpg-spush h-err h-msp h-mtagi h-mrefi h-mtag-length h-mref-length
+                               update-h-err update-h-msp update-h-mtagi update-h-mrefi] "gen-st-spush"]])
 (defn defs-text [dir book fns]
   (let [fs (str/join " " fns)
         out (acl2! dir (str "(include-book \"" book "\")\n"
@@ -104,12 +108,12 @@
                             "(cw \"~%DEFS ~x0~%\" (dl '(" fs ") (w state)))\n"
                             "(good-bye)\n"))]
     (if (str/includes? out "\nDEFS ") (form-text (second (str/split out #"\nDEFS\s+"))) "<none>")))
-(doseq [[book fns] disch-groups]
+(doseq [[book fns ourbook] disch-groups]
   (let [theirs (defs-text (str clotran "/model") book fns)
-        ours (defs-text "." "gen-disch-loop" fns)]
+        ours (defs-text "." ourbook fns)]
     (if (= ours theirs)
-      (println "check-gen: gen-disch.lisp's" (count fns) "definitions agree with clotran's" book)
-      (do (swap! failures inc) (println "check-gen: gen-disch.lisp's definitions DIFFER from clotran's" book)
+      (println (str "check-gen: " ourbook ".lisp's") (count fns) "definitions agree with clotran's" book)
+      (do (swap! failures inc) (println (str "check-gen: " ourbook ".lisp's definitions DIFFER from clotran's") book)
           (println "  gen-disch: " ours) (println "  clotran:   " theirs)))))
 (if (zero? @failures)
   (println "check-gen: all agree")

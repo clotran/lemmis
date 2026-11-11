@@ -414,6 +414,23 @@ and intent(out) results, tail self-calls, extern fields/arrays (GC's
 `hp_*`), a SELECT in statement position, and stobj-reading functions
 answering a value. check-gen: `hpg-spush` (22 lines) agrees.
 
+**`hpg-spush-fortran-correct`** (gen-st-spush.lisp): clotran's hpgp stobj,
+hpg-lens, hpg-ok and hpg-spush copied in (check-gen compares the copies,
+the recognizer `hpgp` and the accessors used included, with clotran's
+heapgn). On `(hpgp hpg)`, `(hpg-ok hpg)` (the guard) and int64 tag, ref:
+the caller's `hs` an INOUT object `key`, whose components `comps` hold err,
+mtag, mref and msp, set to the stobj's by `hs-put` -- f-invoke of the
+generated subroutine, at every fuel past 100, answers no error, the
+caller's frame unchanged, and `hs` as `(hs-put comps (hpg-spush tag ref
+hpg))`: those four changed as ACL2 changes them, every other component
+untouched. **`hpg-spush-fortran-bounds`**: when mref is shorter than mtag
+(hpg-ok forbids it) and msp lies in mtag but past mref, the answer is
+fsem's `:bounds` (the write `hs%mref(i_4) = v_5`), the heap unchanged.
+Proved by symbolic execution (f-ev, f-ex, f-bind, f-invoke expanded with
+`:free` expand hints, nth disabled, component puts sorted by name), 4 s.
+It is a per-function proof on the printed procedure, not yet an instance
+of a general theorem about g-stmt.
+
 Two findings from acl2-fortran's `stmt`:
 
 - **A field update reads its value after the inner update.** For
@@ -485,7 +502,16 @@ Two findings from acl2-fortran's `stmt`:
    function later slices add.
 4. Stobjs: fields, arrays (the bounds error), subroutines, `mv` and the
    `intent(out)` results. fsyn has them already. Two lanes. Translation
-   started (gen-st.lisp, above; hpg-spush checked).
+   started (gen-st.lisp, above; hpg-spush checked and proved). Left:
+   (a) a source semantics `a-st` (stobj terms over a component alist,
+   g-sexpr/g-stmt's structure, :bounds for an index outside) and the
+   per-case lemmas (field/elem/size reads; field/elem updates; if;
+   lambda, with the two findings' side conditions), then a g-st-fn
+   theorem as g-fn-sem is for g-fn; (b) `call` of stobj subroutines,
+   `mv`/`mv-nth` and the intent(out) results, tail loops in subroutines
+   (acl2-fortran's `call-stmt`, `tuple`, `assign-formals`), and the
+   functions reading a stobj but answering a value; (c) more heapgn
+   functions in check-gen as (b) lands (externs need fsyn's `hp_*`).
 5. Values and the runtime shims (`type(value)`, `rt_*`): fsyn/fsem first need
    an abstract runtime. Two lanes.
 6. Switch acl2-fortran to print g-module's output, and fix or confirm the
