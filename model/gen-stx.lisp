@@ -65,7 +65,7 @@
   :hints (("Goal" :induct (sv e fr heap) :in-theory (enable sv fv))))
 
 ; ---- statements: assignments to a variable, a component or an element,
-; if, return, cycle, exit; sx is fx on the heap, (mv status frame heap)
+; if, select, return, cycle, exit; sx is fx on the heap, (mv status frame heap)
 
 (mutual-recursion
  (defun cs-stmt (s)
@@ -77,8 +77,12 @@
                      (:elem (cs-expr (kadddr (kadr s))))
                      (otherwise nil))))
      (:if (and (cs-expr (kadr s)) (cs-stmts (kaddr s)) (cs-stmts (kadddr s))))
+     (:select (and (cs-expr (kadr s)) (cs-arms (kaddr s)) (cs-stmts (kadddr s))))
      ((:return :cycle :exit) t)
      (otherwise nil)))
+ (defun cs-arms (arms)
+   (declare (xargs :guard t :measure (acl2-count arms)))
+   (if (atom arms) t (and (cs-stmts (kadr (car arms))) (cs-arms (cdr arms)))))
  (defun cs-stmts (ss)
    (declare (xargs :guard t :measure (acl2-count ss)))
    (if (atom ss) t (and (cs-stmt (car ss)) (cs-stmts (cdr ss))))))
@@ -120,6 +124,11 @@
                   ((not (booleanp c)) (mv (errst :type) frame heap))
                   (c (sx-list (kaddr x) frame heap))
                   (t (sx-list (kadddr x) frame heap)))))
+     (:select (mv-let (err k) (sv (kadr x) frame heap)
+                (cond (err (mv (errst err) frame heap))
+                      ((not (integerp k)) (mv (errst :type) frame heap))
+                      (t (let ((arm (lkp k (kaddr x))))
+                           (sx-list (if arm (kadr arm) (kadddr x)) frame heap))))))
      ((:cycle :exit :return) (mv (kar x) frame heap))
      (otherwise (mv (errst :syntax) frame heap))))
  (defun sx-list (ss frame heap)
@@ -134,8 +143,11 @@
   (declare (xargs :measure (acl2-count s) :verify-guards nil))
   (if (or (zp k) (atom s)) (list fr heap k)
     (if (eq flag :stmt)
-        (list (sx-ind :list (kaddr s) fr heap (1- k))
-              (sx-ind :list (kadddr s) fr heap (1- k)))
+        (mv-let (err v) (sv (kadr s) fr heap)
+          (declare (ignore err))
+          (list (sx-ind :list (kaddr s) fr heap (1- k))
+                (sx-ind :list (kadddr s) fr heap (1- k))
+                (sx-ind :list (kadr (lkp v (kaddr s))) fr heap (1- k))))
       (mv-let (st fr2 h2) (sx (car s) fr heap)
         (declare (ignore st))
         (list (sx-ind :stmt (car s) fr heap (1- k))
@@ -175,6 +187,13 @@
   (implies (consp s) (< (acl2-count (kadddr (kadr s))) (acl2-count s)))
   :rule-classes :linear)
 
+(defthm count-lkp-arm-cadr
+  (<= (acl2-count (cadr (lkp k arms))) (acl2-count arms))
+  :rule-classes :linear)
+
+(defthm cs-arms-lkp
+  (implies (cs-arms arms) (cs-stmts (cadr (lkp k arms)))))
+
 (defthm sx-is-f-ex-flag
   (implies (and (integerp k) (< (acl2-count s) k))
            (if (eq flag :stmt)
@@ -182,7 +201,7 @@
              (implies (cs-stmts s) (equal (f-ex-list s fr heap procs k) (sx-list s fr heap)))))
   :rule-classes nil
   :hints (("Goal" :induct (sx-ind flag s fr heap k) :do-not-induct t
-           :in-theory (disable f-ex f-ex-list f-ex-select f-ex-return))
+           :in-theory (disable f-ex f-ex-list f-ex-return))
           (and stable-under-simplificationp
                '(:expand ((sx s fr heap) (sx-list s fr heap) (cs-stmt s) (cs-stmts s))))))
 
@@ -195,3 +214,33 @@
   (implies (and (cs-stmts ss) (integerp k) (< (acl2-count ss) k))
            (equal (f-ex-list ss fr heap procs k) (sx-list ss fr heap)))
   :hints (("Goal" :use (:instance sx-is-f-ex-flag (flag :list) (s ss)))))
+
+; ---- stobj-free statements: sx is fx, the heap unchanged
+
+(defthm cf-expr-cs (implies (cf-expr e) (cs-expr e)))
+
+(defun cfcs-ind (flag x)
+  (declare (xargs :measure (acl2-count x)))
+  (cond ((atom x) nil)
+        ((eq flag :stmt) (list (cfcs-ind :list (kaddr x)) (cfcs-ind :list (kadddr x)) (cfcs-ind :arms (kaddr x))))
+        ((eq flag :arms) (list (cfcs-ind :list (kadr (car x))) (cfcs-ind :arms (cdr x))))
+        (t (list (cfcs-ind :stmt (car x)) (cfcs-ind :list (cdr x))))))
+
+(defthm cf-cs-flag
+  (case flag
+    (:stmt (implies (cf-stmt x) (cs-stmt x)))
+    (:arms (implies (cf-arms x) (cs-arms x)))
+    (otherwise (implies (cf-stmts x) (cs-stmts x))))
+  :rule-classes nil
+  :hints (("Goal" :induct (cfcs-ind flag x)
+           :expand ((cf-stmt x) (cs-stmt x) (cf-arms x) (cs-arms x) (cf-stmts x) (cs-stmts x)))))
+
+(defthm cf-stmts-cs
+  (implies (cf-stmts ss) (cs-stmts ss))
+  :hints (("Goal" :use (:instance cf-cs-flag (flag :list) (x ss)))))
+
+(defthm sx-list-is-fx-list
+  (implies (cf-stmts ss) (equal (sx-list ss fr heap) (+h (fx-list ss fr) heap)))
+  :hints (("Goal" :in-theory (disable sx-list-is-f-ex-list fx-list-is-f-ex-list)
+           :use ((:instance sx-list-is-f-ex-list (k (1+ (acl2-count ss))) (procs nil))
+                 (:instance fx-list-is-f-ex-list (k (1+ (acl2-count ss))) (procs nil))))))
