@@ -555,17 +555,48 @@ Two findings from acl2-fortran's `stmt`:
    `sx`/`sx-list` (cs-stmt: :assign to :var/:comp/:elem, :if, :return,
    :cycle, :exit) with **`sx-is-f-ex`**/`sx-list-is-f-ex-list`, by the
    flag induction of fx-is-f-ex and an opener `f-ex-assign-obj`.
-   sv-is-f-ev takes 254 s in the full theory (it expands all of f-ev);
-   split it per case if it grows. Next, in order: (1) per-case lemmas
-   g-sexpr vs a-sx on sv: a field, size, element read (the element's
-   :bounds both sides), primitives, if, lambda (em agreeing with env, as
-   ge-sem's hypotheses do); (2) g-stmt vs a-st on sx-list for :set (side
-   condition: v reads no component the inner update writes -- finding 1),
-   :seti (bounds), if, lambda (side condition: the update terms read no
-   var the lambda rebinds -- finding 2); (3) :do/:call/the mv lambda need
-   sx cases for :do and :call (f-invoke on a subroutine: an oracle like
-   f-call-val, now with heap); (4) a g-st-fn theorem as g-fn-sem, and
-   hpg-spush-fortran-correct re-derived as its instance.
+   sv-is-f-ev takes ~130-250 s in the full theory (it expands all of f-ev);
+   split it per case if it grows. sx and cs-stmt now take `:select` too,
+   and `sx-list-is-fx-list`: on cf statements sx-list is fx-list, the heap
+   unchanged (by both bridges at fuel past the size). a-sx (gen-stsem) now
+   takes `if` (lazy), a lambda (arguments by a-sx-list, then the body), and
+   a stobj var (value nil, as a-st-args); `implies` and `the-check` over
+   stobj reads still go to a-prim (strict), so g-sexpr's lazy `implies` is
+   not yet covered.
+   **gen-stexp.lisp** (step (1), part): sx's analogues of gen-cf's
+   frame facts (`sx-list-keeps`, `sx-list-agree`, `sx-list-keeps-obj`: no
+   assignment changes an :obj binding; `decl-ok-after-sx`,
+   `em-ok-after-sx`, `sx-list-append`), `sv-names`/`sv-agree`; the
+   invariants `obj-is o s fr heap` (o names in the frame an object whose
+   heap entry is S) and `st-ok st o s` (every stobj role names o; fields
+   int64, array lengths int64), and **`gs-sem`** (g-sexpr run by sx-list
+   answers :normal, the heap unchanged, sv of the code is a-sx's value, of
+   g-sexpr's type; call-free, mv-nth undefined in defs, mv-nth and mv not
+   roles in st). Per-case lemmas proved: `gs-free` (stobj-free: by
+   ge-sem-thm, g-expr-cf, sx-list-is-fx-list, sv-is-fv), `gs-mvnth`
+   (a-sx errs), `gs-field`, `gs-size`, `gs-elem`, **`gs-elem-bounds`**
+   (index answering, a-sx's :bounds is sv's :bounds), `gs-prim` (from
+   `gsa-sem` of the arguments), `gsa-nil`, `gsa-cons` (98 s). The glue
+   cases take g-sexpr's names facts as hypotheses (`sn-ok`/`sna-ok`, as
+   gen-names' gs-ok: statements assign only new temporaries, the code
+   reads em's names, its temporaries and fnames -- the objects must be in
+   fnames); their own induction is still to do. For if: `sif-glue`,
+   `g-sexpr-if`, `g-sexpr-if-out`, `a-sx-if` proved; `gsx-if` itself not
+   yet (see the note at the end of gen-stexp.lisp). :bounds propagation
+   past the element read is not stated (a-sx's strict `implies` would
+   answer :bounds where the code does not).
+   Next, in order: (1') gsx-if; lambda (g-svals: a gsb-sem as gen-proof's
+   gb-sem, em-ok of (append binds em) against (pairlis$ vars vals));
+   sn-ok/sna-ok by induction over g-sexpr (gen-names' gs-ok-thm pattern);
+   then the gs-sem theorem by an induction over g-sexpr dispatching to the
+   cases (the-check, implies, :fcall excluded or added); (2) g-stmt vs
+   a-st on sx-list for :set (side condition: v reads no component the
+   inner update writes -- finding 1), :seti (bounds), if, lambda (side
+   condition: the update terms read no var the lambda rebinds -- finding
+   2); (3) :do/:call/the mv lambda need sx cases for :do and :call
+   (f-invoke on a subroutine: an oracle like f-call-val, now with heap);
+   (4) a g-st-fn theorem as g-fn-sem, and hpg-spush-fortran-correct
+   re-derived as its instance.
 5. Values and the runtime shims (`type(value)`, `rt_*`): fsyn/fsem first need
    an abstract runtime. Two lanes.
 6. Switch acl2-fortran to print g-module's output, and fix or confirm the
