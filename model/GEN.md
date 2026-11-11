@@ -503,9 +503,10 @@ Two findings from acl2-fortran's `stmt`:
 4. Stobjs: fields, arrays (the bounds error), subroutines, `mv` and the
    `intent(out)` results. fsyn has them already. Two lanes. Translation
    started (gen-st.lisp, above; hpg-spush checked and proved). Left:
-   (a) a source semantics `a-st` (stobj terms over a component alist,
-   g-sexpr/g-stmt's structure, :bounds for an index outside) and the
-   per-case lemmas (field/elem/size reads; field/elem updates; if;
+   (a) [semantics done: gen-stsem.lisp's `a-sx`/`a-st`, stobj terms
+   over a component alist (fsem's object), ACL2's order of evaluation,
+   :bounds for an index outside; its tests run fsem on hpg_spush against
+   a-st, pushed, full, :bounds and -2^63] the per-case lemmas (field/elem/size reads; field/elem updates; if;
    lambda, with the two findings' side conditions), then a g-st-fn
    theorem as g-fn-sem is for g-fn; (b) `call` of stobj subroutines,
    `mv`/`mv-nth` and the intent(out) results, tail loops in subroutines
