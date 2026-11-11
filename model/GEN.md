@@ -322,6 +322,10 @@ is how `fx-is-f-ex` went through after two monolithic attempts ran out.
   **`hpg-size-class-fortran-correct`**: on int64 n, c, p and fuel
   `> 9 + 150 * (2 + (acl2-count proc))`, f-invoke of the generated
   procedure answers `(mv nil (hpg-size-class n c p) heap)`.
+- **gen-callarg.lisp, proved (calls, first piece):** `f-bind-g-dummies-args`
+  and `f-invoke-args`: f-invoke of a g-fn procedure on argument
+  expressions answering int64s `ks` (`args-at`) is f-invoke on
+  `(g-lits ks)`, from any caller, at fuel > 5 + (len args).
 
 ## What remains, in order (estimated in lanes)
 
@@ -331,15 +335,45 @@ is how `fx-is-f-ex` went through after two monolithic attempts ran out.
    gen-call.lisp's `f-ev-agree`: for expressions of cf-expr's forms plus
    `:fcall`, two frames agreeing on the names read (`ce-names`) give the
    same f-ev at every fuel, by `ag-ok-thm` over f-ev, f-bind and f-invoke;
-   left: g-expr's run with fuel and calls, f-bind of argument expressions
-   (g-fn-sem binds literals), the cross-function induction on a-ev's fuel,
-   and the fuel bound). Tail-recursive loops: done (`g-fn-sem-loop`,
+   f-bind of argument expressions -- proved, gen-callarg.lisp's
+   `f-invoke-args`: a g-fn procedure (VALUE dummies only) invoked on
+   argument expressions that answer int64s `ks` at the fuels f-bind
+   evaluates them at (`args-at`) answers what it answers on `(g-lits ks)`,
+   from any caller). Tail-recursive loops: done (`g-fn-sem-loop`,
    above), and `hpg-size-class` instantiated and discharged
-   (gen-disch-loop.lisp). Left: calls (`hpg-class-len` calls hpg-n40):
-   g-expr's run with :fcall -- fv/fx have no :fcall case, so either fv
-   gets one (an oracle for the callee's value, related to f-ev by
-   gen-call's f-ev-agree and the callee's g-fn-sem) or ge-sem is redone
-   on f-ev with fuel -- and the cross-function induction. One to two lanes.
+   (gen-disch-loop.lisp). Left: calls (`hpg-class-len` calls hpg-n40).
+   **Approach chosen: an oracle case in fv**, not ge-sem redone on f-ev.
+   fv and fx are free of fuel, heap and procs, and every ge-sem/gs-sem
+   lemma (gen-proof, gen-proof2, gen-ret, gen-tail, gen-loop*) reasons
+   through them; fuel meets them only in fv-is-f-ev and fx-is-f-ex.
+   Redoing ge-sem on f-ev would thread fuel, heap and procs, and a fuel
+   bound, through all of them; the oracle adds one fv case and one
+   hypothesis, and fuel enters only at fv-is-f-ev's call case. Steps:
+   (a) gen-cf: an unconstrained `(f-call-val name vals)` (encapsulate,
+   returns (mv err v)); fv's `:fcall` case evaluates the arguments by fv
+   and answers `(f-call-val name vals)`; fx is unchanged (its :assign
+   reads fv). The existing lemmas assume cf-expr, which has no :fcall, so
+   they recertify. No arity changes.
+   (b) fv-is-f-ev for ce-ok expressions: under "the oracle is what the
+   procedures answer" (for each name and int64 vals with f-call-val
+   answering (mv nil v), f-invoke of `(find-proc name procs)` on
+   `(g-lits vals)` answers `(mv nil v heap)` at every fuel > B), f-ev at
+   fuel > size * (B + c) is fv: the call case by f-invoke-args (args-at
+   from the induction on the arguments). Then fx-is-f-ex likewise.
+   (c) ge-sem: `no-calls` replaced by "calls only functions other than
+   fn", plus "the oracle is a-ev's": f-call-val of `(g-sym f)` on vals is
+   a-ev of f's body on vals whenever that answers without error at fuel
+   below n (needs a-ev fuel monotonicity: no error at n, same answer at
+   every n' >= n). g-expr's :fcall case is then fv's.
+   (d) g-fn-sem-loop with tail-only allowing non-self calls in tests and
+   arguments.
+   (e) hpg-class-len: functionally instantiate f-call-val with
+   `(lambda (name vals) (if (equal name "hpg_n40") (mv nil (hpg-n40 (car vals))) (mv :unknown nil)))`
+   (no constraints, so no obligations); the oracle hypotheses from
+   hpg-n40-a-ev and hpg-n40-fortran-correct (the call graph here is a
+   DAG, so the cross-function induction is just this order); the a-ev
+   induction as hsc-step (at most 64 iterations; `2 * (hpg-n40 p)` is at
+   most 2^41, int64). One lane.
 3. Per-function discharge of the hypotheses: done for 11 of the 12
    (gen-disch.lisp's 10, gen-disch-loop.lisp's hpg-size-class;
    `<fn>-fortran-correct`, no hypothesis past int64 arguments and the
