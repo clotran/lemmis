@@ -326,6 +326,24 @@ is how `fx-is-f-ex` went through after two monolithic attempts ran out.
   and `f-invoke-args`: f-invoke of a g-fn procedure on argument
   expressions answering int64s `ks` (`args-at`) is f-invoke on
   `(g-lits ks)`, from any caller, at fuel > 5 + (len args).
+- **gen-cf.lisp, changed (calls (a)):** an unconstrained oracle
+  `(f-call-val name vals)` (encapsulate, answers `(mv err v)`); fv is now
+  mutually recursive with `fv-list`, and its `:fcall` case answers
+  f-call-val on the argument values (an error if either errs). `ev-names`
+  likewise with `ev-names-list` (an fcall reads its arguments' names), so
+  `fv-agree` holds for every expression (by its own flag induction).
+  cf-expr has no `:fcall`, so everything above recertifies; gen-names
+  only gained `ev-names-list-is-evs-names`.
+- **gen-callev.lisp, proved (calls (b)):** `p-orc procs heap b` (defun-sk,
+  "the oracle is what the procedures answer"): for any `(:fcall name as)`
+  whose arguments answer `ks` at the fuels f-bind evaluates them at
+  (`evs-at`, args-at without the int64 check), if f-call-val answers no
+  error on ks then f-ev of the call at any fuel > b answers its value.
+  Under p-orc, **`fv-is-f-ev-c`**: on ce-ok expressions, f-ev at fuel
+  `> (3 + b) * (acl2-count e)` is fv whenever fv answers no error; and
+  **`fx-is-f-ex-c`** / **`fx-list-is-f-ex-list-c`**: on `cc-stmt(s)`
+  (cf-stmt with ce-ok expressions), f-ex at the same bound is fx, heap
+  unchanged, whenever fx's status is not an error.
 
 ## What remains, in order (estimated in lanes)
 
@@ -349,12 +367,14 @@ is how `fx-is-f-ex` went through after two monolithic attempts ran out.
    Redoing ge-sem on f-ev would thread fuel, heap and procs, and a fuel
    bound, through all of them; the oracle adds one fv case and one
    hypothesis, and fuel enters only at fv-is-f-ev's call case. Steps:
-   (a) gen-cf: an unconstrained `(f-call-val name vals)` (encapsulate,
+   (a) [done] gen-cf: an unconstrained `(f-call-val name vals)` (encapsulate,
    returns (mv err v)); fv's `:fcall` case evaluates the arguments by fv
    and answers `(f-call-val name vals)`; fx is unchanged (its :assign
    reads fv). The existing lemmas assume cf-expr, which has no :fcall, so
    they recertify. No arity changes.
-   (b) fv-is-f-ev for ce-ok expressions: under "the oracle is what the
+   (b) [done, gen-callev; the hypothesis is p-orc, stated on f-ev of the
+   call itself, so f-invoke-args is needed only when discharging it]
+   fv-is-f-ev for ce-ok expressions: under "the oracle is what the
    procedures answer" (for each name and int64 vals with f-call-val
    answering (mv nil v), f-invoke of `(find-proc name procs)` on
    `(g-lits vals)` answers `(mv nil v heap)` at every fuel > B), f-ev at
