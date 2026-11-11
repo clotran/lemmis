@@ -91,8 +91,8 @@
 (defmacro ge (k) `(mv-nth ,k (g-expr x em cnt locs sigs fnames)))
 
 (defthm ge-sem-use
-  (implies (and (ge-sem x em cnt locs sigs fnames env defs n fr)
-                (not (ge 0)) (not (car (a-ev x env defs n))) (no-calls :term x sigs) (em-ok em env fr)
+  (implies (and (ge-sem x em cnt locs sigs fnames env defs n fr cs)
+                (not (ge 0)) (not (car (a-ev x env defs n))) (no-calls :term x sigs cs) (a-orc defs sigs cs) (em-ok em env fr)
                 (decl-ok (ge 5) fr) (no-prim-defs defs))
            (and (equal (car (fx-list (ge 1) fr)) :normal)
                 (not (car (fv (ge 2) (mv-nth 1 (fx-list (ge 1) fr)))))
@@ -109,11 +109,11 @@
 
 (defthm ge-if
   (implies (and (equal (gkind x) :if) (equal (car x) 'if)
-                (ge-sem (kadr x) em cnt locs sigs fnames env defs (1- n) fr)
-                (ge-sem (kaddr x) em (i1 4) (i1 5) sigs fnames env defs (1- n) (mv-nth 1 (fx-list (i1 1) fr)))
-                (ge-sem (kadddr x) em (i2 4) (i2 5) sigs fnames env defs (1- n) (mv-nth 1 (fx-list (i1 1) fr))))
-           (ge-sem x em cnt locs sigs fnames env defs n fr))
-  :hints (("Goal" :do-not-induct t :expand ((ge-sem x em cnt locs sigs fnames env defs n fr))
+                (ge-sem (kadr x) em cnt locs sigs fnames env defs (1- n) fr cs)
+                (ge-sem (kaddr x) em (i1 4) (i1 5) sigs fnames env defs (1- n) (mv-nth 1 (fx-list (i1 1) fr)) cs)
+                (ge-sem (kadddr x) em (i2 4) (i2 5) sigs fnames env defs (1- n) (mv-nth 1 (fx-list (i1 1) fr)) cs))
+           (ge-sem x em cnt locs sigs fnames env defs n fr cs))
+  :hints (("Goal" :do-not-induct t :expand ((ge-sem x em cnt locs sigs fnames env defs n fr cs))
            :in-theory (disable g-expr g-args g-binds no-calls a-ev fx fv fx-list decl-ok-subset gkind g-tmp nfix
                                if-glue fx-list-append g-if-out scalar-ok)
            :use ((:instance if-glue (sc (i1 1)) (cc (i1 2)) (sa (i2 1)) (ca (i2 2)) (sb (i3 1)) (cb (i3 2))
@@ -132,11 +132,11 @@
 ; (implies a b) is (if a b t); a-ev runs both, the code only what it needs
 (defthm ge-implies
   (implies (and (equal (gkind x) :if) (equal (car x) 'implies)
-                (ge-sem (kadr x) em cnt locs sigs fnames env defs (- n 2) fr)
-                (ge-sem (kaddr x) em (i1 4) (i1 5) sigs fnames env defs (- n 3) (mv-nth 1 (fx-list (i1 1) fr))))
-           (ge-sem x em cnt locs sigs fnames env defs n fr))
+                (ge-sem (kadr x) em cnt locs sigs fnames env defs (- n 2) fr cs)
+                (ge-sem (kaddr x) em (i1 4) (i1 5) sigs fnames env defs (- n 3) (mv-nth 1 (fx-list (i1 1) fr)) cs))
+           (ge-sem x em cnt locs sigs fnames env defs n fr cs))
   :hints (("Goal" :do-not-induct t :cases ((booleanp (mv-nth 1 (a-ev (kaddr x) env defs (- n 3)))))
-           :expand ((ge-sem x em cnt locs sigs fnames env defs n fr))
+           :expand ((ge-sem x em cnt locs sigs fnames env defs n fr cs))
            :in-theory (disable g-expr g-args g-binds no-calls a-ev fx fv fx-list decl-ok-subset gkind g-tmp nfix
                                if-glue fx-list-append g-if-out scalar-ok)
            :use ((:instance if-glue (sc (i1 1)) (cc (i1 2)) (sa (i2 1)) (ca (i2 2)) (sb nil) (cb '(:true))
@@ -152,8 +152,8 @@
 (defmacro gbo (k) `(mv-nth ,k (g-binds vars xs em cnt locs sigs fnames)))
 
 (defthm gb-sem-use
-  (implies (and (gb-sem vars xs em cnt locs sigs fnames env defs n fr)
-                (not (gbo 0)) (not (car (a-ev-list xs env defs n))) (no-calls :list xs sigs) (em-ok em env fr)
+  (implies (and (gb-sem vars xs em cnt locs sigs fnames env defs n fr cs)
+                (not (gbo 0)) (not (car (a-ev-list xs env defs n))) (no-calls :list xs sigs cs) (a-orc defs sigs cs) (em-ok em env fr)
                 (decl-ok (gbo 4) fr) (no-prim-defs defs) (symbol-listp vars) (no-duplicatesp-equal vars)
                 (equal (len vars) (len xs)))
            (and (equal (car (fx-list (gbo 1) fr)) :normal)
@@ -196,9 +196,9 @@
 
 (defthm ge-binds-self
   (implies (and (consp vars) (consp xs) (eq (car vars) (car xs))
-                (gb-sem (cdr vars) (cdr xs) em cnt locs sigs fnames env defs (1- n) fr))
-           (gb-sem vars xs em cnt locs sigs fnames env defs n fr))
-  :hints (("Goal" :do-not-induct t :expand ((gb-sem vars xs em cnt locs sigs fnames env defs n fr)
+                (gb-sem (cdr vars) (cdr xs) em cnt locs sigs fnames env defs (1- n) fr cs))
+           (gb-sem vars xs em cnt locs sigs fnames env defs n fr cs))
+  :hints (("Goal" :do-not-induct t :expand ((gb-sem vars xs em cnt locs sigs fnames env defs n fr cs)
                                             (g-binds vars xs em cnt locs sigs fnames))
            :in-theory (disable g-expr g-binds g-args a-ev fx-list fv no-calls em-ok decl-ok member-subset-not)
            :use ((:instance member-subset-not (k (car vars)) (b (cdr vars))
@@ -253,11 +253,11 @@
 
 (defthm ge-binds-cons
   (implies (and (consp vars) (consp xs) (not (eq (car vars) (car xs)))
-                (ge-sem (car xs) em cnt locs sigs fnames env defs (1- n) fr)
+                (ge-sem (car xs) em cnt locs sigs fnames env defs (1- n) fr cs)
                 (gb-sem (cdr vars) (cdr xs) em (gbf 2) (gbf 3) sigs fnames env defs (1- n)
-                        (fr-after (append (gb1 1) (list (list :assign (list :var (gbf 1)) (gb1 2)))) fr)))
-           (gb-sem vars xs em cnt locs sigs fnames env defs n fr))
-  :hints (("Goal" :do-not-induct t :expand ((gb-sem vars xs em cnt locs sigs fnames env defs n fr)
+                        (fr-after (append (gb1 1) (list (list :assign (list :var (gbf 1)) (gb1 2)))) fr) cs))
+           (gb-sem vars xs em cnt locs sigs fnames env defs n fr cs))
+  :hints (("Goal" :do-not-induct t :expand ((gb-sem vars xs em cnt locs sigs fnames env defs n fr cs)
                                             (g-binds vars xs em cnt locs sigs fnames))
            :in-theory (disable g-expr g-binds g-args a-ev fx-list fv no-calls em-ok decl-ok-subset fx-list-append
                                g-tmp nfix scalar-ok dty)
@@ -290,8 +290,8 @@
 
 (defthm no-calls-lambda
   (implies (and (consp x) (consp (car x)))
-           (equal (no-calls :term x sigs) (and (no-calls :term (kaddr (car x)) sigs) (no-calls :list (cdr x) sigs))))
-  :hints (("Goal" :expand ((no-calls :term x sigs)))))
+           (equal (no-calls :term x sigs cs) (and (no-calls :term (kaddr (car x)) sigs cs) (no-calls :list (cdr x) sigs cs))))
+  :hints (("Goal" :expand ((no-calls :term x sigs cs)))))
 
 (defthm tlf-true-listp (implies (true-listp x) (equal (true-list-fix x) x)))
 
@@ -299,25 +299,25 @@
 
 (defthm ge-lambda
   (implies (and (equal (gkind x) :lambda)
-                (gb-sem (kadr (car x)) (cdr x) em cnt locs sigs fnames env defs (1- n) fr)
+                (gb-sem (kadr (car x)) (cdr x) em cnt locs sigs fnames env defs (1- n) fr cs)
                 (ge-sem (kaddr (car x)) (append (gl 2) em) (gl 3) (gl 4) sigs fnames
                         (pairlis$ (true-list-fix (kadr (car x))) (a-vals (cdr x) env defs (1- n)))
-                        defs (1- n) (fr-after (gl 1) fr)))
-           (ge-sem x em cnt locs sigs fnames env defs n fr))
-  :hints (("Goal" :do-not-induct t :expand ((ge-sem x em cnt locs sigs fnames env defs n fr))
+                        defs (1- n) (fr-after (gl 1) fr) cs))
+           (ge-sem x em cnt locs sigs fnames env defs n fr cs))
+  :hints (("Goal" :do-not-induct t :expand ((ge-sem x em cnt locs sigs fnames env defs n fr cs))
            :in-theory (disable g-expr g-binds g-args a-ev a-ev-list fx-list fv no-calls em-ok gkind scalar-ok)
            :use ((:instance decl-ok-expr-locs (x (kaddr (car x))) (em (append (gl 2) em)) (cnt (gl 3)) (locs (gl 4)))))))
 
 ; ---- the induction: it only dispatches to the cases
 
 (defthm ge-atom-any
-  (implies (atom x) (ge-sem x em cnt locs sigs fnames env defs n fr))
+  (implies (atom x) (ge-sem x em cnt locs sigs fnames env defs n fr cs))
   :hints (("Goal" :cases ((symbolp x)) :in-theory (disable ge-sem))))
 
 (defthm ge-sem-thm
-  (if (eq flag :args) (ga-sem x em cnt locs sigs fnames env defs n fr)
-    (if (eq flag :binds) (gb-sem vars x em cnt locs sigs fnames env defs n fr)
-      (ge-sem x em cnt locs sigs fnames env defs n fr)))
+  (if (eq flag :args) (ga-sem x em cnt locs sigs fnames env defs n fr cs)
+    (if (eq flag :binds) (gb-sem vars x em cnt locs sigs fnames env defs n fr cs)
+      (ge-sem x em cnt locs sigs fnames env defs n fr cs)))
   :rule-classes nil
   :hints (("Goal" :induct (g-ind flag x vars em cnt locs sigs fnames env defs n fr) :do-not-induct t
            :in-theory (disable ge-sem ga-sem gb-sem g-expr g-args g-binds g-big kadr kaddr kadddr

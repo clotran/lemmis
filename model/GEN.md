@@ -344,6 +344,21 @@ is how `fx-is-f-ex` went through after two monolithic attempts ran out.
   **`fx-is-f-ex-c`** / **`fx-list-is-f-ex-list-c`**: on `cc-stmt(s)`
   (cf-stmt with ce-ok expressions), f-ex at the same bound is fx, heap
   unchanged, whenever fx's status is not an error.
+- **gen-proof.lisp, gen-proof2.lisp, changed (calls (c)):** `no-calls`
+  takes `cs`, the translated functions the source may call: a call of a
+  function with a signature is allowed when it is in `cs` (`nil`: the old
+  call-free source; every book above gen-proof2 passes `nil`). ge-sem,
+  ga-sem and gb-sem take `cs` and the hypothesis **`a-orc defs sigs cs`**
+  (defun-sk, "the oracle is a-ev's"): for f in cs and int64 `vals`,
+  wherever `a-call` (a-ev's answer on a call of f: its body over the
+  formals, or a-prim) answers without an error at some fuel, f-call-val of
+  `(g-sym f nil)` on vals answers that value, and it is scalar-ok of f's
+  signature type. No fuel monotonicity is needed: the oracle is fixed per
+  value, and a-orc quantifies over every fuel. New cases: `ge-fcall`
+  (g-expr's `:fcall` is fv's oracle case on the arguments' values,
+  `fvs-ok-fv-list`, `fvs-ok-int64`) and `ge-prim-call`, combined as
+  `ge-call`; `a-orc-nil` makes the hypothesis vanish for `cs = nil`.
+  `int64-listp` moved here from gen-fn.
 
 ## What remains, in order (estimated in lanes)
 
@@ -380,7 +395,7 @@ is how `fx-is-f-ex` went through after two monolithic attempts ran out.
    `(g-lits vals)` answers `(mv nil v heap)` at every fuel > B), f-ev at
    fuel > size * (B + c) is fv: the call case by f-invoke-args (args-at
    from the induction on the arguments). Then fx-is-f-ex likewise.
-   (c) ge-sem: `no-calls` replaced by "calls only functions other than
+   (c) [done: `no-calls ... cs` and `a-orc`, see above] ge-sem: `no-calls` replaced by "calls only functions other than
    fn", plus "the oracle is a-ev's": f-call-val of `(g-sym f)` on vals is
    a-ev of f's body on vals whenever that answers without error at fuel
    below n (needs a-ev fuel monotonicity: no error at n, same answer at

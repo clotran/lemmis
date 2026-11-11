@@ -12,17 +12,17 @@
   (case flag
     (:args (mv-let (e s cs ts cnt2 locs2) (g-args x em cnt locs sigs fnames)
              (declare (ignore ts cnt2 locs2))
-             (implies (and (not e) (no-calls :list x sigs)) (and (cf-stmts s) (cf-exprs cs)))))
+             (implies (and (not e) (no-calls :list x sigs nil)) (and (cf-stmts s) (cf-exprs cs)))))
     (:binds (mv-let (e s binds cnt2 locs2) (g-binds vars x em cnt locs sigs fnames)
               (declare (ignore binds cnt2 locs2))
-              (implies (and (not e) (no-calls :list x sigs)) (cf-stmts s))))
+              (implies (and (not e) (no-calls :list x sigs nil)) (cf-stmts s))))
     (otherwise (mv-let (e s c ty cnt2 locs2) (g-expr x em cnt locs sigs fnames)
                  (declare (ignore ty cnt2 locs2))
-                 (implies (and (not e) (no-calls :term x sigs)) (and (cf-stmts s) (cf-expr c)))))))
+                 (implies (and (not e) (no-calls :term x sigs nil)) (and (cf-stmts s) (cf-expr c)))))))
 
 (defthm gc-use
   (implies (and (gc-ok :expr x vars em cnt locs sigs fnames)
-                (not (mv-nth 0 (g-expr x em cnt locs sigs fnames))) (no-calls :term x sigs))
+                (not (mv-nth 0 (g-expr x em cnt locs sigs fnames))) (no-calls :term x sigs nil))
            (and (cf-stmts (mv-nth 1 (g-expr x em cnt locs sigs fnames)))
                 (cf-expr (mv-nth 2 (g-expr x em cnt locs sigs fnames)))))
   :hints (("Goal" :in-theory (disable g-expr g-args g-binds no-calls cf-stmts cf-expr cf-exprs))))
@@ -33,14 +33,14 @@
 
 (defthm gca-use
   (implies (and (gc-ok :args x vars em cnt locs sigs fnames)
-                (not (mv-nth 0 (g-args x em cnt locs sigs fnames))) (no-calls :list x sigs))
+                (not (mv-nth 0 (g-args x em cnt locs sigs fnames))) (no-calls :list x sigs nil))
            (and (cf-stmts (mv-nth 1 (g-args x em cnt locs sigs fnames)))
                 (cf-exprs (mv-nth 2 (g-args x em cnt locs sigs fnames)))))
   :hints (("Goal" :in-theory (disable g-expr g-args g-binds no-calls cf-stmts cf-expr cf-exprs))))
 
 (defthm gcb-use
   (implies (and (gc-ok :binds x vars em cnt locs sigs fnames)
-                (not (mv-nth 0 (g-binds vars x em cnt locs sigs fnames))) (no-calls :list x sigs))
+                (not (mv-nth 0 (g-binds vars x em cnt locs sigs fnames))) (no-calls :list x sigs nil))
            (cf-stmts (mv-nth 1 (g-binds vars x em cnt locs sigs fnames))))
   :hints (("Goal" :in-theory (disable g-expr g-args g-binds no-calls cf-stmts cf-expr cf-exprs))))
 
@@ -63,9 +63,9 @@
        (implies (and (cf-exprs cs) (consp (cdr cs))) (cf-expr (cadr cs))))
   :hints (("Goal" :expand ((cf-exprs cs) (cf-exprs (cdr cs))))))
 
-(defthm no-calls-list-atom (implies (atom x) (no-calls :list x sigs)))
+(defthm no-calls-list-atom (implies (atom x) (no-calls :list x sigs nil)))
 
-(defthm no-calls-list-len0 (implies (equal (len x) 0) (no-calls :list x sigs)))
+(defthm no-calls-list-len0 (implies (equal (len x) 0) (no-calls :list x sigs nil)))
 
 (defthm gc-base
   (implies (member-eq (gkind x) '(:sym :atom :quote)) (gc-ok :expr x vars em cnt locs sigs fnames))
@@ -84,13 +84,13 @@
   (implies (and (equal (gkind x) :big)
                 (gc-ok :expr (if (g-big (kadr x)) (kaddr x) (kadr x)) nil em cnt locs sigs fnames))
            (gc-ok :expr x vars em cnt locs sigs fnames))
-  :hints (("Goal" :do-not-induct t :cases ((g-big (kadr x))) :expand ((gc-ok :expr x vars em cnt locs sigs fnames) (g-expr x em cnt locs sigs fnames) (no-calls :term x sigs))
+  :hints (("Goal" :do-not-induct t :cases ((g-big (kadr x))) :expand ((gc-ok :expr x vars em cnt locs sigs fnames) (g-expr x em cnt locs sigs fnames) (no-calls :term x sigs nil))
            :in-theory (disable gc-base g-expr g-args g-binds no-calls))))
 
 (defthm gc-the-check
   (implies (and (consp x) (eq (car x) 'the-check) (gc-ok :expr (kadddr x) nil em cnt locs sigs fnames))
            (gc-ok :expr x vars em cnt locs sigs fnames))
-  :hints (("Goal" :do-not-induct t :expand ((gc-ok :expr x vars em cnt locs sigs fnames) (g-expr x em cnt locs sigs fnames) (no-calls :term x sigs))
+  :hints (("Goal" :do-not-induct t :expand ((gc-ok :expr x vars em cnt locs sigs fnames) (g-expr x em cnt locs sigs fnames) (no-calls :term x sigs nil))
            :in-theory (disable gc-base g-expr g-args g-binds no-calls))))
 
 (defthm gc-call
@@ -106,7 +106,7 @@
                 (gc-ok :binds (cdr x) (kadr (car x)) em cnt locs sigs fnames)
                 (gc-ok :expr (kaddr (car x)) nil (append (cb 2) em) (cb 3) (cb 4) sigs fnames))
            (gc-ok :expr x vars em cnt locs sigs fnames))
-  :hints (("Goal" :do-not-induct t :expand ((gc-ok :expr x vars em cnt locs sigs fnames) (g-expr x em cnt locs sigs fnames) (no-calls :term x sigs))
+  :hints (("Goal" :do-not-induct t :expand ((gc-ok :expr x vars em cnt locs sigs fnames) (g-expr x em cnt locs sigs fnames) (no-calls :term x sigs nil))
            :in-theory (disable gc-base g-expr g-args g-binds no-calls))))
 
 (defthm gc-args-nil
@@ -155,7 +155,7 @@
            :in-theory (disable gc-ok g-expr g-args g-binds g-big kadr kaddr kadddr g-fresh fr-after a-vals))))
 
 (defthm g-expr-cf
-  (implies (and (not (mv-nth 0 (g-expr x em cnt locs sigs fnames))) (no-calls :term x sigs))
+  (implies (and (not (mv-nth 0 (g-expr x em cnt locs sigs fnames))) (no-calls :term x sigs nil))
            (and (cf-stmts (mv-nth 1 (g-expr x em cnt locs sigs fnames)))
                 (cf-expr (mv-nth 2 (g-expr x em cnt locs sigs fnames)))))
   :hints (("Goal" :use (:instance gc-ok-thm (flag :expr) (vars nil)))))

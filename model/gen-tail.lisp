@@ -18,9 +18,9 @@
 (defun tail-only (x self sigs)
   (declare (xargs :measure (acl2-count x)))
   (cond ((and (consp x) (eq (car x) 'if) (true-listp x) (= (len x) 4))
-         (and (no-calls :term (cadr x) sigs) (tail-only (caddr x) self sigs) (tail-only (cadddr x) self sigs)))
-        ((and (consp x) (eq (car x) self)) (no-calls :list (cdr x) sigs))
-        (t (no-calls :term x sigs))))
+         (and (no-calls :term (cadr x) sigs nil) (tail-only (caddr x) self sigs) (tail-only (cadddr x) self sigs)))
+        ((and (consp x) (eq (car x) self)) (no-calls :list (cdr x) sigs nil))
+        (t (no-calls :term x sigs nil))))
 
 ; a-ev of a call of a defined function
 (defthm a-ev-defined-call
@@ -67,8 +67,8 @@
 
 (defthm no-calls-list-cons
   (implies (consp xs)
-           (equal (no-calls :list xs sigs) (and (no-calls :term (car xs) sigs) (no-calls :list (cdr xs) sigs))))
-  :hints (("Goal" :expand ((no-calls :list xs sigs)))))
+           (equal (no-calls :list xs sigs nil) (and (no-calls :term (car xs) sigs nil) (no-calls :list (cdr xs) sigs nil))))
+  :hints (("Goal" :expand ((no-calls :list xs sigs nil)))))
 
 (defthm as-srcs-strip
   (implies (subsetp-equal (as-srcs as) (strip-cars l)) (subsetp-equal (as-srcs as) (strip-cars (cons p l)))))
@@ -159,7 +159,7 @@
 (gt-fact gt-as (and (as-ok as vars (append fnames (em-names em)))
                     (implies (equal (len vars) (len xs)) (equal (len as) (len vars)))))
 
-(gt-fact gt-cf (implies (no-calls :list xs sigs) (and (cf-stmts s) (cf-stmts as)))
+(gt-fact gt-cf (implies (no-calls :list xs sigs nil) (and (cf-stmts s) (cf-stmts as)))
          :use ((:instance g-expr-cf (x (car xs)))))
 
 (gt-fact gt-lf (implies (lf-ok locs fnames) (lf-ok locs2 fnames))
@@ -225,7 +225,7 @@
   (mv-let (e s as cnt2 locs2) (g-tail vars xs em cnt locs sigs fnames)
     (declare (ignore cnt2))
     (mv-let (ae vs) (a-ev-list xs env defs n)
-      (implies (and (not e) (not ae) (no-calls :list xs sigs) (em-ok em env fr) (decl-ok locs2 fr) (no-prim-defs defs))
+      (implies (and (not e) (not ae) (no-calls :list xs sigs nil) (em-ok em env fr) (decl-ok locs2 fr) (no-prim-defs defs))
                (mv-let (st fr2) (fx-list s fr)
                  (and (equal st :normal) (em-ok em env fr2) (tl-ok as vs fr2)))))))
 
@@ -236,17 +236,17 @@
             (fr-after (append (gt1 1) (list (list :assign (list :var (gtf 1)) (gt1 2)))) fr))))
 
 (defthm ge-sem-int
-  (implies (and (ge-sem x em cnt locs sigs fnames env defs n fr) (equal (ge 3) :int64)
-                (not (ge 0)) (not (car (a-ev x env defs n))) (no-calls :term x sigs) (em-ok em env fr)
+  (implies (and (ge-sem x em cnt locs sigs fnames env defs n fr nil) (equal (ge 3) :int64)
+                (not (ge 0)) (not (car (a-ev x env defs n))) (no-calls :term x sigs nil) (em-ok em env fr)
                 (decl-ok (ge 5) fr) (no-prim-defs defs))
            (int64p (mv-nth 1 (a-ev x env defs n))))
-  :hints (("Goal" :use ge-sem-use :in-theory (disable ge-sem-use g-expr a-ev fx-list fv no-calls em-ok decl-ok))))
+  :hints (("Goal" :use (:instance ge-sem-use (cs nil)) :in-theory (disable ge-sem-use g-expr a-ev fx-list fv no-calls em-ok decl-ok))))
 
 (defmacro gto (k) `(mv-nth ,k (g-tail vars xs em cnt locs sigs fnames)))
 
 (defthm gt-sem-use
   (implies (and (gt-sem vars xs em cnt locs sigs fnames env defs n fr)
-                (not (gto 0)) (not (car (a-ev-list xs env defs n))) (no-calls :list xs sigs) (em-ok em env fr)
+                (not (gto 0)) (not (car (a-ev-list xs env defs n))) (no-calls :list xs sigs nil) (em-ok em env fr)
                 (decl-ok (gto 4) fr) (no-prim-defs defs))
            (and (equal (car (fx-list (gto 1) fr)) :normal)
                 (em-ok em env (mv-nth 1 (fx-list (gto 1) fr)))
@@ -259,7 +259,7 @@
 
 (defthm gt-sem-step
   (implies (and (consp vars) (consp xs)
-                (ge-sem (car xs) em cnt locs sigs fnames env defs (1- n) fr)
+                (ge-sem (car xs) em cnt locs sigs fnames env defs (1- n) fr nil)
                 (gt-sem (cdr vars) (cdr xs) em (gtf 2) (gtf 3) sigs fnames env defs (1- n)
                         (fr-after (append (gt1 1) (list (list :assign (list :var (gtf 1)) (gt1 2)))) fr)))
            (gt-sem vars xs em cnt locs sigs fnames env defs n fr))
@@ -277,7 +277,7 @@
                  (:instance decl-ok-subset (a (gtf 3)) (b (gtr 4)))
                  (:instance decl-ok-subset (a (gt1 5)) (b (gtr 4)))))))
 
-(defthm ge-sem-t (ge-sem x em cnt locs sigs fnames env defs n fr) :hints (("Goal" :use ge-sem-all)))
+(defthm ge-sem-t (ge-sem x em cnt locs sigs fnames env defs n fr nil) :hints (("Goal" :use ge-sem-all)))
 
 (defthm gt-sem-thm
   (gt-sem vars xs em cnt locs sigs fnames env defs n fr)

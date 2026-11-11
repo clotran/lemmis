@@ -10,9 +10,9 @@
 (set-irrelevant-formals-ok t)
 
 (defthm ge-sem-all
-  (ge-sem x em cnt locs sigs fnames env defs n fr)
+  (ge-sem x em cnt locs sigs fnames env defs n fr nil)
   :rule-classes nil
-  :hints (("Goal" :use (:instance ge-sem-thm (flag :expr) (vars nil)))))
+  :hints (("Goal" :use (:instance ge-sem-thm (flag :expr) (vars nil) (cs nil)))))
 
 (defmacro rty () '(kadr (cdr (lkp self sigs))))
 
@@ -270,7 +270,7 @@
 ; ---- what g-ret's statements do: :return, "r" holding a-ev's value
 
 (defmacro gr-hyps (locs2)
-  `(and (no-calls :term x sigs) (consp (lkp self sigs)) (symbolp self) (not (equal self 'quote))
+  `(and (no-calls :term x sigs nil) (consp (lkp self sigs)) (symbolp self) (not (equal self 'quote))
         (em-ok em env fr) (decl-ok ,locs2 fr) (no-prim-defs defs) (equal (dty "r" fr) (list (rty)))))
 
 (defun gr-sem (x em cnt locs self sigs fnames env defs n fr)
@@ -341,7 +341,7 @@
                                             (g-ret x em cnt locs self sigs fnames))
            :in-theory (disable g-ret g-select g-expr g-tail g-case-key g-chain int-lit-p a-ev fx-list fv
                                no-calls em-ok scalar-ok dty fx-list-append)
-           :use ((:instance ge-sem-all) (:instance ge-sem-use)))))
+           :use ((:instance ge-sem-all) (:instance ge-sem-use (cs nil))))))
 
 ; ---- the chain's variable, kept whole
 

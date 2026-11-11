@@ -95,40 +95,63 @@
 
 ; ---- the source calls no translated function
 
-(defun no-calls (flag x sigs)
+; cs: the translated functions the source may call (layer 3, calls (c));
+; nil for call-free source
+(defun no-calls (flag x sigs cs)
   (declare (xargs :measure (acl2-count x)))
-  (cond ((eq flag :list) (if (atom x) t (and (no-calls :term (car x) sigs) (no-calls :list (cdr x) sigs))))
+  (cond ((eq flag :list) (if (atom x) t (and (no-calls :term (car x) sigs cs) (no-calls :list (cdr x) sigs cs))))
         ((or (atom x) (eq (car x) 'quote)) t)
-        ((consp (car x)) (and (no-calls :term (kaddr (car x)) sigs) (no-calls :list (cdr x) sigs)))
-        (t (and (not (consp (lkp (car x) sigs))) (no-calls :list (cdr x) sigs)))))
+        ((consp (car x)) (and (no-calls :term (kaddr (car x)) sigs cs) (no-calls :list (cdr x) sigs cs)))
+        (t (and (or (not (consp (lkp (car x) sigs))) (member-equal (car x) cs)) (no-calls :list (cdr x) sigs cs)))))
+
+(defun int64-listp (ks) (if (atom ks) (null ks) (and (int64p (car ks)) (int64-listp (cdr ks)))))
+
+; a-ev's answer on a call of f, the arguments' values vals
+(defun a-call (f vals defs n)
+  (let ((d (lkp f defs)))
+    (if (consp d) (a-ev (kaddr d) (pairlis$ (true-list-fix (kadr d)) vals) defs n) (a-prim f vals))))
+
+; the oracle is a-ev's: on int64 arguments, wherever a-ev of a call of an f
+; in cs answers without an error, f-call-val answers that value, of f's type
+(defun-sk a-orc (defs sigs cs)
+  (forall (f vals n)
+    (implies (and (member-equal f cs) (int64-listp vals) (not (mv-nth 0 (a-call f vals defs n))))
+             (and (equal (f-call-val (g-sym f nil) vals) (mv nil (mv-nth 1 (a-call f vals defs n))))
+                  (scalar-ok (kadr (cdr (lkp f sigs))) (mv-nth 1 (a-call f vals defs n)))))))
+
+(defthm member-equal-nil (not (member-equal a nil)))
+
+(defthm a-orc-nil (a-orc defs sigs nil) :hints (("Goal" :in-theory (enable a-orc))))
+
+(in-theory (disable a-orc))
 
 ; ---- what is proved, per flag: run (here); that the output is call-free
 ; (cf-stmts, cf-expr) is its own induction, the next lemma set
 
-(defun ge-sem (x em cnt locs sigs fnames env defs n fr)
+(defun ge-sem (x em cnt locs sigs fnames env defs n fr cs)
   (mv-let (e s c ty cnt2 locs2) (g-expr x em cnt locs sigs fnames)
     (declare (ignore cnt2))
     (mv-let (ae v) (a-ev x env defs n)
-      (implies (and (not e) (not ae) (no-calls :term x sigs) (em-ok em env fr) (decl-ok locs2 fr)
+      (implies (and (not e) (not ae) (no-calls :term x sigs cs) (a-orc defs sigs cs) (em-ok em env fr) (decl-ok locs2 fr)
                     (no-prim-defs defs))
                (mv-let (st fr2) (fx-list s fr)
                  (mv-let (fe fvv) (fv c fr2)
                    (and (equal st :normal) (not fe) (equal fvv v) (scalar-ok ty v))))))))
 
-(defun ga-sem (xs em cnt locs sigs fnames env defs n fr)
-  (mv-let (e s cs ts cnt2 locs2) (g-args xs em cnt locs sigs fnames)
+(defun ga-sem (xs em cnt locs sigs fnames env defs n fr cs)
+  (mv-let (e s codes ts cnt2 locs2) (g-args xs em cnt locs sigs fnames)
     (declare (ignore cnt2))
     (mv-let (ae vs) (a-ev-list xs env defs n)
-      (implies (and (not e) (not ae) (no-calls :list xs sigs) (em-ok em env fr) (decl-ok locs2 fr)
+      (implies (and (not e) (not ae) (no-calls :list xs sigs cs) (a-orc defs sigs cs) (em-ok em env fr) (decl-ok locs2 fr)
                     (no-prim-defs defs))
                (mv-let (st fr2) (fx-list s fr)
-                 (and (equal st :normal) (fvs-ok cs ts vs fr2)))))))
+                 (and (equal st :normal) (fvs-ok codes ts vs fr2)))))))
 
-(defun gb-sem (vars xs em cnt locs sigs fnames env defs n fr)
+(defun gb-sem (vars xs em cnt locs sigs fnames env defs n fr cs)
   (mv-let (e s binds cnt2 locs2) (g-binds vars xs em cnt locs sigs fnames)
     (declare (ignore cnt2))
     (mv-let (ae vs) (a-ev-list xs env defs n)
-      (implies (and (not e) (not ae) (no-calls :list xs sigs) (em-ok em env fr) (decl-ok locs2 fr)
+      (implies (and (not e) (not ae) (no-calls :list xs sigs cs) (a-orc defs sigs cs) (em-ok em env fr) (decl-ok locs2 fr)
                     (no-prim-defs defs) (symbol-listp vars) (no-duplicatesp-equal vars) (equal (len vars) (len xs)))
                (mv-let (st fr2) (fx-list s fr)
                  (and (equal st :normal) (subsetp-equal (strip-cars binds) vars)
@@ -207,7 +230,7 @@
 
 (defthm no-calls-cons
   (implies (consp xs)
-           (equal (no-calls :list xs sigs) (and (no-calls :term (car xs) sigs) (no-calls :list (cdr xs) sigs)))))
+           (equal (no-calls :list xs sigs cs) (and (no-calls :term (car xs) sigs cs) (no-calls :list (cdr xs) sigs cs)))))
 
 (in-theory (disable em-ok var-ok))
 
@@ -225,24 +248,24 @@
 ; ---- g-expr's cases
 
 (defthm ge-sym
-  (implies (symbolp x) (ge-sem x em cnt locs sigs fnames env defs n fr))
+  (implies (symbolp x) (ge-sem x em cnt locs sigs fnames env defs n fr cs))
   :hints (("Goal" :expand ((g-expr x em cnt locs sigs fnames) (a-ev x env defs n))
            :in-theory (e/d (var-ok) (em-ok-necc)) :use ((:instance em-ok-necc (x x))))))
 
 (defthm ge-atom
-  (implies (and (atom x) (not (symbolp x))) (ge-sem x em cnt locs sigs fnames env defs n fr))
+  (implies (and (atom x) (not (symbolp x))) (ge-sem x em cnt locs sigs fnames env defs n fr cs))
   :hints (("Goal" :expand ((g-expr x em cnt locs sigs fnames)))))
 
 (defthm ge-quote
-  (implies (and (consp x) (eq (car x) 'quote)) (ge-sem x em cnt locs sigs fnames env defs n fr))
+  (implies (and (consp x) (eq (car x) 'quote)) (ge-sem x em cnt locs sigs fnames env defs n fr cs))
   :hints (("Goal" :expand ((g-expr x em cnt locs sigs fnames) (a-ev x env defs n)))))
 
 (defthm ge-the-check
   (implies (and (consp x) (eq (car x) 'the-check)
-                (ge-sem (kadddr x) em cnt locs sigs fnames env defs (- n 4) fr))
-           (ge-sem x em cnt locs sigs fnames env defs n fr))
+                (ge-sem (kadddr x) em cnt locs sigs fnames env defs (- n 4) fr cs))
+           (ge-sem x em cnt locs sigs fnames env defs n fr cs))
   :hints (("Goal" :do-not-induct t :expand ((g-expr x em cnt locs sigs fnames) (a-ev x env defs n)
-                                            (no-calls :term x sigs))
+                                            (no-calls :term x sigs cs))
            :in-theory (disable g-expr no-calls))))
 
 (defthm gkind-call-facts
@@ -279,17 +302,65 @@
 
 (defthm no-calls-call
   (implies (and (consp x) (not (equal (car x) 'quote)) (not (consp (car x))))
-           (equal (no-calls :term x sigs) (and (not (consp (lkp (car x) sigs))) (no-calls :list (cdr x) sigs))))
-  :hints (("Goal" :expand ((no-calls :term x sigs)))))
+           (equal (no-calls :term x sigs cs) (and (or (not (consp (lkp (car x) sigs))) (member-equal (car x) cs)) (no-calls :list (cdr x) sigs cs))))
+  :hints (("Goal" :expand ((no-calls :term x sigs cs)))))
 
-(defthm ge-call
-  (implies (and (equal (gkind x) :call) (ga-sem (cdr x) em cnt locs sigs fnames env defs (1- n) fr))
-           (ge-sem x em cnt locs sigs fnames env defs n fr))
+(defthm ge-prim-call
+  (implies (and (equal (gkind x) :call) (not (consp (lkp (car x) sigs)))
+                (ga-sem (cdr x) em cnt locs sigs fnames env defs (1- n) fr cs))
+           (ge-sem x em cnt locs sigs fnames env defs n fr cs))
   :hints (("Goal" :do-not-induct t
            :in-theory (disable gkind g-expr g-args no-calls g-unop g-binop a-prim fv a-ev g-expr-names g-args-names scalar-ok))))
 
+; ---- a call of a translated function: the oracle (layer 3, calls (c))
+
+(defthm a-ev-call
+  (implies (and (consp x) (not (equal (car x) 'quote)) (not (equal (car x) 'if)) (not (consp (car x))))
+           (equal (a-ev x env defs n)
+                  (if (zp n) (mv :fuel nil)
+                    (mv-let (e vs) (a-ev-list (cdr x) env defs (1- n))
+                      (if e (mv e nil) (a-call (car x) vs defs (1- n)))))))
+  :rule-classes nil
+  :hints (("Goal" :expand ((a-ev x env defs n)))))
+
+(defthm fvs-ok-fv-list
+  (implies (and (fvs-ok cs ts vs fr) (true-listp vs))
+           (equal (fv-list cs fr) (list nil vs)))
+  :hints (("Goal" :induct (fvs-ok cs ts vs fr) :expand ((fv-list cs fr)))))
+
+(defthm fvs-ok-int64
+  (implies (and (fvs-ok cs ts vs fr) (all-int64-types ts) (true-listp vs)) (int64-listp vs))
+  :hints (("Goal" :induct (fvs-ok cs ts vs fr))))
+
+(defun ael-ind (xs n) (if (or (zp n) (atom xs)) nil (ael-ind (cdr xs) (1- n))))
+
+(defthm true-listp-a-ev-list (true-listp (mv-nth 1 (a-ev-list xs env defs n)))
+  :hints (("Goal" :induct (ael-ind xs n) :expand ((a-ev-list xs env defs n)))))
+
+(defthm fv-fcall-list
+  (equal (fv (list :fcall name cs) fr)
+         (mv-let (err vs) (fv-list cs fr)
+           (if err (mv err nil) (mv-let (err v) (f-call-val name vs) (if err (mv err nil) (mv nil v))))))
+  :hints (("Goal" :expand ((fv (list :fcall name cs) fr)))))
+
+(defthm ge-fcall
+  (implies (and (equal (gkind x) :call) (consp (lkp (car x) sigs))
+                (ga-sem (cdr x) em cnt locs sigs fnames env defs (1- n) fr cs))
+           (ge-sem x em cnt locs sigs fnames env defs n fr cs))
+  :hints (("Goal" :do-not-induct t
+           :in-theory (disable gkind g-expr g-args g-unop g-binop a-prim fv a-ev g-expr-names g-args-names a-call
+                               a-orc-necc)
+           :expand ((no-calls :term x sigs cs))
+           :use (a-ev-call
+                 (:instance a-orc-necc (f (car x)) (vals (mv-nth 1 (a-ev-list (cdr x) env defs (1- n)))) (n (1- n)))))))
+
+(defthm ge-call
+  (implies (and (equal (gkind x) :call) (ga-sem (cdr x) em cnt locs sigs fnames env defs (1- n) fr cs))
+           (ge-sem x em cnt locs sigs fnames env defs n fr cs))
+  :hints (("Goal" :cases ((consp (lkp (car x) sigs))) :in-theory (disable ge-sem ga-sem gkind))))
+
 (defthm ge-args-nil
-  (implies (atom xs) (ga-sem xs em cnt locs sigs fnames env defs n fr))
+  (implies (atom xs) (ga-sem xs em cnt locs sigs fnames env defs n fr cs))
   :hints (("Goal" :expand ((g-args xs em cnt locs sigs fnames)))))
 
 (defmacro ga1 (k) `(mv-nth ,k (g-expr (car xs) em cnt locs sigs fnames)))
@@ -297,9 +368,9 @@
 
 (defthm ge-args-cons
   (implies (and (consp xs)
-                (ge-sem (car xs) em cnt locs sigs fnames env defs (1- n) fr)
-                (ga-sem (cdr xs) em (ga1 4) (ga1 5) sigs fnames env defs (1- n) (mv-nth 1 (fx-list (ga1 1) fr))))
-           (ga-sem xs em cnt locs sigs fnames env defs n fr))
+                (ge-sem (car xs) em cnt locs sigs fnames env defs (1- n) fr cs)
+                (ga-sem (cdr xs) em (ga1 4) (ga1 5) sigs fnames env defs (1- n) (mv-nth 1 (fx-list (ga1 1) fr)) cs))
+           (ga-sem xs em cnt locs sigs fnames env defs n fr cs))
   :hints (("Goal" :do-not-induct t :expand ((g-args xs em cnt locs sigs fnames) (fvs-ok (cons a b) ts vs fr))
            :in-theory (disable g-expr g-args no-calls fv-agree fx-list-agree fx-list decl-ok-subset disjoint-via-subset fv)
            :use ((:instance fv-agree (e (ga1 2)) (fr (mv-nth 1 (fx-list (ga1 1) fr)))
@@ -312,9 +383,9 @@
 (defthm ge-big
   (implies (and (equal (gkind x) :big)
                 (ge-sem (if (g-big (kadr x)) (kaddr x) (kadr x)) em cnt locs sigs fnames env defs
-                        (if (g-big (kadr x)) (- n 3) (- n 2)) fr))
-           (ge-sem x em cnt locs sigs fnames env defs n fr))
-  :hints (("Goal" :do-not-induct t :expand ((g-expr x em cnt locs sigs fnames) (no-calls :term x sigs))
+                        (if (g-big (kadr x)) (- n 3) (- n 2)) fr cs))
+           (ge-sem x em cnt locs sigs fnames env defs n fr cs))
+  :hints (("Goal" :do-not-induct t :expand ((g-expr x em cnt locs sigs fnames) (no-calls :term x sigs cs))
            :in-theory (disable g-expr no-calls))))
 
 (defthm em-ok-nil-env
@@ -322,5 +393,5 @@
   :hints (("Goal" :in-theory (enable em-ok var-ok))))
 
 (defthm ge-binds-nil
-  (implies (or (atom vars) (atom xs)) (gb-sem vars xs em cnt locs sigs fnames env defs n fr))
+  (implies (or (atom vars) (atom xs)) (gb-sem vars xs em cnt locs sigs fnames env defs n fr cs))
   :hints (("Goal" :expand ((g-binds vars xs em cnt locs sigs fnames)))))

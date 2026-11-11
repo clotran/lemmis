@@ -83,7 +83,7 @@
 
 (defthm tail-run
   (implies (and (not (car (g-tail vars xs em cnt locs sigs fnames))) (equal (len xs) (len vars))
-                (not (car (a-ev-list xs env defs n))) (no-calls :list xs sigs) (em-ok em env fr)
+                (not (car (a-ev-list xs env defs n))) (no-calls :list xs sigs nil) (em-ok em env fr)
                 (decl-ok (gto 4) fr) (no-prim-defs defs)
                 (equal fnames (g-formals vars)) (no-duplicatesp-equal fnames) (int-dums vars fr))
            (let ((r (fx-list (append (gto 1) (append (gto 2) (list '(:cycle)))) fr)))
@@ -154,15 +154,15 @@
   (implies (and (tail-only x self sigs)
                 (not (and (consp x) (eq (car x) 'if) (true-listp x) (= (len x) 4)))
                 (not (and (consp x) (eq (car x) self))))
-           (no-calls :term x sigs)))
+           (no-calls :term x sigs nil)))
 
 (defthm tail-only-if
   (implies (and (tail-only x self sigs) (consp x) (eq (car x) 'if) (true-listp x) (= (len x) 4))
-           (and (no-calls :term (cadr x) sigs) (tail-only (caddr x) self sigs) (tail-only (cadddr x) self sigs))))
+           (and (no-calls :term (cadr x) sigs nil) (tail-only (caddr x) self sigs) (tail-only (cadddr x) self sigs))))
 
 (defthm tail-only-self
   (implies (and (tail-only x self sigs) (consp x) (eq (car x) self) (not (eq self 'if)))
-           (no-calls :list (cdr x) sigs)))
+           (no-calls :list (cdr x) sigs nil)))
 
 (defthm grt-plain
   (implies (and (not (and (consp x) (or (<= 3 (g-chain x nil nil))

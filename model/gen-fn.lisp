@@ -10,7 +10,7 @@
 
 (include-book "gen-retout")
 
-(defun int64-listp (ks) (if (atom ks) (null ks) (and (int64p (car ks)) (int64-listp (cdr ks)))))
+; int64-listp: gen-proof
 
 ; ---- the arguments: literals, bound to the dummies
 
@@ -112,7 +112,7 @@
 (defthm fn-run
   (implies (and (not (gfr 0)) (no-duplicatesp-equal (cons "r" (g-formals vs)))
                 (consp (lkp fn sigs)) (symbolp fn) (not (equal fn 'quote))
-                (no-calls :term body sigs) (no-prim-defs defs)
+                (no-calls :term body sigs nil) (no-prim-defs defs)
                 (int64-listp ks) (equal (len ks) (len vs))
                 (not (mv-nth 0 (a-ev body (pairlis$ vs ks) defs n))))
            (let ((fr (undef-locals (cons (list "r" (kadr (cdr (lkp fn sigs)))) (g-locals (gfr 3))) (fb vs ks nil))))
@@ -152,7 +152,7 @@
 (defthm g-fn-sem
   (implies (and (not (mv-nth 0 (g-fn fn defs sigs)))
                 (consp (lkp fn sigs)) (symbolp fn) (not (equal fn 'quote))
-                (no-calls :term (kaddr (fd)) sigs) (no-prim-defs defs)
+                (no-calls :term (kaddr (fd)) sigs nil) (no-prim-defs defs)
                 (int64-listp args) (equal (len args) (len (kadr (fd))))
                 (not (mv-nth 0 (a-ev (kaddr (fd)) (pairlis$ (kadr (fd)) args) defs n)))
                 (integerp fuel) (< (+ 6 (len args) (acl2-count (mv-nth 1 (g-fn fn defs sigs)))) fuel))

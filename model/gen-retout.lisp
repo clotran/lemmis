@@ -15,7 +15,7 @@
 (defthm chain-on-ifs (implies (chain-on v x k) (ifs x k)))
 
 (defmacro grc-hyps ()
-  '(and (no-calls :term x sigs) (lf-ok locs fnames) (consp (lkp self sigs)) (symbolp self) (not (equal self 'quote))))
+  '(and (no-calls :term x sigs nil) (lf-ok locs fnames) (consp (lkp self sigs)) (symbolp self) (not (equal self 'quote))))
 
 (defun grc-ok (flag x k em cnt locs self sigs fnames)
   (declare (xargs :verify-guards nil))
@@ -46,15 +46,15 @@
 (in-theory (disable grc-ok))
 
 (defthm nc-parts
-  (implies (and (no-calls :term x sigs) (consp x) (symbolp (car x)) (not (equal (car x) 'quote)))
-           (and (no-calls :term (cadr x) sigs) (no-calls :term (caddr x) sigs) (no-calls :term (cadddr x) sigs)))
-  :hints (("Goal" :expand ((no-calls :term x sigs) (no-calls :list (cdr x) sigs)
-                           (no-calls :list (cddr x) sigs) (no-calls :list (cdddr x) sigs)))))
+  (implies (and (no-calls :term x sigs nil) (consp x) (symbolp (car x)) (not (equal (car x) 'quote)))
+           (and (no-calls :term (cadr x) sigs nil) (no-calls :term (caddr x) sigs nil) (no-calls :term (cadddr x) sigs nil)))
+  :hints (("Goal" :expand ((no-calls :term x sigs nil) (no-calls :list (cdr x) sigs nil)
+                           (no-calls :list (cddr x) sigs nil) (no-calls :list (cdddr x) sigs nil)))))
 
 (defthm nc-self
   (implies (and (consp x) (equal (car x) self) (symbolp self) (not (equal self 'quote)) (consp (lkp self sigs)))
-           (not (no-calls :term x sigs)))
-  :hints (("Goal" :expand ((no-calls :term x sigs)))))
+           (not (no-calls :term x sigs nil)))
+  :hints (("Goal" :expand ((no-calls :term x sigs nil)))))
 
 (defthm cf-stmts-ret-tail
   (equal (cf-stmts (append s (list (list :assign '(:var "r") c) '(:return))))
