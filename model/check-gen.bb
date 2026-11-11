@@ -89,7 +89,7 @@
 ;; formals, guard and
 ;; body ACL2 makes of each must equal what clotran's certified books make
 ;; (heapgn and vmfg are read in separate sessions: they clash on sb64p)
-(def disch-groups [["heapgn" '[hpg-add hpg-text-tag hpg-s64 hpg-n40 hpg-size-class]]
+(def disch-groups [["heapgn" '[hpg-add hpg-text-tag hpg-s64 hpg-n40 hpg-size-class hpg-class-len]]
                    ["vmfg" '[bnd40p sk-step sk-more ex-apstep ex-aplook vmicg-sat]]])
 (defn defs-text [dir book fns]
   (let [fs (str/join " " fns)

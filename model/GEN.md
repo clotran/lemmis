@@ -400,9 +400,10 @@ is how `fx-is-f-ex` went through after two monolithic attempts ran out.
    a-ev of f's body on vals whenever that answers without error at fuel
    below n (needs a-ev fuel monotonicity: no error at n, same answer at
    every n' >= n). g-expr's :fcall case is then fv's.
-   (d) g-fn-sem-loop with tail-only allowing non-self calls in tests and
+   (d) [next] g-fn-sem-loop with tail-only allowing non-self calls in tests and
    arguments.
-   (e) hpg-class-len: functionally instantiate f-call-val with
+   (e) [clotran's hpg-class-len is copied into gen-disch-loop.lisp and
+   check-gen compares it; the theorem is left] hpg-class-len: functionally instantiate f-call-val with
    `(lambda (name vals) (if (equal name "hpg_n40") (mv nil (hpg-n40 (car vals))) (mv :unknown nil)))`
    (no constraints, so no obligations); the oracle hypotheses from
    hpg-n40-a-ev and hpg-n40-fortran-correct (the call graph here is a

@@ -23,6 +23,15 @@
       c
     (hpg-size-class n (+ 1 c) (* 2 p))))
 
+;; clotran's definition (model/heaprn there; check-gen.bb checks the copy);
+;; its theorem waits for calls (d), (e) (GEN.md)
+(defun hpg-class-len (c k p)
+  (declare (xargs :measure (nfix (- (nfix c) (nfix k)))
+                  :guard (and (natp c) (<= c 64) (natp k) (natp p) (<= p 1099511627776))))
+  (if (or (not (natp c)) (not (natp k)) (<= c k) (< 64 c))
+      (hpg-n40 p)
+    (hpg-class-len c (+ 1 k) (hpg-n40 (* 2 (hpg-n40 p))))))
+
 ; ---- the instance of g-fn-sem-loop, as gen-inst's gen-fn-thm
 
 (defthm hpg-size-class-gen
