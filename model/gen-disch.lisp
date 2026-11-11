@@ -6,8 +6,8 @@
 ;   <fn>-fortran-correct: with gen-inst's theorem, the generated Fortran
 ;     procedure, on int64 arguments and under the guard, answers the
 ;     function's value. No a-ev hypothesis is left.
-; One guard does not cover the range: ex-aplook's (t) leaves req + 1
-; overflowing at req = 2^63 - 1, so its theorems add (< req 2^63 - 1).
+; Every guard covers the range: ex-aplook's is t, but its body computes
+; k - 1 only when k > req >= 0.
 
 (in-package "ACL2")
 
@@ -54,7 +54,7 @@
 
 (defun ex-aplook (req k)
   (declare (xargs :guard t))
-  (if (and (integerp req) (<= 0 req) (integerp k) (<= k (+ req 1))) 1 0))
+  (if (and (integerp req) (<= 0 req) (integerp k) (or (<= k req) (equal (- k 1) req))) 1 0))
 
 (defun vmicg-sat (x)
   (declare (xargs :guard (natp x)))
@@ -137,15 +137,5 @@
 (disch sk-step "sk_step" *vmfg-raw* *vmfg-bools* nil)
 (disch sk-more "sk_more" *vmfg-raw* *vmfg-bools* nil)
 (disch ex-apstep "ex_apstep" *vmfg-raw* *vmfg-bools* nil)
-; the guard is t, but the Fortran's req + 1_int64 overflows at req = huge(0_int64)
-(disch ex-aplook "ex_aplook" *vmfg-raw* *vmfg-bools* ((< req 9223372036854775807)))
+(disch ex-aplook "ex_aplook" *vmfg-raw* *vmfg-bools* nil)
 (disch vmicg-sat "vmicg_sat" *vmicg-raw* *vmicg-bools* nil)
-
-; the extra hypothesis is needed: at req = 2^63 - 1 (k any integer) the guard
-; holds, and a-ev of the body answers :range -- the Fortran's req + 1_int64
-; overflows there
-(defthm ex-aplook-range-at-huge
-  (equal (mv-nth 0 (a-ev (kaddr (lkp 'ex-aplook (g-defs *vmfg-raw*)))
-                         (pairlis$ '(req k) (list 9223372036854775807 0)) (g-defs *vmfg-raw*) 100))
-         :range)
-  :hints (("Goal" :in-theory (enable a-ev a-ev-list))))

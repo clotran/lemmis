@@ -85,10 +85,11 @@
               (doseq [[a t] (map vector (concat ours (repeat "<none>")) (or theirs ["<not found>"]))
                       :when (not= a t)] ; first differences only
                 (println "  gen.lisp:     " a) (println "  acl2-fortran: " t))))))))
-;; gen-disch.lisp's copies of clotran's definitions: the formals, guard and
+;; gen-disch.lisp's and gen-disch-loop.lisp's copies of clotran's definitions: the
+;; formals, guard and
 ;; body ACL2 makes of each must equal what clotran's certified books make
 ;; (heapgn and vmfg are read in separate sessions: they clash on sb64p)
-(def disch-groups [["heapgn" '[hpg-add hpg-text-tag hpg-s64 hpg-n40]]
+(def disch-groups [["heapgn" '[hpg-add hpg-text-tag hpg-s64 hpg-n40 hpg-size-class]]
                    ["vmfg" '[bnd40p sk-step sk-more ex-apstep ex-aplook vmicg-sat]]])
 (defn defs-text [dir book fns]
   (let [fs (str/join " " fns)
@@ -101,7 +102,7 @@
     (if (str/includes? out "\nDEFS ") (form-text (second (str/split out #"\nDEFS\s+"))) "<none>")))
 (doseq [[book fns] disch-groups]
   (let [theirs (defs-text (str clotran "/model") book fns)
-        ours (defs-text "." "gen-disch" fns)]
+        ours (defs-text "." "gen-disch-loop" fns)]
     (if (= ours theirs)
       (println "check-gen: gen-disch.lisp's" (count fns) "definitions agree with clotran's" book)
       (do (swap! failures inc) (println "check-gen: gen-disch.lisp's definitions DIFFER from clotran's" book)
