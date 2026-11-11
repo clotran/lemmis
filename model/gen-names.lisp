@@ -15,6 +15,8 @@
   (declare (xargs :guard t))
   (if (atom cs) nil (append (ev-names (car cs)) (evs-names (cdr cs)))))
 
+(defthm ev-names-list-is-evs-names (equal (ev-names-list cs) (evs-names cs)))
+
 (defun fr-after (ss fr) (mv-let (st fr2) (fx-list ss fr) (declare (ignore st)) fr2))
 (defun a-vals (xs env defs n) (mv-let (e vs) (a-ev-list xs env defs n) (declare (ignore e)) vs))
 

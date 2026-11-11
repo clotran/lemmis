@@ -16,8 +16,15 @@
     ((:add :sub :mul :eq :lt :le :ge :max) (and (cf-expr (kadr e)) (cf-expr (kaddr e))))
     (otherwise nil)))
 
-(defun fv (e fr)
-  (declare (xargs :guard t))
+; calls: an oracle. fv answers a call by f-call-val on the argument values;
+; nothing is assumed of it here. Layer 3 assumes it answers what the
+; procedures answer (gen-callev's por) and what a-ev answers.
+(encapsulate (((f-call-val * *) => (mv * *)))
+  (local (defun f-call-val (name vals) (declare (ignore name vals)) (mv :unknown nil))))
+
+(mutual-recursion
+ (defun fv (e fr)
+  (declare (xargs :guard t :measure (acl2-count e)))
   (case (kar e)
     (:int (if (int-lit-p (kadr e)) (mv nil (kadr e)) (mv :syntax nil)))
     (:true (mv nil t))
@@ -35,7 +42,16 @@
        (if err (mv err nil)
          (mv-let (err b) (fv (kaddr e) fr)
            (if err (mv err nil) (binop (kar e) a b))))))
+    (:fcall (mv-let (err vs) (fv-list (kaddr e) fr)
+              (if err (mv err nil)
+                (mv-let (err v) (f-call-val (kadr e) vs) (if err (mv err nil) (mv nil v))))))
     (otherwise (mv :syntax nil))))
+ (defun fv-list (es fr)
+  (declare (xargs :guard t :measure (acl2-count es)))
+  (if (atom es) (mv nil nil)
+    (mv-let (err v) (fv (car es) fr)
+      (if err (mv err nil)
+        (mv-let (err vs) (fv-list (cdr es) fr) (if err (mv err nil) (mv nil (cons v vs)))))))))
 
 (defun fv-ind (e k)
   (declare (xargs :measure (nfix k)))
@@ -304,13 +320,18 @@
 ; ---- what code reads and writes: an expression reads its ev-names; a
 ; statement list writes only its asg names, and keeps every name's type
 
-(defun ev-names (e)
-  (declare (xargs :guard t))
+(mutual-recursion
+ (defun ev-names (e)
+  (declare (xargs :guard t :measure (acl2-count e)))
   (case (kar e)
     (:var (list (kadr e)))
     ((:neg :not) (ev-names (kadr e)))
     ((:add :sub :mul :eq :lt :le :ge :max) (append (ev-names (kadr e)) (ev-names (kaddr e))))
+    (:fcall (ev-names-list (kaddr e)))
     (otherwise nil)))
+ (defun ev-names-list (es)
+  (declare (xargs :guard t :measure (acl2-count es)))
+  (if (atom es) nil (append (ev-names (car es)) (ev-names-list (cdr es))))))
 
 (defun lkp-agree (ns fr fr2)
   (declare (xargs :guard t))
@@ -319,9 +340,22 @@
 (defthm lkp-agree-append
   (equal (lkp-agree (append a b) fr fr2) (and (lkp-agree a fr fr2) (lkp-agree b fr fr2))))
 
+(defun fv-agree-ind (flag e)
+  (declare (xargs :measure (acl2-count e)))
+  (if (eq flag :list) (if (atom e) nil (list (fv-agree-ind :one (car e)) (fv-agree-ind :list (cdr e))))
+    (if (atom e) nil (list (fv-agree-ind :one (kadr e)) (fv-agree-ind :one (kaddr e)) (fv-agree-ind :list (kaddr e))))))
+
+(defthm fv-agree-flag
+  (if (eq flag :list)
+      (implies (lkp-agree (ev-names-list e) fr fr2) (equal (fv-list e fr2) (fv-list e fr)))
+    (implies (lkp-agree (ev-names e) fr fr2) (equal (fv e fr2) (fv e fr))))
+  :rule-classes nil
+  :hints (("Goal" :induct (fv-agree-ind flag e) :in-theory (disable binop arith)
+           :expand ((fv e fr) (fv e fr2) (fv-list e fr) (fv-list e fr2) (ev-names e) (ev-names-list e)))))
+
 (defthm fv-agree
   (implies (lkp-agree (ev-names e) fr fr2) (equal (fv e fr2) (fv e fr)))
-  :hints (("Goal" :induct (fv e fr) :in-theory (disable binop arith))))
+  :hints (("Goal" :use (:instance fv-agree-flag (flag :one)))))
 
 ; flag :list a statement list, :arms a select's arms
 (defun asg (flag x)
