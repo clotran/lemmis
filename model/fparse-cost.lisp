@@ -359,47 +359,96 @@
      ((not (and (consp toks) (equal tk (op ",")))) (+ 1))
      ((kw-head-p (cdr toks))
       (mv-let
-       (ok lo r)
-       (fp :expr (cdddr toks))
-       (declare (ignorable ok lo r))
+       (ok c r)
+       (fp :ictl (cdddr toks))
+       (declare (ignorable ok c r))
+       (let ((c39 (fp-steps :ictl (cdddr toks)))) (if ok (+ 1 c39) (+ 1 c39)))))
+     ((int-dc-p (cdr toks))
+      (mv-let
+       (ok c r)
+       (fp :ictl (cddr (cddddr toks)))
+       (declare (ignorable ok c r))
+       (let ((c40 (fp-steps :ictl (cddr (cddddr toks))))) (if ok (+ 1 c40) (+ 1 c40)))))
+     ((int-kind-p (cdr toks))
+      (mv-let
+       (ok k r)
+       (fp :expr (cdr (cddddr toks)))
+       (declare (ignorable ok k r))
        (let
-        ((c39 (fp-steps :expr (cdddr toks))))
+        ((c41 (fp-steps :expr (cdr (cddddr toks)))))
         (if
-         (not (and ok (<= (len r) (len (cdddr toks))) (consp r) (equal (car r) (op ","))))
-         (+ 1 c39)
+         (not
+          (and
+           ok
+           (<= (len r) (len (cdr (cddddr toks))))
+           (consp r)
+           (equal (car r) (op ")"))
+           (int-tail-p (cdr r))))
+         (+ 1 c41)
          (mv-let
-          (ok2 hi r2)
-          (fp :expr (cdr r))
-          (declare (ignorable ok2 hi r2))
-          (let
-           ((c40 (fp-steps :expr (cdr r))))
-           (cond
-            ((not (and ok2 (<= (len r2) (len (cdr r))) (consp r2))) (+ 1 c40 c39))
-            ((equal (car r2) (op ")")) (+ 1 c40 c39))
-            ((equal (car r2) (op ","))
-             (mv-let
-              (ok3 st r3)
-              (fp :expr (cdr r2))
-              (declare (ignorable ok3 st r3))
-              (let
-               ((c41 (fp-steps :expr (cdr r2))))
-               (if (and ok3 (consp r3) (equal (car r3) (op ")"))) (+ 1 c41 c40 c39) (+ 1 c41 c40 c39)))))
-            (t (+ 1 c40 c39)))))))))
+          (ok2 c r2)
+          (fp :ictl (cdr (cddddr r)))
+          (declare (ignorable ok2 c r2))
+          (let ((c42 (fp-steps :ictl (cdr (cddddr r))))) (if ok2 (+ 1 c42 c41) (+ 1 c42 c41))))))))
+     ((int-paren-p (cdr toks))
+      (mv-let
+       (ok k r)
+       (fp :expr (cdddr toks))
+       (declare (ignorable ok k r))
+       (let
+        ((c43 (fp-steps :expr (cdddr toks))))
+        (if
+         (not
+          (and ok (<= (len r) (len (cdddr toks))) (consp r) (equal (car r) (op ")")) (int-tail-p (cdr r))))
+         (+ 1 c43)
+         (mv-let
+          (ok2 c r2)
+          (fp :ictl (cdr (cddddr r)))
+          (declare (ignorable ok2 c r2))
+          (let ((c44 (fp-steps :ictl (cdr (cddddr r))))) (if ok2 (+ 1 c44 c43) (+ 1 c44 c43))))))))
      (t
       (mv-let
        (ok v r)
        (fp :acv (cdr toks))
        (declare (ignorable ok v r))
        (let
-        ((c42 (fp-steps :acv (cdr toks))))
+        ((c45 (fp-steps :acv (cdr toks))))
         (if
          (not (and ok (<= (len r) (len (cdr toks)))))
-         (+ 1 c42)
+         (+ 1 c45)
          (mv-let
           (ok2 vs r2)
           (fp :ilist* r)
           (declare (ignorable ok2 vs r2))
-          (let ((c43 (fp-steps :ilist* r))) (if ok2 (+ 1 c43 c42) (+ 1 c43 c42))))))))))
+          (let ((c46 (fp-steps :ilist* r))) (if ok2 (+ 1 c46 c45) (+ 1 c46 c45))))))))))
+   (:ictl
+    (mv-let
+     (ok lo r)
+     (fp :expr toks)
+     (declare (ignorable ok lo r))
+     (let
+      ((c47 (fp-steps :expr toks)))
+      (if
+       (not (and ok (<= (len r) (len toks)) (consp r) (equal (car r) (op ","))))
+       (+ 1 c47)
+       (mv-let
+        (ok2 hi r2)
+        (fp :expr (cdr r))
+        (declare (ignorable ok2 hi r2))
+        (let
+         ((c48 (fp-steps :expr (cdr r))))
+         (cond
+          ((not (and ok2 (<= (len r2) (len (cdr r))) (consp r2))) (+ 1 c48 c47))
+          ((equal (car r2) (op ")")) (+ 1 c48 c47))
+          ((equal (car r2) (op ","))
+           (mv-let
+            (ok3 st r3)
+            (fp :expr (cdr r2))
+            (declare (ignorable ok3 st r3))
+            (let
+             ((c49 (fp-steps :expr (cdr r2))))
+             (if (and ok3 (consp r3) (equal (car r3) (op ")"))) (+ 1 c49 c48 c47) (+ 1 c49 c48 c47)))))
+          (t (+ 1 c48 c47)))))))))
    (otherwise (+ 1)))))
 
 (in-theory (disable member-equal))

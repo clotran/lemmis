@@ -189,9 +189,11 @@
 ;  :ilist  (v . il*)            R782's ac-value-list , ac-implied-do-control (R783):
 ;                               an ac-value, then the :ilist* after it
 ;  :ilist* (v . il*) | (:ctl var lo hi st)   ", ac-value" and more, or the
-;                               control ", var = lo , hi [, st] )": R783
-;                               ac-implied-do-control, R784 ac-do-variable; st nil
-;                               when absent
+;                               control ", [integer-type-spec ::] var = lo , hi [, st] )":
+;                               R783 ac-implied-do-control, R784 ac-do-variable;
+;                               var a name, or (:int name sel) after INTEGER
+;                               [( [KIND =] k )] ::, sel nil or (kw k) as R706
+;  :ictl   (lo hi st)           "lo , hi [, st] )", st nil when absent
 
 ;  R719 real-part, R720 imag-part: [sign] int- or real-literal-constant
 ;  (no named constant), read as the expression it spells: the :expr tree
@@ -250,13 +252,20 @@
     (:acv (if (eq (kar x) :ido) (cons (op "(") (fy :ilist (kdr x))) (fy :expr (kadr x))))
     (:ilist (append (fy :acv (kar x)) (fy :ilist* (kdr x))))
     (:ilist* (if (eq (kar x) :ctl)
-                 (list* (op ",") (kadr x) (op "=")
-                        (append (fy :expr (kaddr x))
-                                (cons (op ",") (append (fy :expr (kadddr x))
-                                                        (if (kar (kdr (kdr (kdr (kdr x)))))
-                                                            (cons (op ",") (append (fy :expr (kar (kdr (kdr (kdr (kdr x)))))) (list (op ")"))))
-                                                          (list (op ")")))))))
+                 (cons (op ",")
+                       (append (if (eq (kar (kadr x)) :int)       ; R783's integer-type-spec ::
+                                   (cons '(:name "integer")
+                                         (append (if (kaddr (kadr x))
+                                                     (cons (op "(") (append (if (kar (kaddr (kadr x))) (list '(:name "kind") (op "=")) nil)
+                                                                            (append (fy :expr (kadr (kaddr (kadr x)))) (list (op ")")))))
+                                                   nil)
+                                                 (list (op ":") (op ":") (kadr (kadr x)))))
+                                 (list (kadr x)))
+                               (cons (op "=") (fy :ictl (kdr (kdr x))))))
                (cons (op ",") (append (fy :acv (kar x)) (fy :ilist* (kdr x))))))
+    (:ictl (append (fy :expr (kar x))
+                   (cons (op ",") (append (fy :expr (kadr x))
+                                          (if (kaddr x) (cons (op ",") (append (fy :expr (kaddr x)) (list (op ")")))) (list (op ")")))))))
     (otherwise nil))))
 
 (defun fg (nt x)
@@ -325,10 +334,17 @@
     (:ilist (and (consp x) (fg :acv (car x)) (fg :ilist* (cdr x))))
     (:ilist* (and (consp x)
                   (if (eq (car x) :ctl)
-                      (and (true-listp x) (= (len x) 5) (name-tok-p (cadr x))
-                           (fg :expr (caddr x)) (fg :expr (cadddr x))
-                           (or (null (car (cddddr x))) (fg :expr (car (cddddr x)))))
+                      (and (consp (cdr x))
+                           (if (eq (kar (cadr x)) :int)
+                               (and (true-listp (cadr x)) (= (len (cadr x)) 3) (name-tok-p (cadr (cadr x)))
+                                    (or (null (caddr (cadr x)))
+                                        (and (true-listp (caddr (cadr x))) (= (len (caddr (cadr x))) 2)
+                                             (booleanp (car (caddr (cadr x)))) (fg :expr (cadr (caddr (cadr x)))))))
+                             (name-tok-p (cadr x)))
+                           (fg :ictl (cddr x)))
                     (and (fg :acv (car x)) (fg :ilist* (cdr x))))))
+    (:ictl (and (true-listp x) (= (len x) 3) (fg :expr (car x)) (fg :expr (cadr x))
+                (or (null (caddr x)) (fg :expr (caddr x)))))
     (otherwise nil)))
 
 (defthm acl2-count-kar

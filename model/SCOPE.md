@@ -11,16 +11,18 @@ proved to accept exactly that grammar (`fp-`, `fps-`, `fpu-sound` and
 `-complete`), for every alternative the Scope uses; **part** when only
 some alternatives are in; **no** otherwise.
 
-Score: **148 of 185** Scope rules proved (80%); 37 more in part; none not yet in.
+Score: **151 of 186** Scope rules proved (81%); 35 more in part; none not yet in.
 
 ## Theorem 3: checked against the compilers (status)
 
 Not a theorem: a test, run by `make check` (exit 1 on any difference).
 
 - **Oracle programs**: check-fsem.bb's 7 fsyn cases (the subset clotran's
-  generator emits) and the 29 whole programs of `cases/`, each run by the
+  generator emits) and the 31 whole programs of `cases/`, each run by the
   model and by gfortran (-std=f2018) and flang; all agree, and the two
-  compilers agree with each other on all of them.
+  compilers agree with each other on all of them. One, `acdotyped.f90`,
+  runs under flang only: gfortran 16 rejects R783's integer-type-spec
+  (a case's first line `! not gfortran: why` says so).
 - **The fuzzer**: `fuzz.bb` (`make fuzz`, run by `make check` with seed
   1, 40 programs; `make fuzz FUZZ_SEED=7 FUZZ_N=100` for more). It
   generates programs of a slice of the subset only: integer and logical
@@ -126,6 +128,8 @@ Not a theorem: a test, run by `make check` (exit 1 on any difference).
   does not allocate or reallocate (10.2.1.3): the variable is allocated
   first, with the expression's shape, else the run stops with an error.
   `allocate` and `deallocate` are among `*fkeywords*`.
+- A section with a vector subscript (R925) is defined only when no index repeats (9.5.3.4.3p3: the model
+  would keep the last value), and is not an actual argument the procedure defines (it is not definable).
 - `::` is lexed as two `:` tokens (it is two colons in a triplet
   `a(::2)` too); a token is not split across lines, and a character
   context is not continued (6.3.2.4p3, p4).
@@ -187,7 +191,7 @@ Not a theorem: a test, run by `make check` (exit 1 on any difference).
 | R780 | rbracket | proved | |
 | R781 | ac-value | proved | expr (not beginning with `(`: the subset's), ac-implied-do |
 | R782 | ac-implied-do | proved | ( ac-value-list , ac-implied-do-control ) |
-| R783 | ac-implied-do-control | part | ac-do-variable = scalar-int-expr , scalar-int-expr [, scalar-int-expr]; no integer-type-spec :: |
+| R783 | ac-implied-do-control | proved | [integer-type-spec ::] ac-do-variable = scalar-int-expr , scalar-int-expr [, scalar-int-expr]; INTEGER [( [KIND =] k )] ::, the variable then of that kind (cases/acdotyped.f90: flang only, gfortran 16 rejects it) |
 | R784 | ac-do-variable | proved | a construct entity (19.4) of the type of the variable of its name, which is integer (the meaning) |
 | R801 | type-declaration-stmt | proved |  |
 | R802 | attr-spec | proved | ALLOCATABLE, DIMENSION, INTENT, PARAMETER, SAVE, VALUE |
@@ -214,9 +218,10 @@ Not a theorem: a test, run by `make check` (exit 1 on any difference).
 | R917 | array-element | proved | |
 | R918 | array-section | proved | |
 | R919 | subscript | proved | |
-| R921 | section-subscript | part | subscript, subscript-triplet; no vector-subscript |
+| R921 | section-subscript | proved | subscript, subscript-triplet, vector-subscript |
 | R922 | subscript-triplet | proved | |
 | R924 | stride | proved | |
+| R925 | vector-subscript | proved | int-expr, read as an expression; in the meaning, a rank-one integer array, its elements the indices (cases/vecsub.f90) |
 | R929 | allocate-stmt | part | ALLOCATE ( allocation-list ); no type-spec, no alloc-opt (STAT=, ERRMSG=, SOURCE=): allocating an allocated variable stops the program (9.7.4) |
 | R933 | allocation | part | allocate-object ( allocate-shape-spec-list ), read as an actual argument; the list required (no scalar allocatable), no coarray spec |
 | R934 | allocate-object | part | variable-name; no structure-component |

@@ -392,11 +392,13 @@
 (doseq [[f m] (map vector prog-files prog-model)]
   (swap! prog-results update :progs inc)
   (let [nm (fs/file-name f)
-        outs (for [[fc & flags] compilers]
+        ;; a program a compiler rejects though the standard has it says so on its first line, "! not gfortran: why"
+        outs (for [[fc & flags] compilers :when (not (str/starts-with? (slurp f) (str "! not " fc ":")))]
                (let [exe (str work "/prog-" nm "-" fc)
                      cr (apply sh! 180 {:dir work} "nice" fc (concat flags ["-o" exe f]))]
                  (if (not= 0 (:exit cr)) [fc :compile-error (:err cr)]
                    (let [rr (sh! 60 (merge {:dir work} (when-let [t (input-of f)] {:in t})) exe)] [fc (:exit rr) (lines-of (:out rr))]))))
+        _ (when (< (count outs) (count compilers)) (println "not compiled by" (str/join " " (remove (set (map first outs)) (map first compilers))) ":" nm (first (str/split-lines (slurp f)))))
         ok-model (#{":NORMAL" ":STOP"} (:status m))]
     (when-not ok-model (fail! nm "the model stops with" (:status m) (or (:at m) "")))
     (let [agrees (for [[fc ex toks] outs]

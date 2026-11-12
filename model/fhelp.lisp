@@ -301,6 +301,21 @@
 (defun ido-ctl (il)                  ; and its control, (:ctl var lo hi st)
   (declare (xargs :guard t))
   (if (or (atom il) (eq (car il) :ctl)) il (ido-ctl (cdr il))))
+(defun vec-sub-p (v)                ; R925 vector-subscript: a rank-one integer array, its elements defined (C929)
+  (declare (xargs :guard t))
+  (and (aval-p v) (eq (a-ty v) :i) (= (len (a-lbs v)) 1) (integer-listp (a-es v))))
+(defun ido-ix (il)                   ; its (var lo hi st), var the name after R783's INTEGER ... ::
+  (declare (xargs :guard t))
+  (let ((c (cdr (ido-ctl il)))) (if (eq (kar (kar c)) :int) (cons (kadr (kar c)) (kdr c)) c)))
+(defun ido-ts (il)                   ; and that integer-type-spec, as a :ts
+  (declare (xargs :guard t))
+  (let ((c (cdr (ido-ctl il)))) (if (eq (kar (kar c)) :int) (list "integer" (kaddr (kar c))) nil)))
+(defun ido-ix (il)                   ; its (var lo hi st), var the name after R783's INTEGER ... ::
+  (declare (xargs :guard t))
+  (let ((c (cdr (ido-ctl il)))) (if (eq (kar (kar c)) :int) (cons (kadr (kar c)) (kdr c)) c)))
+(defun ido-ts (il)                   ; and that integer-type-spec, as a :ts
+  (declare (xargs :guard t))
+  (let ((c (cdr (ido-ctl il)))) (if (eq (kar (kar c)) :int) (list "integer" (kaddr (kar c))) nil)))
 
 (defun section-shape (ds sc)          ; the extents of the triplet subscripts
   (declare (xargs :guard t))

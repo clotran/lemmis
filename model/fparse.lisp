@@ -26,7 +26,7 @@
   (declare (xargs :guard t))
   (case nt
     (:base 0) (:part 1) (:parts 2) (:prim 1) (:mult 2) (:add 3) (:l2 4) (:l3 5) (:l4 6) (:and 7) (:or 8) (:equiv 9) (:expr 10)
-    ((:arg :acv :tri*) 11) ((:args :elist :ilist) 12)
+    ((:arg :acv :tri* :ictl) 11) ((:args :elist :ilist) 12)
     (otherwise 1)))
 
 ; a keyword argument's head, name =
@@ -34,11 +34,25 @@
   (declare (xargs :guard t))
   (and (consp toks) (name-tok-p (car toks)) (consp (cdr toks)) (equal (cadr toks) (op "="))))
 
+; R783's integer-type-spec :: before the variable: ": : name =", and
+; "integer : : name =", "integer (", "integer ( kind ="
+(defun int-tail-p (ts)
+  (declare (xargs :guard t))
+  (and (consp ts) (equal (car ts) (op ":")) (consp (cdr ts)) (equal (cadr ts) (op ":")) (kw-head-p (cddr ts))))
+(defun int-dc-p (ts) (declare (xargs :guard t)) (and (consp ts) (equal (car ts) '(:name "integer")) (int-tail-p (cdr ts))))
+(defun int-paren-p (ts)
+  (declare (xargs :guard t))
+  (and (consp ts) (equal (car ts) '(:name "integer")) (consp (cdr ts)) (equal (cadr ts) (op "("))))
+(defun int-kind-p (ts)
+  (declare (xargs :guard t))
+  (and (int-paren-p ts) (kw-head-p (cddr ts)) (equal (caddr ts) '(:name "kind"))))
+
 (defmacro fail () '(mv nil nil toks))
 
 (defun fp (nt toks)
   (declare (xargs :guard t :measure (+ (* 16 (len toks)) (fp-rank nt))
-                  :verify-guards nil))
+                  :verify-guards nil
+                  :hints (("Goal" :in-theory (disable int-tail-p int-dc-p int-paren-p int-kind-p kw-head-p)))))
   (let ((tk (kar toks)))
     (case nt
       ((:expr :equiv :or :l3 :add)
@@ -176,32 +190,79 @@
                 (if (not (and ok (<= (len r) (len toks)))) (fail)
                   (mv-let (ok2 vs r2) (fp :ilist* r)
                     (if ok2 (mv t (cons v vs) r2) (fail))))))
-      ; ", ac-value" and more, or the control ", var = lo , hi [, st] )"
+      ; ", ac-value" and more, or the control ", [integer-type-spec ::] var = " :ictl
       (:ilist* (cond ((not (and (consp toks) (equal tk (op ",")))) (fail))
                      ((kw-head-p (cdr toks))
-                      (mv-let (ok lo r) (fp :expr (cdddr toks))
-                        (if (not (and ok (<= (len r) (len (cdddr toks))) (consp r) (equal (car r) (op ",")))) (fail)
-                          (mv-let (ok2 hi r2) (fp :expr (cdr r))
-                            (cond ((not (and ok2 (<= (len r2) (len (cdr r))) (consp r2))) (fail))
-                                  ((equal (car r2) (op ")")) (mv t (list :ctl (cadr toks) lo hi nil) (cdr r2)))
-                                  ((equal (car r2) (op ","))
-                                   (mv-let (ok3 st r3) (fp :expr (cdr r2))
-                                     (if (and ok3 (consp r3) (equal (car r3) (op ")")))
-                                         (mv t (list :ctl (cadr toks) lo hi st) (cdr r3))
-                                       (fail))))
-                                  (t (fail)))))))
+                      (mv-let (ok c r) (fp :ictl (cdddr toks))
+                        (if ok (mv t (list* :ctl (cadr toks) c) r) (fail))))
+                     ((int-dc-p (cdr toks))         ; , integer : : name =
+                      (mv-let (ok c r) (fp :ictl (cddr (cddddr toks)))
+                        (if ok (mv t (list* :ctl (list :int (car (cddddr toks)) nil) c) r) (fail))))
+                     ((int-kind-p (cdr toks))       ; , integer ( kind = k ) : : name =
+                      (mv-let (ok k r) (fp :expr (cdr (cddddr toks)))
+                        (if (not (and ok (<= (len r) (len (cdr (cddddr toks)))) (consp r) (equal (car r) (op ")")) (int-tail-p (cdr r))))
+                            (fail)
+                          (mv-let (ok2 c r2) (fp :ictl (cdr (cddddr r)))
+                            (if ok2 (mv t (list* :ctl (list :int (cadddr r) (list t k)) c) r2) (fail))))))
+                     ((int-paren-p (cdr toks))      ; , integer ( k ) : : name =
+                      (mv-let (ok k r) (fp :expr (cdddr toks))
+                        (if (not (and ok (<= (len r) (len (cdddr toks))) (consp r) (equal (car r) (op ")")) (int-tail-p (cdr r))))
+                            (fail)
+                          (mv-let (ok2 c r2) (fp :ictl (cdr (cddddr r)))
+                            (if ok2 (mv t (list* :ctl (list :int (cadddr r) (list nil k)) c) r2) (fail))))))
                      (t (mv-let (ok v r) (fp :acv (cdr toks))
                           (if (not (and ok (<= (len r) (len (cdr toks))))) (fail)
                             (mv-let (ok2 vs r2) (fp :ilist* r)
                               (if ok2 (mv t (cons v vs) r2) (fail))))))))
+      ; an implied-do's limits, "lo , hi [, st] )"
+      (:ictl (mv-let (ok lo r) (fp :expr toks)
+               (if (not (and ok (<= (len r) (len toks)) (consp r) (equal (car r) (op ",")))) (fail)
+                 (mv-let (ok2 hi r2) (fp :expr (cdr r))
+                   (cond ((not (and ok2 (<= (len r2) (len (cdr r))) (consp r2))) (fail))
+                         ((equal (car r2) (op ")")) (mv t (list lo hi nil) (cdr r2)))
+                         ((equal (car r2) (op ","))
+                          (mv-let (ok3 st r3) (fp :expr (cdr r2))
+                            (if (and ok3 (consp r3) (equal (car r3) (op ")")))
+                                (mv t (list lo hi st) (cdr r3))
+                              (fail))))
+                         (t (fail)))))))
       (otherwise (fail)))))
+
+; R783's heads, closed: what each says of the tokens, and each on a cons
+(defthm int-tail-p-fc
+  (implies (int-tail-p ts)
+           (and (consp ts) (equal (car ts) (op ":")) (consp (cdr ts)) (equal (cadr ts) (op ":"))
+                (consp (cddr ts)) (name-tok-p (caddr ts)) (consp (cdddr ts)) (equal (cadddr ts) (op "="))))
+  :rule-classes :forward-chaining)
+(defthm int-dc-p-fc
+  (implies (int-dc-p ts) (and (consp ts) (equal (car ts) '(:name "integer")) (int-tail-p (cdr ts))))
+  :rule-classes :forward-chaining)
+(defthm int-paren-p-fc
+  (implies (int-paren-p ts) (and (consp ts) (equal (car ts) '(:name "integer")) (consp (cdr ts)) (equal (cadr ts) (op "("))))
+  :rule-classes :forward-chaining)
+(defthm int-kind-p-fc
+  (implies (int-kind-p ts)
+           (and (int-paren-p ts) (consp (cddr ts)) (equal (caddr ts) '(:name "kind"))
+                (consp (cdddr ts)) (equal (cadddr ts) (op "="))))
+  :rule-classes :forward-chaining)
+(defthm int-heads-cons
+  (and (equal (int-tail-p (cons a b)) (and (equal a (op ":")) (consp b) (equal (car b) (op ":")) (kw-head-p (cdr b))))
+       (equal (int-dc-p (cons a b)) (and (equal a '(:name "integer")) (int-tail-p b)))
+       (equal (int-paren-p (cons a b)) (and (equal a '(:name "integer")) (consp b) (equal (car b) (op "("))))
+       (equal (int-kind-p (cons a b))
+              (and (equal a '(:name "integer")) (consp b) (equal (car b) (op "(")) (kw-head-p (cdr b))
+                   (equal (cadr b) '(:name "kind"))))))
+(defthm int-heads-not
+  (implies (not (equal (car ts) '(:name "integer")))
+           (and (not (int-dc-p ts)) (not (int-paren-p ts)) (not (int-kind-p ts)))))
+(in-theory (disable int-tail-p int-dc-p int-paren-p int-kind-p))
 
 (defthm fp-len
   (<= (len (mv-nth 2 (fp nt toks))) (len toks))
   :rule-classes :linear
-  :hints (("Goal" :induct (fp nt toks) :in-theory (disable xname-tok-p name-tok-p lit-tok-p kw-head-p cpart-p))
+  :hints (("Goal" :induct (fp nt toks) :in-theory (disable xname-tok-p name-tok-p lit-tok-p kw-head-p cpart-p int-tail-p int-dc-p int-paren-p int-kind-p))
           (and stable-under-simplificationp
-               '(:expand ((fp :prim toks) (fp :base toks) (fp :part toks) (fp :parts toks) (fp :ilist* toks))))))
+               '(:expand ((fp :prim toks) (fp :base toks) (fp :part toks) (fp :parts toks) (fp :ilist* toks) (fp :ictl toks))))))
 
 ; ---- the tokens' facts, then their recognizers closed
 
@@ -221,6 +282,10 @@
   :hints (("Goal" :in-theory (enable name-tok-p xname-tok-p lit-tok-p prim-start-p start-tok-p))))
 
 (in-theory (disable name-tok-p xname-tok-p lit-tok-p prim-start-p start-tok-p cpart-p))
+
+; INTEGER, a keyword, begins no expression (R783 decides on it)
+(defthm start-not-integer (implies (start-tok-p tk) (not (equal tk (quote (:name "integer")))))
+  :hints (("Goal" :in-theory (enable start-tok-p xname-tok-p name-tok-p lit-tok-p))))
 
 (defthm append-assoc-fp (equal (append (append a b) c) (append a (append b c))))
 (defthm len-append-fp (equal (len (append a b)) (+ (len a) (len b))))
@@ -311,7 +376,7 @@
 
 ; a list closed by its own punctuation is followed by anything
 (defthm follow-closed
-  (implies (member-eq nt '(:args :args* :elist :elist* :ilist :ilist*)) (follow-ok nt r))
+  (implies (member-eq nt '(:args :args* :elist :elist* :ilist :ilist* :ictl)) (follow-ok nt r))
   :hints (("Goal" :in-theory (enable follow-ok cont-tok-p))))
 
 (defthm follow-append
@@ -329,7 +394,7 @@
 
 ; a list closed by its own punctuation is followed by anything
 (defthm follow-closed
-  (implies (member-eq nt '(:args :args* :elist :elist* :ilist :ilist*)) (follow-ok nt r))
+  (implies (member-eq nt '(:args :args* :elist :elist* :ilist :ilist* :ictl)) (follow-ok nt r))
   :hints (("Goal" :in-theory (enable follow-ok cont-tok-p))))
 
 (defthm follow-append
@@ -380,7 +445,7 @@
                 (not (equal nt :l3)) (not (equal nt :l3*))
                 (not (equal nt :mult)) (not (equal nt :prim)) (not (equal nt :base)) (not (equal nt :part)) (not (equal nt :parts)) (not (equal nt :args)) (not (equal nt :args*))
                 (not (equal nt :arg)) (not (equal nt :tri*)) (not (equal nt :elist)) (not (equal nt :elist*))
-                (not (equal nt :acv)) (not (equal nt :ilist)) (not (equal nt :ilist*)))
+                (not (equal nt :acv)) (not (equal nt :ilist)) (not (equal nt :ilist*)) (not (equal nt :ictl)))
            (not (fg nt x)))
   :hints (("Goal" :expand ((fg nt x)))))
 
@@ -450,12 +515,15 @@
       (:ilist (list (fg-ind :acv (car x) (append (fy :ilist* (cdr x)) r))
                     (fg-ind :ilist* (cdr x) r)))
       (:ilist* (if (eq (car x) :ctl)
-                   (let ((st (car (cddddr x))) (cl (cons (op ")") r)))
-                     (list (fg-ind :expr (caddr x) (cons (op ",") (append (fy :expr (cadddr x)) (if st (cons (op ",") (append (fy :expr st) cl)) cl))))
-                           (fg-ind :expr (cadddr x) (if st (cons (op ",") (append (fy :expr st) cl)) cl))
-                           (fg-ind :expr st cl)))
+                   (list (fg-ind :ictl (cddr x) r)
+                         (fg-ind :expr (kadr (kaddr (cadr x)))
+                                 (list* (op ")") (op ":") (op ":") (kadr (cadr x)) (op "=") (append (fy :ictl (cddr x)) r))))
                  (list (fg-ind :acv (car x) (append (fy :ilist* (cdr x)) r))
                        (fg-ind :ilist* (cdr x) r))))
+      (:ictl (let ((st (kaddr x)) (cl (cons (op ")") r)))
+               (list (fg-ind :expr (car x) (cons (op ",") (append (fy :expr (kadr x)) (if st (cons (op ",") (append (fy :expr st) cl)) cl))))
+                     (fg-ind :expr (kadr x) (if st (cons (op ",") (append (fy :expr st) cl)) cl))
+                     (fg-ind :expr st cl))))
       (otherwise nil))))
 
 ; what a tree's spelling begins with

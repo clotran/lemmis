@@ -142,8 +142,9 @@
    (cond ((not (posp fuel)) (mv (err :fuel) st))
          ((atom es) (mv nil st))
          (t (with-v (v st) (if (eq (kar (car es)) :ido)   ; R782: its values, for each value of its variable (7.8)
-                               (with-v (ds st) (me-conc-lims (list (cdr (ido-ctl (cdar es)))) nil env st cx (1- fuel))
-                                 (me-ido (ido-vals (cdar es)) (car ds) env st cx (1- fuel)))
+                               (with-v (k st) (if (ido-ts (cdar es)) (me-kind (ido-ts (cdar es)) env st cx (1- fuel)) (mv nil st))
+                                 (with-v (ds st) (me-conc-lims (list (ido-ix (cdar es))) k env st cx (1- fuel))
+                                   (me-ido (ido-vals (cdar es)) (car ds) env st cx (1- fuel))))
                              (with-v (v st) (me-ev :expr (if (eq (kar (car es)) :e) (kadr (car es)) (car es)) env st cx (1- fuel))
                                (mv (list v) st)))
               (with-v (vs st) (me-list (cdr es) env st cx (1- fuel))
@@ -188,9 +189,9 @@
          ((eq (kar (car args)) :sub)
           (mv-let (v st) (me-ev :expr (kadr (car args)) env st cx (1- fuel))
             (cond ((errp v) (mv v nil st))
-                  ((not (ival-scalar v)) (mv (err :type) nil st))   ; a vector subscript is not in the subset
+                  ((not (or (ival-scalar v) (vec-sub-p v))) (mv (err :type) nil st))   ; R925: its elements' values the indices
                   (t (mv-let (ds sc st) (me-subs (cdr args) (cdr lbs) (cdr ubs) env st cx (1- fuel))
-                       (if (errp ds) (mv ds nil st) (mv (cons (list (v-num v)) ds) (cons t sc) st)))))))
+                       (if (errp ds) (mv ds nil st) (mv (cons (if (aval-p v) (a-es v) (list (v-num v))) ds) (cons (not (aval-p v)) sc) st)))))))
          ((eq (kar (car args)) :tri)
           (mv-let (lo st) (if (kadr (car args)) (me-ev :expr (kadr (car args)) env st cx (1- fuel)) (mv (vi 8 (kar lbs)) st))
             (mv-let (hi st) (if (kaddr (car args)) (me-ev :expr (kaddr (car args)) env st cx (1- fuel)) (mv (vi 8 (kar ubs)) st))
