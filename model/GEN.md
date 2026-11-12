@@ -620,10 +620,18 @@ Two findings from acl2-fortran's `stmt`:
    its bindings and gs-sem of the body (em (append binds em), env
    (pairlis$ vars vals), frame after the bindings), under sn-hyps and
    em-nostobj (opener `a-sx-lambda`).
-   Next, in order: (1') gsx-the-check (value is a-sx of the last argument at n-4),
-   gsx-implies (sif-then/sif-else with sb nil, cb (:true), a-prim's
-   implies; fuel n-2/n-3 as sn-ind); then the gs-sem theorem by an induction over g-sexpr dispatching to the
-   cases (the-check, implies, :fcall excluded or added); (2) g-stmt vs
+   **gen-stthm.lisp**: `gsx-the-check` (opener `a-sx-the-check`: no
+   error means the last argument's a-sx at n-4 answers, the same value),
+   `gsx-implies` (`a-sx-imp`; sif-then/sif-else with sb nil, cb (:true),
+   split on the test and on the consequent being boolean), and
+   **`gs-sem-thm`**: by sn-ind, under sn-hyps and em-nostobj em st,
+   gsa-sem/gsb-sem/gs-sem of every term (call-free by gs-sem's own
+   no-calls hypothesis); `gs-sem-holds` the rewrite form. The induction
+   only dispatches (minimal theory plus `-any` lemmas: each splits on
+   no-calls and the length itself, the error cases by `gs-err` and
+   `gs-nocalls`); `em-nostobj-g-svals` (binds never name a stobj) gives
+   the lambda body's em-nostobj. 27 s.
+   Next, in order: (2) g-stmt vs
    a-st on sx-list for :set (side condition: v reads no component the
    inner update writes -- finding 1), :seti (bounds), if, lambda (side
    condition: the update terms read no var the lambda rebinds -- finding
