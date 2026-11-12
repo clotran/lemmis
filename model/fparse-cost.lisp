@@ -122,29 +122,21 @@
      ((not (consp toks)) (+ 1))
      ((lit-tok-p tk) (+ 1))
      ((xname-tok-p tk)
-      (if
-       (and (consp (cdr toks)) (equal (cadr toks) (op "(")))
-       (mv-let
-        (ok as r)
-        (fp :args (cddr toks))
-        (declare (ignorable ok as r))
-        (let
-         ((c13 (fp-steps :args (cddr toks))))
-         (cond
-          ((not ok) (+ 1 c13))
-          ((and (consp r) (equal (car r) (op "(")) (<= (len r) (len (cddr toks))))
-           (mv-let
-            (ok2 g r2)
-            (fp :arg (cdr r))
-            (declare (ignorable ok2 g r2))
-            (let
-             ((c14 (fp-steps :arg (cdr r))))
-             (if
-              (and ok2 (eq (kar g) :tri) (null (kadddr g)) (consp r2) (equal (car r2) (op ")")))
-              (+ 1 c14 c13)
-              (+ 1 c14 c13)))))
-          (t (+ 1 c13)))))
-       (+ 1)))
+      (mv-let
+       (ok b r)
+       (fp :base toks)
+       (declare (ignorable ok b r))
+       (let
+        ((c13 (fp-steps :base toks)))
+        (cond
+         ((not (and ok (< (len r) (len toks)))) (+ 1 c13))
+         ((and (consp r) (equal (car r) (op "%")) (member-eq (kar b) ' (:name :ref)))
+          (mv-let
+           (ok2 ps r2)
+           (fp :parts r)
+           (declare (ignorable ok2 ps r2))
+           (let ((c14 (fp-steps :parts r))) (if ok2 (+ 1 c14 c13) (+ 1 c14 c13)))))
+         (t (+ 1 c13))))))
      ((equal tk (op "("))
       (mv-let
        (ok e r)
@@ -160,6 +152,59 @@
        (declare (ignorable ok es r))
        (let ((c16 (fp-steps :elist (cdr toks)))) (if ok (+ 1 c16) (+ 1 c16)))))
      (t (+ 1))))
+   (:base
+    (cond
+     ((not (and (consp toks) (xname-tok-p tk))) (+ 1))
+     (t
+      (if
+       (and (consp (cdr toks)) (equal (cadr toks) (op "(")))
+       (mv-let
+        (ok as r)
+        (fp :args (cddr toks))
+        (declare (ignorable ok as r))
+        (let
+         ((c17 (fp-steps :args (cddr toks))))
+         (cond
+          ((not ok) (+ 1 c17))
+          ((and (consp r) (equal (car r) (op "(")) (<= (len r) (len (cddr toks))))
+           (mv-let
+            (ok2 g r2)
+            (fp :arg (cdr r))
+            (declare (ignorable ok2 g r2))
+            (let
+             ((c18 (fp-steps :arg (cdr r))))
+             (if
+              (and ok2 (eq (kar g) :tri) (null (kadddr g)) (consp r2) (equal (car r2) (op ")")))
+              (+ 1 c18 c17)
+              (+ 1 c18 c17)))))
+          (t (+ 1 c17)))))
+       (+ 1)))))
+   (:part
+    (cond
+     ((not (and (consp toks) (equal tk (op "%")) (consp (cdr toks)) (xname-tok-p (cadr toks)))) (+ 1))
+     ((and (consp (cddr toks)) (equal (caddr toks) (op "(")))
+      (mv-let
+       (ok as r)
+       (fp :args (cdddr toks))
+       (declare (ignorable ok as r))
+       (let ((c19 (fp-steps :args (cdddr toks)))) (if ok (+ 1 c19) (+ 1 c19)))))
+     (t (+ 1))))
+   (:parts
+    (mv-let
+     (ok a r)
+     (fp :part toks)
+     (declare (ignorable ok a r))
+     (let
+      ((c20 (fp-steps :part toks)))
+      (cond
+       ((not (and ok (< (len r) (len toks)))) (+ 1 c20))
+       ((and (consp r) (equal (car r) (op "%")))
+        (mv-let
+         (ok2 ps r2)
+         (fp :parts r)
+         (declare (ignorable ok2 ps r2))
+         (let ((c21 (fp-steps :parts r))) (if ok2 (+ 1 c21 c20) (+ 1 c21 c20)))))
+       (t (+ 1 c20))))))
    ((:args :args*)
     (cond
      ((not (consp toks)) (+ 1))
@@ -173,15 +218,15 @@
         (fp :arg t1)
         (declare (ignorable ok a r))
         (let
-         ((c17 (fp-steps :arg t1)))
+         ((c22 (fp-steps :arg t1)))
          (if
           (not (and ok (<= (len r) (len t1))))
-          (+ 1 c17)
+          (+ 1 c22)
           (mv-let
            (ok2 as r2)
            (fp :args* r)
            (declare (ignorable ok2 as r2))
-           (let ((c18 (fp-steps :args* r))) (if ok2 (+ 1 c18 c17) (+ 1 c18 c17)))))))))))
+           (let ((c23 (fp-steps :args* r))) (if ok2 (+ 1 c23 c22) (+ 1 c23 c22)))))))))))
    (:arg
     (cond
      ((not (consp toks)) (+ 1))
@@ -190,29 +235,29 @@
        (ok e r)
        (fp :expr (cddr toks))
        (declare (ignorable ok e r))
-       (let ((c19 (fp-steps :expr (cddr toks)))) (if ok (+ 1 c19) (+ 1 c19)))))
+       (let ((c24 (fp-steps :expr (cddr toks)))) (if ok (+ 1 c24) (+ 1 c24)))))
      ((equal tk (op ":"))
       (mv-let
        (ok hs r)
        (fp :tri* (cdr toks))
        (declare (ignorable ok hs r))
-       (let ((c20 (fp-steps :tri* (cdr toks)))) (if ok (+ 1 c20) (+ 1 c20)))))
+       (let ((c25 (fp-steps :tri* (cdr toks)))) (if ok (+ 1 c25) (+ 1 c25)))))
      (t
       (mv-let
        (ok e r)
        (fp :expr toks)
        (declare (ignorable ok e r))
        (let
-        ((c21 (fp-steps :expr toks)))
+        ((c26 (fp-steps :expr toks)))
         (cond
-         ((not (and ok (<= (len r) (len toks)))) (+ 1 c21))
+         ((not (and ok (<= (len r) (len toks)))) (+ 1 c26))
          ((and (consp r) (equal (car r) (op ":")))
           (mv-let
            (ok2 hs r2)
            (fp :tri* (cdr r))
            (declare (ignorable ok2 hs r2))
-           (let ((c22 (fp-steps :tri* (cdr r)))) (if ok2 (+ 1 c22 c21) (+ 1 c22 c21)))))
-         (t (+ 1 c21))))))))
+           (let ((c27 (fp-steps :tri* (cdr r)))) (if ok2 (+ 1 c27 c26) (+ 1 c27 c26)))))
+         (t (+ 1 c26))))))))
    (:tri*
     (mv-let
      (ok hi r)
@@ -222,32 +267,32 @@
       (fp :expr toks))
      (declare (ignorable ok hi r))
      (let
-      ((c23
+      ((c28
         (if (or (atom toks) (member-equal tk (list (op ":") (op ",") (op ")")))) 0 (fp-steps :expr toks))))
       (cond
-       ((not (and ok (<= (len r) (len toks)))) (+ 1 c23))
+       ((not (and ok (<= (len r) (len toks)))) (+ 1 c28))
        ((and (consp r) (equal (car r) (op ":")))
         (mv-let
          (ok2 st r2)
          (fp :expr (cdr r))
          (declare (ignorable ok2 st r2))
-         (let ((c24 (fp-steps :expr (cdr r)))) (if ok2 (+ 1 c24 c23) (+ 1 c24 c23)))))
-       (t (+ 1 c23))))))
+         (let ((c29 (fp-steps :expr (cdr r)))) (if ok2 (+ 1 c29 c28) (+ 1 c29 c28)))))
+       (t (+ 1 c28))))))
    (:elist
     (mv-let
      (ok e r)
      (fp :expr toks)
      (declare (ignorable ok e r))
      (let
-      ((c25 (fp-steps :expr toks)))
+      ((c30 (fp-steps :expr toks)))
       (if
        (not (and ok (<= (len r) (len toks))))
-       (+ 1 c25)
+       (+ 1 c30)
        (mv-let
         (ok2 es r2)
         (fp :elist* r)
         (declare (ignorable ok2 es r2))
-        (let ((c26 (fp-steps :elist* r))) (if ok2 (+ 1 c26 c25) (+ 1 c26 c25))))))))
+        (let ((c31 (fp-steps :elist* r))) (if ok2 (+ 1 c31 c30) (+ 1 c31 c30))))))))
    (:elist*
     (cond
      ((not (consp toks)) (+ 1))
@@ -259,22 +304,22 @@
        (fp :expr (cdr toks))
        (declare (ignorable ok e r))
        (let
-        ((c27 (fp-steps :expr (cdr toks))))
+        ((c32 (fp-steps :expr (cdr toks))))
         (if
          (not (and ok (<= (len r) (len (cdr toks)))))
-         (+ 1 c27)
+         (+ 1 c32)
          (mv-let
           (ok2 es r2)
           (fp :elist* r)
           (declare (ignorable ok2 es r2))
-          (let ((c28 (fp-steps :elist* r))) (if ok2 (+ 1 c28 c27) (+ 1 c28 c27))))))))))
+          (let ((c33 (fp-steps :elist* r))) (if ok2 (+ 1 c33 c32) (+ 1 c33 c32))))))))))
    (otherwise (+ 1)))))
 
 (in-theory (disable member-equal))
 
 (defun fp-d (nt)
   (declare (xargs :guard t))
-  (case nt (:prim 1) (:mult 2) (:add 4) (:l2 6) (:l3 8) (:l4 9) (:and 10) (:or 12) (:equiv 14) (:expr 16)
+  (case nt (:base 0) (:part -63) (:parts -62) (:prim 1) (:mult 2) (:add 4) (:l2 6) (:l3 8) (:l4 9) (:and 10) (:or 12) (:equiv 14) (:expr 16)
     ((:arg :tri*) 17) (:args 19) (:elist 18) (otherwise 1)))
 
 (defthm fp-steps-natp (natp (fp-steps nt toks)) :rule-classes :type-prescription)

@@ -25,7 +25,7 @@
 (defun fp-rank (nt)
   (declare (xargs :guard t))
   (case nt
-    (:prim 1) (:mult 2) (:add 3) (:l2 4) (:l3 5) (:l4 6) (:and 7) (:or 8) (:equiv 9) (:expr 10)
+    (:base 0) (:part 1) (:parts 2) (:prim 1) (:mult 2) (:add 3) (:l2 4) (:l3 5) (:l4 6) (:and 7) (:or 8) (:equiv 9) (:expr 10)
     ((:arg :elist :tri*) 11) (:args 12)
     (otherwise 1)))
 
@@ -77,6 +77,23 @@
       (:prim (cond ((not (consp toks)) (fail))
                    ((lit-tok-p tk) (mv t (list :lit tk) (cdr toks)))
                    ((xname-tok-p tk)
+                    (mv-let (ok b r) (fp :base toks)
+                      (cond ((not (and ok (< (len r) (len toks)))) (fail))
+                            ; R911: a data-ref, part-ref % part-ref ...
+                            ((and (consp r) (equal (car r) (op "%")) (member-eq (kar b) '(:name :ref)))
+                             (mv-let (ok2 ps r2) (fp :parts r)
+                               (if ok2 (mv t (list :dref b ps) r2) (fail))))
+                            (t (mv t b r)))))
+                   ((equal tk (op "("))
+                    (mv-let (ok e r) (fp :expr (cdr toks))
+                      (if (and ok (consp r) (equal (car r) (op ")"))) (mv t (list :paren e) (cdr r)) (fail))))
+                   ((equal tk (op "["))
+                    (mv-let (ok es r) (fp :elist (cdr toks))
+                      (if ok (mv t (list :acons es) r) (fail))))
+                   (t (fail))))
+      ; a name, name ( list ), or an element's substring name ( list ) ( range )
+      (:base (cond ((not (and (consp toks) (xname-tok-p tk))) (fail))
+                   (t
                     (if (and (consp (cdr toks)) (equal (cadr toks) (op "(")))
                         (mv-let (ok as r) (fp :args (cddr toks))
                           (cond ((not ok) (fail))
@@ -87,14 +104,19 @@
                                        (mv t (list :sref tk as g) (cdr r2))
                                      (fail))))
                                 (t (mv t (list :ref tk as) r))))
-                      (mv t (list :name tk) (cdr toks))))
-                   ((equal tk (op "("))
-                    (mv-let (ok e r) (fp :expr (cdr toks))
-                      (if (and ok (consp r) (equal (car r) (op ")"))) (mv t (list :paren e) (cdr r)) (fail))))
-                   ((equal tk (op "["))
-                    (mv-let (ok es r) (fp :elist (cdr toks))
-                      (if ok (mv t (list :acons es) r) (fail))))
-                   (t (fail))))
+                      (mv t (list :name tk) (cdr toks))))))
+      ; % name [( args )]
+      (:part (cond ((not (and (consp toks) (equal tk (op "%")) (consp (cdr toks)) (xname-tok-p (cadr toks)))) (fail))
+                   ((and (consp (cddr toks)) (equal (caddr toks) (op "(")))
+                    (mv-let (ok as r) (fp :args (cdddr toks))
+                      (if ok (mv t (list (cadr toks) t as) r) (fail))))
+                   (t (mv t (list (cadr toks) nil nil) (cddr toks)))))
+      (:parts (mv-let (ok a r) (fp :part toks)
+                (cond ((not (and ok (< (len r) (len toks)))) (fail))
+                      ((and (consp r) (equal (car r) (op "%")))
+                       (mv-let (ok2 ps r2) (fp :parts r)
+                         (if ok2 (mv t (cons a ps) r2) (fail))))
+                      (t (mv t (list a) r)))))
       ((:args :args*)
        (cond ((not (consp toks)) (fail))
              ((equal tk (op ")")) (mv t nil (cdr toks)))
@@ -139,7 +161,10 @@
 
 (defthm fp-len
   (<= (len (mv-nth 2 (fp nt toks))) (len toks))
-  :rule-classes :linear)
+  :rule-classes :linear
+  :hints (("Goal" :induct (fp nt toks) :in-theory (disable xname-tok-p name-tok-p lit-tok-p))
+          (and stable-under-simplificationp
+               '(:expand ((fp :prim toks) (fp :base toks) (fp :part toks) (fp :parts toks))))))
 
 ; ---- the tokens' facts, then their recognizers closed
 
@@ -169,11 +194,17 @@
 
 ; ---- fp-sound
 
+; a :base tree is a primary of the same spelling
+(defthm fg-prim-of-base
+  (implies (fg :base x) (and (fg :prim x) (equal (fy :prim x) (fy :base x))))
+  :hints (("Goal" :expand ((fg :base x) (fg :prim x) (fy :prim x)))))
+
 (defthm fp-sound
   (implies (mv-nth 0 (fp nt toks))
            (and (fg nt (mv-nth 1 (fp nt toks)))
                 (equal (append (fy nt (mv-nth 1 (fp nt toks))) (mv-nth 2 (fp nt toks))) toks)))
-  :hints (("Goal" :induct (fp nt toks))))
+  :hints (("Goal" :induct (fp nt toks))
+          (and stable-under-simplificationp '(:expand ((fp :prim toks))))))
 
 ; ---- toward fp-complete: the follow sets
 
@@ -183,7 +214,7 @@
                      '((:expr :equiv) (:expr :expr*) (:expr* :equiv) (:equiv :or) (:equiv :equiv*)
                        (:equiv* :or) (:or :and) (:or :or*) (:or* :and) (:and :l4) (:l4 :l3)
                        (:l3 :l2) (:l3 :l3*) (:l3* :l2) (:l2 :add) (:l2 :l2*) (:l2* :add) (:add :mult) (:add :add*) (:add* :mult)
-                       (:mult :prim) (:mult :mult) (:arg :expr) (:tri* :expr) (:arg :tri*)))
+                       (:mult :prim) (:mult :mult) (:prim :base) (:prim :parts) (:parts :part) (:arg :expr) (:tri* :expr) (:arg :tri*)))
        t))
 
 (defthm follow-sub
@@ -217,8 +248,11 @@
                 (implies (member-eq nt '(:add :add*)) (not (member-equal (car r) *mult-ops*)))
                 (implies (member-eq nt '(:mult :add :add* :l2 :l2* :l3 :l3* :l4 :and :or :or* :equiv :equiv* :expr :expr*))
                          (not (equal (car r) '(:op "**"))))
-                (implies (member-eq nt '(:prim :mult :add :add* :l2 :l2* :l3 :l3* :l4 :and :or :or* :equiv :equiv* :expr :expr* :arg :tri*))
+                (implies (member-eq nt '(:prim :base :mult :add :add* :l2 :l2* :l3 :l3* :l4 :and :or :or* :equiv :equiv* :expr :expr* :arg :tri*))
                          (and (not (equal (car r) '(:op "("))) (not (equal (car r) '(:op "=")))))
+                (implies (member-eq nt '(:prim :parts :mult :add :add* :l2 :l2* :l3 :l3* :l4 :and :or :or* :equiv :equiv* :expr :expr*))
+                         (not (equal (car r) '(:op "%"))))
+                (implies (member-eq nt '(:part :parts)) (not (equal (car r) '(:op "("))))
                 (implies (member-eq nt '(:arg :tri*))
                          (and (not (equal (car r) '(:op ":"))) (not (equal (car r) '(:op "]")))
                               (not (start-tok-p (car r)))))))
@@ -296,7 +330,7 @@
                 (not (equal nt :expr*)) (not (equal nt :equiv*)) (not (equal nt :or*)) (not (equal nt :l2*))
                 (not (equal nt :add*)) (not (equal nt :and)) (not (equal nt :l4)) (not (equal nt :l2))
                 (not (equal nt :l3)) (not (equal nt :l3*))
-                (not (equal nt :mult)) (not (equal nt :prim)) (not (equal nt :args)) (not (equal nt :args*))
+                (not (equal nt :mult)) (not (equal nt :prim)) (not (equal nt :base)) (not (equal nt :part)) (not (equal nt :parts)) (not (equal nt :args)) (not (equal nt :args*))
                 (not (equal nt :arg)) (not (equal nt :tri*)) (not (equal nt :elist)) (not (equal nt :elist*)))
            (not (fg nt x)))
   :hints (("Goal" :expand ((fg nt x)))))
@@ -335,11 +369,20 @@
       (:mult (list (fg-ind :prim (car x) (if (kadr x) (cons (op "**") (append (fy :mult (kadr x)) r)) r))
                    (fg-ind :mult (kadr x) r)))
       (:prim (case (car x)
+               ((:name :ref :sref) (fg-ind :base x r))
+               ; cadr, not kadr: the hypotheses then match prim-as-dref's terms
+               (:dref (list (fg-ind :base (cadr x) (append (fy :parts (caddr x)) r))
+                            (fg-ind :parts (caddr x) r)))
+               (:paren (fg-ind :expr (kadr x) (cons (op ")") r)))
+               (:acons (fg-ind :elist (kadr x) r))
+               (otherwise nil)))
+      (:part (fg-ind :args (kaddr x) r))
+      (:parts (list (fg-ind :part (car x) (append (fy :parts (cdr x)) r))
+                    (fg-ind :parts (cdr x) r)))
+      (:base (case (car x)
                (:ref (fg-ind :args (kaddr x) r))
                (:sref (list (fg-ind :args (kaddr x) (cons (op "(") (append (fy :arg (kadddr x)) (cons (op ")") r))))
                             (fg-ind :arg (kadddr x) (cons (op ")") r))))
-               (:paren (fg-ind :expr (kadr x) (cons (op ")") r)))
-               (:acons (fg-ind :elist (kadr x) r))
                (otherwise nil)))
       ((:args :args*) (list (fg-ind :arg (car x) (append (fy :args* (cdr x)) r))
                             (fg-ind :args* (cdr x) r)))
@@ -359,6 +402,8 @@
   (declare (xargs :guard t))
   (case nt
     ((:prim :mult :add) (and (consp ys) (prim-start-p (car ys))))
+    (:base (and (consp ys) (xname-tok-p (car ys))))
+    ((:part :parts) (and (consp ys) (equal (car ys) '(:op "%"))))
     ((:l2 :l3 :l4) (and (consp ys) (or (prim-start-p (car ys)) (and (member-equal (car ys) *add-ops*) t))))
     ((:and :or :equiv :expr) (and (consp ys) (start-tok-p (car ys))))
     ((:expr* :equiv* :or* :l3* :l2* :add*)
@@ -377,6 +422,8 @@
   `(defthm ,(packn (list 'fy-first- nt))
      (implies (fg ,nt x) ,concl)
      :hints (("Goal" :use ((:instance fy-first (nt ,nt))) :in-theory (disable fy-first)))))
+(fy-first-at :base (and (consp (fy :base x)) (xname-tok-p (car (fy :base x)))))
+(fy-first-at :parts (and (consp (fy :parts x)) (equal (car (fy :parts x)) '(:op "%"))))
 (fy-first-at :prim (and (consp (fy :prim x)) (prim-start-p (car (fy :prim x)))))
 (fy-first-at :mult (and (consp (fy :mult x)) (prim-start-p (car (fy :mult x)))))
 (fy-first-at :add (and (consp (fy :add x)) (prim-start-p (car (fy :add x)))))
@@ -481,6 +528,30 @@
 ; membership in the operator lists stays closed: each fact the proof needs
 ; is a hypothesis (the tree's operator) or follow-decisions
 (in-theory (disable kw-head-p member-equal))
+
+; a data-ref is no keyword argument's head: a "%" or "(" follows its name
+(defthm kw-head-base-parts
+  (implies (and (fg :base b) (fg :parts p))
+           (not (kw-head-p (append (fy :base b) (append (fy :parts p) r)))))
+  :hints (("Goal" :expand ((fg :base b) (fy :base b)) :in-theory (enable kw-head-p))))
+
+; a name, a part-ref or a substring is a primary as a :base, before
+; fy-open and fg-open split the primary's forms
+(defthm prim-as-base
+  (implies (member-eq (car x) '(:name :ref :sref))
+           (and (equal (fy :prim x) (fy :base x)) (equal (fg :prim x) (fg :base x))))
+  :hints (("Goal" :expand ((fy :prim x) (fg :prim x)))))
+
+; a data-ref is its base's spelling, then its parts'
+(defthm prim-as-dref
+  (implies (equal (car x) :dref)
+           (equal (fy :prim x) (append (fy :base (cadr x)) (fy :parts (caddr x)))))
+  :hints (("Goal" :expand ((fy :prim x)))))
+
+(defthm len-fy-base
+  (implies (fg :base x) (< 0 (len (fy :base x))))
+  :rule-classes :linear
+  :hints (("Goal" :use fy-first-base :in-theory (disable fy-first-base))))
 
 ; the trees that are atoms: the empty lists
 (defthm fg-atom
