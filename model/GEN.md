@@ -599,9 +599,29 @@ Two findings from acl2-fortran's `stmt`:
    reasoning is an abstract lemma (`sn-if-abs`, `sna-abs`, `snv-abs`,
    `sn-lam-abs`) used once; `:use` of the parts' `sn-ok-use` splits badly.
    sn-ind also carries env, fuel and frames for the gs-sem induction.
-   Next, in order: (1') lambda (g-svals: a gsb-sem as gen-proof's
-   gb-sem, em-ok of (append binds em) against (pairlis$ vars vals));
-   then the gs-sem theorem by an induction over g-sexpr dispatching to the
+   **gen-stlam.lisp** (lambda, part): `gsb-sem` (gen-proof's gb-sem on
+   g-svals: the bindings' statements answer :normal, heap unchanged, em-ok
+   of em and of (append binds em) against (pairlis$ vars vals), binds'
+   keys among vars and not stobjs), with `gsb-nil`, `gsb-skip` (a var
+   bound to itself; a stobj var's value is nil, so em must bind no stobj
+   var: the new invariant `em-nostobj`), **`gsb-cons`**; openers
+   `a-sx-list-open`, `a-sx-sym`, `g-svals-nil/skip/cons`. A binding's
+   frame is stated as the put of its temporary (sn-ind's :vals frame too),
+   not sx-list of the appended assignment: the rewriter did not run that
+   assignment inside a hypothesis.
+   Item 5 (implies/the-check over stobj reads), decided: keep a-sx strict
+   and rely on gs-sem's existing hypothesis that a-sx answers no error
+   (when strict a-sx answers, no operand erred; true under the guard).
+   Making a-sx lazy would make it disagree with a-ev (strict, gen-proof's
+   ge-implies) on stobj-free terms, which gs-free relies on; the only
+   loss is :bounds propagation through a skipped operand, which is not
+   stated.
+   Next, in order: (1') gsx-lambda (gs-sem of the lambda from gsb-sem
+   and gs-sem of the body under em (append binds em), env (pairlis$ vars
+   vals), frame after the bindings; g-sexpr-lambda in gen-stnames is the
+   opener), gsx-the-check (value is a-sx of the last argument at n-4),
+   gsx-implies (sif-then/sif-else with sb nil, cb (:true), a-prim's
+   implies; fuel n-2/n-3 as sn-ind); then the gs-sem theorem by an induction over g-sexpr dispatching to the
    cases (the-check, implies, :fcall excluded or added); (2) g-stmt vs
    a-st on sx-list for :set (side condition: v reads no component the
    inner update writes -- finding 1), :seti (bounds), if, lambda (side

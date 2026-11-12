@@ -10,6 +10,7 @@
 (include-book "gen-stexp")
 
 (defun sx-fr (ss fr heap) (mv-let (st fr2 h2) (sx-list ss fr heap) (declare (ignore st h2)) fr2))
+(defun a-sv (x env s st defs n) (mv-let (e v) (a-sx x env s st defs n) (declare (ignore e)) v))
 (defun a-svs (xs env s st defs n) (mv-let (e vs) (a-sx-list xs env s st defs n) (declare (ignore e)) vs))
 
 (set-irrelevant-formals-ok t)
@@ -32,12 +33,12 @@
           ((or (eq (car vars) (car x)) (eq (g-role (car vars) st) :stobj) (eq (car vars) 'mv))
            (sn-ind :vals (cdr x) (cdr vars) em cnt locs sigs fnames st env s defs (1- n) fr heap))
           (t (mv-let (e s1 c ty cnt1 locs1) (g-sexpr (car x) em cnt locs sigs fnames st)
-               (declare (ignore e))
+               (declare (ignore e c))
                (mv-let (e tmp cnt2 locs2) (g-fresh (car vars) ty cnt1 locs1 (append fnames (em-names em)))
                  (declare (ignore e))
                  (list (sn-ind :expr (car x) nil em cnt locs sigs fnames st env s defs (1- n) fr heap)
                        (sn-ind :vals (cdr x) (cdr vars) em cnt2 locs2 sigs fnames st env s defs (1- n)
-                               (sx-fr (append s1 (list (list :assign (list :var tmp) c))) fr heap)
+                               (put tmp (cons ty (a-sv (car x) env s st defs (1- n))) (sx-fr s1 fr heap))
                                heap)))))))
    ((or (g-mvnth x) (g-st-free x st) (atom x) (not (true-listp x))) nil)
    ((member-eq (g-role (car x) st) '(:field :size)) nil)
