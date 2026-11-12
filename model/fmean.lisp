@@ -51,11 +51,74 @@
                      ((nil) (mv (err :undeclared) st))
                      (otherwise (mv (err :type) st)))))
           (:ref (me-ref (kadr x) (kaddr x) env st cx (1- fuel)))
+          ; R911, R913: a structure's component; ponytail: the base a scalar
+          ; variable or constant (no arrays of structures)
+          (:dref (mv-let (b suf d) (env-lookup (tok-name (kadr (kadr x))) env)
+                   (declare (ignore suf d))
+                   (cond ((not (and (eq (kar (kadr x)) :name) (member-eq (kar b) '(:var :const))))
+                          (mv (err (if b :type :undeclared)) st))
+                         (t (let ((st (if (eq (kar b) :var) (st-log (list (list :r (kadr b) :all)) st) st)))
+                              (with-v (v st) (me-parts (kaddr x) (if (eq (kar b) :var) (st-get (kadr b) st) (kadr b))
+                                                       env st cx (1- fuel))
+                                (if (undef-in v) (mv (err :undefined) st) (mv v st))))))))
           (:sref (with-v (v st) (me-ref (kadr x) (kaddr x) env st cx (1- fuel))    ; R908: an element's substring
                    (with-v (r st) (me-rng (kadddr x) (c-len v) env st cx (1- fuel))
                      (mv (substr-of v (car r) (cadr r)) st))))
           (otherwise (mv (err :syntax) st))))
        (otherwise (mv (err :syntax) st)))))
+
+ ; the component the part-refs ps name in the structure v (9.4.2): an
+ ; array component's element, or its section when the last part-ref
+ (defun me-parts (ps v env st cx fuel)
+   (declare (xargs :guard t :measure (nfix fuel)))
+   (cond ((not (posp fuel)) (mv (err :fuel) st))
+         ((atom ps) (mv v st))
+         (t (let* ((p (car ps)) (c (s-comp v (tok-name (kar p)))))
+              (cond ((errp c) (mv c st))
+                    ((not (kadr p)) (me-parts (cdr ps) c env st cx (1- fuel)))
+                    ((not (aval-p c)) (mv (err :type) st))
+                    (t (mv-let (ds sc st) (me-subs (kaddr p) (a-lbs c) (a-ubs c) env st cx (1- fuel))
+                         (if (errp ds) (mv ds st)
+                           (let ((es (arr-gets c (tuples ds))))
+                             (cond ((errp es) (mv es st))
+                                   ((not (member nil sc)) (me-parts (cdr ps) (wrap (a-ty c) (a-k c) (car es)) env st cx (1- fuel)))
+                                   ((consp (cdr ps)) (mv (err :type) st))
+                                   (t (let ((sh (section-shape ds sc)))
+                                        (mv (mk-arr (a-ty c) (a-k c) (ones (len sh)) sh es) st)))))))))))))
+
+ ; the structure old with the component ps names given v: (mv new st);
+ ; ponytail: an array component's element only, not a section
+ (defun me-cput (ps old v env st cx fuel)
+   (declare (xargs :guard t :measure (nfix fuel)))
+   (cond ((not (posp fuel)) (mv (err :fuel) st))
+         ((atom ps) (mv (assign-val old v) st))
+         (t (let* ((p (car ps)) (cn (tok-name (kar p))) (c (s-comp old cn)))
+              (cond ((errp c) (mv c st))
+                    ((not (kadr p))
+                     (mv-let (n st) (me-cput (cdr ps) c v env st cx (1- fuel))
+                       (mv (if (errp n) n (s-set old cn n)) st)))
+                    ((not (aval-p c)) (mv (err :type) st))
+                    (t (mv-let (ds sc st) (me-subs (kaddr p) (a-lbs c) (a-ubs c) env st cx (1- fuel))
+                         (cond ((errp ds) (mv ds st))
+                               ((or (member nil sc) (consp (cdr ps))) (mv (err :type) st))
+                               (t (let* ((e (conv1 (a-ty c) (a-k c) v))
+                                         (n (if (errp e) e (arr-sets c (tuples ds) (list (raw e))))))
+                                    (mv (if (errp n) n (s-set old cn n)) st)))))))))))
+
+ ; R1033 with a structure component the variable (10.2.1.2)
+ (defun me-cassign (s env st cx fuel)
+   (declare (xargs :guard t :measure (nfix fuel)))
+   (if (not (posp fuel)) (mv (err :fuel) st)
+     (with-v (v st) (me-ev :expr (kadr (kdr (kdr (kdr (kdr s))))) env st cx (1- fuel))
+       (mv-let (b suf d) (env-lookup (tok-name (kadr s)) env)
+         (declare (ignore suf))
+         (let ((loc (kadr b)))
+           (cond ((not (eq (kar b) :var)) (mv (err (if b :type :undeclared)) st))
+                 ((kaddr s) (mv (err :type) st))            ; ponytail: no arrays of structures
+                 ((eq (kaddr b) :in) (mv (err :intent) st))
+                 ((and (cx-pure cx) (not (equal d 0))) (mv (err :pure) st))
+                 (t (mv-let (n st) (me-cput (kar (kdr (kdr (kdr (kdr s))))) (st-get loc st) v env st cx (1- fuel))
+                      (if (errp n) (mv n st) (mv :normal (st-put loc n (st-log (list (list :w loc :all)) st))))))))))))
 
  ; the (op operand) list after a level's first operand, left to right
  (defun me-fold (nt rest v env st cx fuel)
@@ -302,6 +365,25 @@
    (cond ((not (posp fuel)) (mv (err :fuel) nil nil st))
          ((atom ds) (if (subsetp-equal dns (strip-cars (alist-fix fr))) (mv nil fr copies st)
                       (mv (err :undeclared) nil nil st)))      ; the subset has no implicit typing
+         ; a derived type's definition (7.5.2): its components declared as a
+         ; frame of their own; their values, default-initialized or undefined
+         ; (7.5.4.6), are the type's
+         ((eq (kar (car ds)) :dtype)
+          (let ((tn (tok-name (kaddr (kadr (car ds))))))
+            (mv-let (e cfr cps st) (me-decls (kaddr (car ds)) (cons fr env) st cx (1- fuel) nil nil (list key :type tn) nil)
+              (declare (ignore cps))
+              (if e (mv e nil nil st)
+                (me-decls (cdr ds) env st cx (1- fuel) (cons (cons tn (list :type (frame-vals cfr st))) fr) copies key dns)))))
+         ; TYPE ( type-name ): scalars of a type defined in scope; ponytail: no
+         ; arrays of structures, and no dummies of a derived type
+         ((eq (kar (car ds)) :tdecl)
+          (let* ((d (car ds)) (tn (tok-name (kadr d))) (attrs (kaddr d)) (ents (kar (kdr (kdr (kdr (kdr d)))))))
+            (mv-let (b suf dp) (env-lookup tn (cons fr env))
+              (declare (ignore suf dp))
+              (if (or (not (eq (kar b) :type)) (decl-dims attrs) (ents-dims-p ents))
+                  (mv (err :type) nil nil st)
+                (mv-let (e fr copies st) (me-ents ents :s (cons tn (kadr b)) attrs env st cx (1- fuel) fr copies key dns)
+                  (if e (mv e nil nil st) (me-decls (cdr ds) env st cx (1- fuel) fr copies key dns)))))))
          (t (let* ((d (car ds)) (ts (kadr d)) (attrs (kaddr d)))
               (mv-let (k st) (me-kind ts (cons fr env) st cx (1- fuel))
                 (if (errp k) (mv k nil nil st)
@@ -605,6 +687,7 @@
    (if (not (posp fuel)) (mv (err :fuel) st)
      (case (kar s)
        (:assign (me-assign s env st cx (1- fuel)))
+       (:cassign (me-cassign s env st cx (1- fuel)))
        ((:label :format) (mv :normal st))
        (:goto (mv (list :goto (kadr s)) st))
        (:aif (with-v (v st) (me-ev :expr (kadr s) env st cx (1- fuel))   ; B.1: negative, zero, positive
@@ -726,5 +809,5 @@
                                   (if (errp n) (mv n st) (mv :normal (st-put loc n (st-log (write-list loc (tuple-offs a ts)) st))))))))))))))))))))
 )
 ; the interpreter stays closed: a proof about it opens the one case it needs
-(in-theory (disable me-ev me-fold me-list me-iargs me-subs me-rng me-ref me-elem me-call me-bind me-kind me-bounds me-decls me-ents me-dummy me-lowers me-blk me-seq me-c me-sels me-ranges me-eifs me-do me-conc me-conc-lims me-conc-iters me-iter me-while me-forever me-act me-ritems me-assign))
+(in-theory (disable me-parts me-cput me-cassign me-ev me-fold me-list me-iargs me-subs me-rng me-ref me-elem me-call me-bind me-kind me-bounds me-decls me-ents me-dummy me-lowers me-blk me-seq me-c me-sels me-ranges me-eifs me-do me-conc me-conc-lims me-conc-iters me-iter me-while me-forever me-act me-ritems me-assign))
 

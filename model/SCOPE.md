@@ -11,7 +11,7 @@ proved to accept exactly that grammar (`fp-`, `fps-`, `fpu-sound` and
 `-complete`), for every alternative the Scope uses; **part** when only
 some alternatives are in; **no** otherwise.
 
-Score: **126 of 155** Scope rules proved (81%); 29 more in part; none not yet in.
+Score: **130 of 163** Scope rules proved (80%); 33 more in part; none not yet in.
 
 ## The books
 
@@ -39,7 +39,7 @@ Score: **126 of 155** Scope rules proved (81%); 29 more in part; none not yet in
   the control list's constraints) are `fstmt-base.lisp`'s. About 8 minutes.
 - `fprog.lisp`: program units over statement trees: `fgu`, `fyu`, the
   parser `fpu`, `fpu-sound` (on statement trees), `fpu-complete` and
-  `fpu-cost`: at most 32 calls per statement, plus `fpu-d` (at most 12).
+  `fpu-cost` (`fprog-cost.lisp`): at most 32 calls per statement, plus `fpu-d` (at most 12).
   About 5 minutes.
 - `fval.lisp`, `fhelp.lisp`, `fio.lisp`, `fmean.lisp`, `frun.lisp`: the meaning (item 2): the
   values, state and intrinsics; the helpers and labels; formatted and
@@ -69,8 +69,13 @@ Score: **126 of 155** Scope rules proved (81%); 29 more in part; none not yet in
   (R722's comma) the first entity is not named `parameter`, `value`,
   `intent` or `dimension`.
 - No defined operators (R1003, R1023 have no defined-unary-op or
-  defined-binary-op), no conditional expressions (R1002), no derived
-  types, no labels, no construct names, no `(/ ... /)` constructors.
+  defined-binary-op), no conditional expressions (R1002), no labels, no
+  construct names, no `(/ ... /)` constructors.
+- Derived types: scalars only (no arrays of structures, so a data-ref's
+  first part-ref is a scalar's name), no structure constructors (R756),
+  no dummy arguments of a derived type, no type-bound procedures or
+  parameters; a structure is printed and read by its components, and a
+  component is not an actual argument that the procedure defines.
 - `::` is lexed as two `:` tokens (it is two colons in a triplet
   `a(::2)` too); a token is not split across lines, and a character
   context is not continued (6.3.2.4p3, p4).
@@ -84,7 +89,7 @@ Score: **126 of 155** Scope rules proved (81%); 29 more in part; none not yet in
 | R503 | external-subprogram | proved |  |
 | R504 | specification-part | proved | use-stmts, IMPLICIT NONE, type-declaration-stmts |
 | R505 | implicit-part | proved | IMPLICIT NONE only |
-| R507 | declaration-construct | part | type-declaration-stmt only; no derived-type-def, interface-block |
+| R507 | declaration-construct | part | type-declaration-stmt, derived-type-def; no interface-block |
 | R509 | execution-part | proved |  |
 | R511 | internal-subprogram-part | proved |  |
 | R512 | internal-subprogram | proved |  |
@@ -106,13 +111,20 @@ Score: **126 of 155** Scope rules proved (81%); 29 more in part; none not yet in
 | R724 | char-literal-constant | part | no kind-param prefix |
 | R725 | logical-literal-constant | proved | |
 | R701 | type-param-value | part | scalar-int-expr, `*` (a dummy's or a named constant's length); no `:` |
-| R703 | declaration-type-spec | proved | intrinsic-type-spec |
+| R703 | declaration-type-spec | proved | intrinsic-type-spec, TYPE ( derived-type-spec ) |
 | R704 | intrinsic-type-spec | part | INTEGER, REAL, DOUBLE PRECISION (`doubleprecision` split by flex), CHARACTER, LOGICAL; no COMPLEX |
 | R705 | integer-type-spec | proved |  |
 | R706 | kind-selector | proved |  |
 | R721 | char-selector | part | length-selector; no KIND= |
 | R722 | length-selector | proved | ( [LEN =] type-param-value ), * char-length [,] (C724, C725) |
 | R723 | char-length | proved | ( type-param-value ), int-literal-constant |
+| R726 | derived-type-def | proved | derived-type-stmt [component-part] end-type-stmt (no type-param-def-stmt, private-or-sequence, type-bound-procedure-part) |
+| R727 | derived-type-stmt | part | TYPE [::] type-name; no type-attr-spec-list, type-param-name-list |
+| R730 | end-type-stmt | proved | END TYPE [type-name] (C751) |
+| R735 | component-part | proved | |
+| R736 | component-def-stmt | part | data-component-def-stmt; no proc-component-def-stmt |
+| R737 | data-component-def-stmt | part | as a type-declaration-stmt (R801), DIMENSION the attribute a component uses; default initialization (R744's = expr) |
+| R754 | derived-type-spec | part | type-name; no type-param-spec-list |
 | R777 | array-constructor | part | lbracket ac-spec rbracket |
 | R778 | ac-spec | part | ac-value-list |
 | R779 | lbracket | proved | |
@@ -135,8 +147,9 @@ Score: **126 of 155** Scope rules proved (81%); 29 more in part; none not yet in
 | R908 | substring | proved | parent-string ( substring-range ); a scalar name's is a part-ref of one triplet, told apart by its type |
 | R909 | parent-string | part | scalar-variable-name, array-element, a named constant; no literal constant |
 | R910 | substring-range | proved | [ scalar-int-expr ] : [ scalar-int-expr ] |
-| R911 | data-ref | proved | one part-ref (no derived types) |
+| R911 | data-ref | proved | part-ref [% part-ref]... |
 | R912 | part-ref | proved | |
+| R913 | structure-component | proved | data-ref; read and assigned (10.2.1.2), an array component's element or section read, its element assigned |
 | R917 | array-element | proved | |
 | R918 | array-section | proved | |
 | R919 | subscript | proved | |

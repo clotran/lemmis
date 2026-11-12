@@ -21,9 +21,30 @@
 ; such character (no CHAR, ACHAR, nor a literal with one).
 (defun nul-in (s) (declare (xargs :guard t)) (and (stringp s) (member (code-char 0) (coerce s 'list)) t))
 (defun undef-es (es) (declare (xargs :guard t)) (if (atom es) nil (or (eq (car es) :u) (nul-in (car es)) (undef-es (cdr es)))))
-(defun undef-in (v)                  ; a value with an undefined part
+(defun undef-in (v)                  ; a value with an undefined part (a structure's: 19.6.1p2)
   (declare (xargs :guard t))
-  (cond ((aval-p v) (undef-es (a-es v))) ((eq (kar v) :u) t) ((cval-p v) (nul-in (kaddr v))) (t nil)))
+  (cond ((aval-p v) (undef-es (a-es v))) ((eq (kar v) :u) t) ((cval-p v) (nul-in (kaddr v)))
+        ((and (eq (kar v) :s) (consp (kaddr v)))
+         (or (undef-in (kdr (kar (kaddr v)))) (undef-in (list :s (kadr v) (kdr (kaddr v))))))
+        (t nil)))
+
+; ---- structures (7.5): (:s tname comps), comps an alist from each
+;      component's name to its value; a type's definition binds its name
+;      to (:type comps), its components' default values
+(defun s-comp (v c)                  ; the component c of the structure v
+  (declare (xargs :guard t))
+  (let ((p (and (eq (kar v) :s) (assoc-equal c (kaddr v)))))
+    (if p (cdr p) (err :type))))
+(defun s-set (v c x)                 ; v with its component c x
+  (declare (xargs :guard t))
+  (list :s (kadr v) (put-assoc-equal c x (kaddr v))))
+(defun frame-vals (fr st)            ; a frame's variables' values: a type's components
+  (declare (xargs :guard t))
+  (cond ((atom fr) nil)
+        ((and (consp (car fr)) (eq (kar (cdar fr)) :var))
+         (cons (cons (caar fr) (st-get (kadr (cdar fr)) st)) (frame-vals (cdr fr) st)))
+        (t (frame-vals (cdr fr) st))))
+(defun ents-dims-p (ents) (declare (xargs :guard t)) (if (atom ents) nil (or (and (kadr (car ents)) t) (ents-dims-p (cdr ents)))))
 
 ; ---- substrings (9.4.1): a parent's characters lo .. hi
 (defun substr-arg-p (args)           ; name ( [lo] : [hi] ), a character scalar's substring
@@ -48,9 +69,11 @@
         (t (let ((cs (c-str v)))
              (list :c (c-len v) (coerce (append (take (- lo 1) cs) (c-chars (c-fit (+ 1 (- hi lo)) x)) (nthcdr hi cs)) 'string))))))
 
-(defun fresh (ty k lbs ubs)          ; a variable's undefined value: scalar when no bounds
-  (declare (xargs :guard t))
-  (if (atom lbs) (list :u ty k) (mk-arr ty k lbs ubs (repeat-v (prod (extents lbs ubs)) :u))))
+(defun fresh (ty k lbs ubs)          ; a variable's undefined value: scalar when no bounds;
+  (declare (xargs :guard t))         ; a structure's (ty :s, k (tname . comps)) its defaults
+  (cond ((eq ty :s) (list :s (kar k) (kdr k)))
+        ((atom lbs) (list :u ty k))
+        (t (mk-arr ty k lbs ubs (repeat-v (prod (extents lbs ubs)) :u)))))
 
 ; the indices a section subscript selects: lo, lo+st, ... while within hi
 (defun range-idx (lo hi st n)
@@ -93,6 +116,7 @@
   (declare (xargs :guard t))
   (let ((ty (if (aval-p old) (a-ty old) (scal-ty old))) (k (if (aval-p old) (a-k old) (scal-k old))))
     (cond ((errp v) v)
+          ((eq (kar old) :s) (if (and (eq (kar v) :s) (equal (kadr v) (kadr old))) v (err :type)))   ; 10.2.1.3p13
           ((not (aval-p old))
            (if (aval-p v) (err :shape) (conv1 ty k v)))
           ((aval-p v)
