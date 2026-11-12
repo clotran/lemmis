@@ -8,7 +8,7 @@
 ;   fpu-complete  on the statements any tree spells, followed by what
 ;                 may follow it (ufollow-ok), fpu answers that tree
 ;   fpu-cost      a successful parse makes at most 32 calls per statement
-;                 it consumes, plus fpu-d nt
+;                 it consumes, plus fpu-d nt (fprog-cost.lisp)
 ;
 ;  :program (unit ...) nonempty      R501 program: program-unit [program-unit]...
 ;  :unit  (:main hd spec exec int end)   R1401 main-program (the subset
@@ -23,8 +23,17 @@
 ;  :spec  (uses imp decls)           R504 specification-part: [use-stmt]...
 ;                                    [implicit-part] [declaration-construct]...
 ;                                    (R505 implicit-part, here IMPLICIT NONE or
-;                                    nothing; R507 declaration-construct, here
-;                                    type-declaration-stmt)
+;                                    nothing)
+;  :decls (d ...)                    R507 declaration-construct, each d a :decl
+;  :decl  s                          a type-declaration-stmt (R801), a :decl
+;                                    or :tdecl statement
+;         (:dtype ts comps end)      R726 derived-type-def: derived-type-stmt
+;                                    [component-part] end-type-stmt; ts a
+;                                    (:type dc n), end (:end "type" n') with
+;                                    n' nil or n (R730, C751)
+;  :comps (s ...)                    R735 component-part: each s a :decl or
+;                                    :tdecl statement, R737
+;                                    data-component-def-stmt
 ;  :exec  (c ...)                    R509 execution-part, R1101 block: each c
 ;                                    an executable-construct (R514)
 ;  :c     (:act s)                   an action-stmt (R515)
@@ -65,9 +74,14 @@
            (and (equal (cadr end) (unit-kind hd))
                 (or (null (caddr end)) (equal (caddr end) (hd-name hd)))))))
 
+(defun tend-ok (end ts)            ; END TYPE [name] closing the type ts
+  (declare (xargs :guard t))
+  (and (true-listp end) (= (len end) 3) (eq (car end) :end) (equal (cadr end) "type")
+       (or (null (caddr end)) (equal (caddr end) (kaddr ts)))))
+
 (defun action-stmt-p (s)          ; R515 action-stmt, the logical IF one of them
   (declare (xargs :guard t))
-  (and (fgs :stmt s) (member-eq (kar s) (quote (:assign :simple :call :print :if :label :goto :aif :format :write :read :readf))) t))
+  (and (fgs :stmt s) (member-eq (kar s) (quote (:assign :cassign :simple :call :print :if :label :goto :aif :format :write :read :readf))) t))
 
 (defun count-defaults (arms)
   (declare (xargs :guard t))
@@ -103,7 +117,13 @@
                 (or (null (cadr x)) (equal (cadr x) '(:implicit-none)))
                 (fgu :decls (caddr x))))
     (:uses (if (atom x) (null x) (and (equal (kar (car x)) :use) (fgs :stmt (car x)) (fgu :uses (cdr x)))))
-    (:decls (if (atom x) (null x) (and (equal (kar (car x)) :decl) (fgs :stmt (car x)) (fgu :decls (cdr x)))))
+    (:decls (if (atom x) (null x) (and (fgu :decl (car x)) (fgu :decls (cdr x)))))
+    (:decl (if (eq (kar x) :dtype)
+               (and (true-listp x) (= (len x) 4) (equal (kar (cadr x)) :type) (fgs :stmt (cadr x))
+                    (fgu :comps (caddr x)) (tend-ok (cadddr x) (cadr x)))
+             (and (member-eq (kar x) '(:decl :tdecl)) (fgs :stmt x))))
+    (:comps (if (atom x) (null x)
+              (and (member-eq (kar (car x)) '(:decl :tdecl)) (fgs :stmt (car x)) (fgu :comps (cdr x)))))
     (:exec (if (atom x) (null x) (and (fgu :c (car x)) (fgu :exec (cdr x)))))
     (:c (and (true-listp x)
              (case (car x)
@@ -130,10 +150,10 @@
 (defun fyu (nt x)
   (declare (xargs :guard t :measure (fgu-measure nt x)))
   (case nt
-    ((:program :units :exec :uses :decls :subs)
+    ((:program :units :exec :uses :decls :comps :subs)
      (if (atom x) nil
        (append (case nt ((:program :units) (fyu :unit (car x))) (:exec (fyu :c (car x)))
-                 (:subs (fyu :sub (car x))) (otherwise (list (car x))))
+                 (:subs (fyu :sub (car x))) (:decls (fyu :decl (car x))) (otherwise (list (car x))))
                (fyu nt (cdr x)))))
     ((:unit :sub)
      (if (atom x) nil
@@ -143,6 +163,9 @@
                  (fyu :int (kar (kdr (kdr (kdr (kdr x)))))) (list (kadr (kdr (kdr (kdr (kdr x))))))))))
     (:spec (if (atom x) nil
              (append (fyu :uses (car x)) (if (kadr x) (list (kadr x)) nil) (fyu :decls (kaddr x)))))
+    (:decl (cond ((atom x) nil)
+                 ((eq (car x) :dtype) (append (list (kadr x)) (fyu :comps (kaddr x)) (list (kadddr x))))
+                 (t (list x))))
     (:c (if (atom x) nil
           (case (car x)
             (:act (list (kadr x)))
@@ -162,11 +185,11 @@
 
 (defun c-start-p (s)               ; a statement that begins an executable construct
   (declare (xargs :guard t))
-  (and (member-eq (kar s) '(:assign :simple :call :print :if :if-then :do :select :label :goto :aif :format :write :read :readf)) t))
+  (and (member-eq (kar s) '(:assign :cassign :simple :call :print :if :if-then :do :select :label :goto :aif :format :write :read :readf)) t))
 
 (defun fpu-rank (nt)
   (declare (xargs :guard t))
-  (case nt (:program 7) (:units 6) (:unit 5) (:subs 4) (:sub 3) ((:spec :exec) 2) (otherwise 1)))
+  (case nt (:program 7) (:units 6) (:unit 5) (:subs 4) ((:sub :spec) 3) ((:exec :decls) 2) (otherwise 1)))
 
 (defun fpu (nt toks)
   (declare (xargs :guard t :measure (+ (* 8 (len toks)) (fpu-rank nt)) :verify-guards nil))
@@ -198,10 +221,22 @@
                         (r1 (if imp (cdr r) r)))
                    (mv-let (ok2 ds r2) (fpu :decls r1)
                      (if ok2 (mv t (list us imp ds) r2) (fail)))))))
-      ((:uses :decls)
-       (if (and (consp toks) (eq (kar s) (if (eq nt :uses) :use :decl)))
+      ((:uses :comps)
+       (if (and (consp toks) (if (eq nt :uses) (eq (kar s) :use) (member-eq (kar s) '(:decl :tdecl))))
            (mv-let (ok xs r) (fpu nt (cdr toks)) (if ok (mv t (cons s xs) r) (fail)))
          (mv t nil toks)))
+      (:decls (if (member-eq (kar s) '(:decl :tdecl :type))
+                  (mv-let (ok d r) (fpu :decl toks)
+                    (if (not (and ok (< (len r) (len toks)))) (fail)
+                      (mv-let (ok2 ds r2) (fpu :decls r) (if ok2 (mv t (cons d ds) r2) (fail)))))
+                (mv t nil toks)))
+      ; a declaration, or a derived type's definition through its END TYPE
+      (:decl (cond ((not (consp toks)) (fail))
+                   ((eq (kar s) :type)
+                    (mv-let (ok cs r) (fpu :comps (cdr toks))
+                      (if (and ok (consp r) (tend-ok (car r) s)) (mv t (list :dtype s cs (car r)) (cdr r)) (fail))))
+                   ((member-eq (kar s) '(:decl :tdecl)) (mv t s (cdr toks)))
+                   (t (fail))))
       (:exec (if (c-start-p s)
                  (mv-let (ok c r) (fpu :c toks)
                    (if (not (and ok (< (len r) (len toks)))) (fail)
@@ -333,8 +368,9 @@
   (case nt
     (:exec (c-start-p s))
     (:uses (eq (kar s) :use))
-    (:decls (eq (kar s) :decl))
-    (:spec (or (member-eq (kar s) '(:use :decl)) (equal s '(:implicit-none))))
+    (:decls (member-eq (kar s) '(:decl :tdecl :type)))
+    (:comps (member-eq (kar s) '(:decl :tdecl)))
+    (:spec (or (member-eq (kar s) '(:use :decl :tdecl :type)) (equal s '(:implicit-none))))
     (:eifs (or (eq (kar s) :else-if) (c-start-p s)))   ; its last block's statements too
     (:arms (or (member-eq (kar s) '(:case :case-default)) (c-start-p s)))
     (:int (or (equal s '(:contains)) (member-eq (kar s) '(:function :subroutine))))
@@ -350,11 +386,12 @@
   (if (atom x) r
   (case nt
     (:program (fgu-ind :units x r))
-    ((:units :exec :subs)
+    ((:units :exec :subs :decls)
      (if (atom x) r
-       (list (fgu-ind (case nt (:units :unit) (:exec :c) (otherwise :sub)) (car x) (append (fyu nt (cdr x)) r))
+       (list (fgu-ind (case nt (:units :unit) (:exec :c) (:decls :decl) (otherwise :sub)) (car x) (append (fyu nt (cdr x)) r))
              (fgu-ind nt (cdr x) r))))
-    ((:uses :decls) (if (atom x) r (fgu-ind nt (cdr x) r)))
+    ((:uses :comps) (if (atom x) r (fgu-ind nt (cdr x) r)))
+    (:decl (if (eq (kar x) :dtype) (fgu-ind :comps (kaddr x) (cons (kadddr x) r)) r))
     ((:unit :sub)
      (if (eq (kar x) :module)
          (let ((tl (cons (kar (kdr (kdr (kdr (kdr x))))) r)))
@@ -389,17 +426,17 @@
 ; nothing is spelled by an atom, and an atom is an empty list's tree
 (defthm fyu-atom (implies (atom x) (equal (fyu nt x) nil)) :hints (("Goal" :expand ((fyu nt x)))))
 (defthm fgu-atom
-  (implies (atom x) (equal (fgu nt x) (and (null x) (member-eq nt '(:units :exec :uses :decls :eifs :int :subs :arms)) t)))
+  (implies (atom x) (equal (fgu nt x) (and (null x) (member-eq nt '(:units :exec :uses :decls :comps :eifs :int :subs :arms)) t)))
   :hints (("Goal" :expand ((fgu nt x)))))
 
 ; on no statements
 (defthm fpu-atom
   (implies (atom toks)
            (equal (fpu nt toks)
-                  (cond ((member-eq nt '(:units :uses :decls :exec :eifs :int :subs :arms)) (mv t nil toks))
+                  (cond ((member-eq nt '(:units :uses :decls :comps :exec :eifs :int :subs :arms)) (mv t nil toks))
                         ((eq nt :spec) (mv t (list nil nil nil) toks))
                         (t (mv nil nil toks)))))
-  :hints (("Goal" :expand ((fpu nt toks) (fpu :units toks) (fpu :uses toks) (fpu :decls toks)))))
+  :hints (("Goal" :expand ((fpu nt toks) (fpu :units toks) (fpu :uses toks) (fpu :decls toks) (fpu :comps toks) (fpu :decl toks)))))
 
 ; what fpu leaves is no longer than what it was given, and shorter after
 ; a unit, a subprogram or a construct
@@ -428,11 +465,24 @@
            (and (equal (consp (fyu :uses x)) (consp x))
                 (implies (consp x) (and (consp (car (fyu :uses x))) (equal (car (car (fyu :uses x))) :use)))))
   :hints (("Goal" :expand ((fgu :uses x) (fyu :uses x)))))
+(defthm fyu-decl-first
+  (implies (fgu :decl x)
+           (and (consp (fyu :decl x)) (consp (car (fyu :decl x)))
+                (member-equal (car (car (fyu :decl x))) '(:decl :tdecl :type))))
+  :hints (("Goal" :expand ((fgu :decl x) (fyu :decl x)))))
 (defthm fyu-decls-first
   (implies (fgu :decls x)
            (and (equal (consp (fyu :decls x)) (consp x))
-                (implies (consp x) (and (consp (car (fyu :decls x))) (equal (car (car (fyu :decls x))) :decl)))))
-  :hints (("Goal" :expand ((fgu :decls x) (fyu :decls x)))))
+                (implies (consp x) (and (consp (car (fyu :decls x)))
+                                        (member-equal (car (car (fyu :decls x))) '(:decl :tdecl :type))))))
+  :hints (("Goal" :expand ((fgu :decls x) (fyu :decls x)) :use ((:instance fyu-decl-first (x (car x))))
+           :in-theory (disable fyu-decl-first))))
+(defthm fyu-comps-first
+  (implies (fgu :comps x)
+           (and (equal (consp (fyu :comps x)) (consp x))
+                (implies (consp x) (and (consp (car (fyu :comps x)))
+                                        (member-equal (car (car (fyu :comps x))) '(:decl :tdecl))))))
+  :hints (("Goal" :expand ((fgu :comps x) (fyu :comps x)))))
 
 (defthm fyu-c-first
   (implies (fgu :c x) (and (consp (fyu :c x)) (c-start-p (car (fyu :c x)))))
@@ -477,10 +527,11 @@
 ; a construct, a unit and a subprogram each spell a statement at least
 (defthm fyu-len-pos
   (and (implies (fgu :c x) (< 0 (len (fyu :c x))))
+       (implies (fgu :decl x) (< 0 (len (fyu :decl x))))
        (implies (or (fgu :unit x) (fgu :sub x)) (and (< 0 (len (fyu :unit x))) (< 0 (len (fyu :sub x))))))
   :rule-classes :linear
-  :hints (("Goal" :use (fyu-c-first fyu-unit-first) :in-theory (disable fyu-c-first fyu-unit-first)
-           :expand ((len (fyu :c x)) (len (fyu :unit x)) (len (fyu :sub x))))))
+  :hints (("Goal" :use (fyu-c-first fyu-unit-first fyu-decl-first) :in-theory (disable fyu-c-first fyu-unit-first fyu-decl-first)
+           :expand ((len (fyu :c x)) (len (fyu :unit x)) (len (fyu :sub x)) (len (fyu :decl x))))))
 
 ; an induction hypothesis (equal (fpu c T) (mv t y R)) says how long fpu's
 ; rest is, and that it succeeded: stated where linear arithmetic sees it
@@ -512,252 +563,3 @@
   :hints (("Goal" :induct (fgu-ind nt x r) :in-theory (enable member-equal))
           (fpu-step-hint id clause '((fgu nt x) (fyu nt x)))
           (ih-use-hint clause stable-under-simplificationp)))
-
-; ---- cost: fpu-steps counts fpu's calls (generated: bb mksteps.bb fprog.lisp fpu fpu-steps)
-
-(defun
- fpu-steps
- (nt toks)
- (declare (xargs :guard t :measure (+ (* 8 (len toks)) (fpu-rank nt)) :verify-guards nil))
- (let
-  ((s (kar toks)))
-  (case
-   nt
-   (:program
-    (mv-let
-     (ok us r)
-     (fpu :units toks)
-     (declare (ignorable ok us r))
-     (let ((c1 (fpu-steps :units toks))) (if (and ok (consp us)) (+ 1 c1) (+ 1 c1)))))
-   (:units
-    (if
-     (atom toks)
-     (+ 1)
-     (mv-let
-      (ok u r)
-      (fpu :unit toks)
-      (declare (ignorable ok u r))
-      (let
-       ((c2 (fpu-steps :unit toks)))
-       (if
-        (not (and ok (< (len r) (len toks))))
-        (+ 1 c2)
-        (mv-let
-         (ok2 us r2)
-         (fpu :units r)
-         (declare (ignorable ok2 us r2))
-         (let ((c3 (fpu-steps :units r))) (if ok2 (+ 1 c3 c2) (+ 1 c3 c2)))))))))
-   ((:unit :sub)
-    (if
-     (not
-      (if
-       (eq nt :unit)
-       (member-eq (kar s) ' (:program :module :function :subroutine))
-       (member-eq (kar s) ' (:function :subroutine))))
-     (+ 1)
-     (mv-let
-      (ok sp r)
-      (fpu :spec (cdr toks))
-      (declare (ignorable ok sp r))
-      (let
-       ((c4 (fpu-steps :spec (cdr toks))))
-       (if
-        (not (and ok (<= (len r) (len (cdr toks)))))
-        (+ 1 c4)
-        (mv-let
-         (ok2 ex r2)
-         (if (eq (kar s) :module) (mv t nil r) (fpu :exec r))
-         (declare (ignorable ok2 ex r2))
-         (let
-          ((c5 (if (eq (kar s) :module) 0 (fpu-steps :exec r))))
-          (if
-           (not (and ok2 (<= (len r2) (len r))))
-           (+ 1 c5 c4)
-           (mv-let
-            (ok3 in r3)
-            (fpu :int r2)
-            (declare (ignorable ok3 in r3))
-            (let
-             ((c6 (fpu-steps :int r2)))
-             (if (not (and ok3 (consp r3) (end-ok (car r3) s))) (+ 1 c6 c5 c4) (+ 1 c6 c5 c4))))))))))))
-   (:spec
-    (mv-let
-     (ok us r)
-     (fpu :uses toks)
-     (declare (ignorable ok us r))
-     (let
-      ((c7 (fpu-steps :uses toks)))
-      (if
-       (not (and ok (<= (len r) (len toks))))
-       (+ 1 c7)
-       (let*
-        ((imp (if (equal (kar r) ' (:implicit-none)) (car r) nil)) (r1 (if imp (cdr r) r)))
-        (mv-let
-         (ok2 ds r2)
-         (fpu :decls r1)
-         (declare (ignorable ok2 ds r2))
-         (let ((c8 (fpu-steps :decls r1))) (if ok2 (+ 1 c8 c7) (+ 1 c8 c7)))))))))
-   ((:uses :decls)
-    (if
-     (and (consp toks) (eq (kar s) (if (eq nt :uses) :use :decl)))
-     (mv-let
-      (ok xs r)
-      (fpu nt (cdr toks))
-      (declare (ignorable ok xs r))
-      (let ((c9 (fpu-steps nt (cdr toks)))) (if ok (+ 1 c9) (+ 1 c9))))
-     (+ 1)))
-   (:exec
-    (if
-     (c-start-p s)
-     (mv-let
-      (ok c r)
-      (fpu :c toks)
-      (declare (ignorable ok c r))
-      (let
-       ((c10 (fpu-steps :c toks)))
-       (if
-        (not (and ok (< (len r) (len toks))))
-        (+ 1 c10)
-        (mv-let
-         (ok2 cs r2)
-         (fpu :exec r)
-         (declare (ignorable ok2 cs r2))
-         (let ((c11 (fpu-steps :exec r))) (if ok2 (+ 1 c11 c10) (+ 1 c11 c10)))))))
-     (+ 1)))
-   (:c
-    (case
-     (kar s)
-     (:if-then
-      (mv-let
-       (ok blk r)
-       (fpu :exec (cdr toks))
-       (declare (ignorable ok blk r))
-       (let
-        ((c12 (fpu-steps :exec (cdr toks))))
-        (if
-         (not (and ok (<= (len r) (len (cdr toks)))))
-         (+ 1 c12)
-         (mv-let
-          (ok2 eifs r2)
-          (fpu :eifs r)
-          (declare (ignorable ok2 eifs r2))
-          (let
-           ((c13 (fpu-steps :eifs r)))
-           (if
-            (not (and ok2 (<= (len r2) (len r))))
-            (+ 1 c13 c12)
-            (mv-let
-             (ok3 els r3)
-             (if
-              (equal (kar r2) ' (:else))
-              (mv-let (ok4 b r4) (fpu :exec (cdr r2)) (mv ok4 (list b) r4))
-              (mv t nil r2))
-             (declare (ignorable ok3 els r3))
-             (let
-              ((c14 (if (equal (kar r2) ' (:else)) (fpu-steps :exec (cdr r2)) 0)))
-              (if (and ok3 (equal (kar r3) ' (:end "if" nil))) (+ 1 c14 c13 c12) (+ 1 c14 c13 c12)))))))))))
-     (:do
-      (mv-let
-       (ok blk r)
-       (fpu :exec (cdr toks))
-       (declare (ignorable ok blk r))
-       (let
-        ((c15 (fpu-steps :exec (cdr toks))))
-        (if (and ok (equal (kar r) ' (:end "do" nil))) (+ 1 c15) (+ 1 c15)))))
-     (:select
-      (mv-let
-       (ok arms r)
-       (fpu :arms (cdr toks))
-       (declare (ignorable ok arms r))
-       (let
-        ((c16 (fpu-steps :arms (cdr toks))))
-        (if
-         (and ok (equal (kar r) ' (:end "select" nil)) (<= (count-defaults arms) 1))
-         (+ 1 c16)
-         (+ 1 c16)))))
-     (otherwise (if (c-start-p s) (+ 1) (+ 1)))))
-   (:arms
-    (if
-     (member-eq (kar s) ' (:case :case-default))
-     (mv-let
-      (ok blk r)
-      (fpu :exec (cdr toks))
-      (declare (ignorable ok blk r))
-      (let
-       ((c17 (fpu-steps :exec (cdr toks))))
-       (if
-        (not (and ok (<= (len r) (len (cdr toks)))))
-        (+ 1 c17)
-        (mv-let
-         (ok2 as r2)
-         (fpu :arms r)
-         (declare (ignorable ok2 as r2))
-         (let ((c18 (fpu-steps :arms r))) (if ok2 (+ 1 c18 c17) (+ 1 c18 c17)))))))
-     (+ 1)))
-   (:eifs
-    (if
-     (eq (kar s) :else-if)
-     (mv-let
-      (ok blk r)
-      (fpu :exec (cdr toks))
-      (declare (ignorable ok blk r))
-      (let
-       ((c19 (fpu-steps :exec (cdr toks))))
-       (if
-        (not (and ok (<= (len r) (len (cdr toks)))))
-        (+ 1 c19)
-        (mv-let
-         (ok2 es r2)
-         (fpu :eifs r)
-         (declare (ignorable ok2 es r2))
-         (let ((c20 (fpu-steps :eifs r))) (if ok2 (+ 1 c20 c19) (+ 1 c20 c19)))))))
-     (+ 1)))
-   (:int
-    (if
-     (equal s ' (:contains))
-     (mv-let
-      (ok ss r)
-      (fpu :subs (cdr toks))
-      (declare (ignorable ok ss r))
-      (let ((c21 (fpu-steps :subs (cdr toks)))) (if ok (+ 1 c21) (+ 1 c21))))
-     (+ 1)))
-   (:subs
-    (if
-     (member-eq (kar s) ' (:function :subroutine))
-     (mv-let
-      (ok u r)
-      (fpu :sub toks)
-      (declare (ignorable ok u r))
-      (let
-       ((c22 (fpu-steps :sub toks)))
-       (if
-        (not (and ok (< (len r) (len toks))))
-        (+ 1 c22)
-        (mv-let
-         (ok2 us r2)
-         (fpu :subs r)
-         (declare (ignorable ok2 us r2))
-         (let ((c23 (fpu-steps :subs r))) (if ok2 (+ 1 c23 c22) (+ 1 c23 c22)))))))
-     (+ 1)))
-   (otherwise (+ 1)))))
-
-(defthm fpu-steps-natp (natp (fpu-steps nt toks)) :rule-classes :type-prescription)
-
-; the constant each nt adds; a unit, a subprogram and an executable
-; construct always read their own first and last statements, so they owe
-; less than nothing
-(defun fpu-d (nt)
-  (declare (xargs :guard t))
-  (case nt (:program 8) (:spec 12) ((:unit :sub :c) -15) (otherwise 4)))
-
-; a successful parse makes at most 32 calls per statement it consumes,
-; plus fpu-d nt
-(defthm fpu-cost
-  (implies (mv-nth 0 (fpu nt toks))
-           (<= (+ (fpu-steps nt toks) (* 32 (len (mv-nth 2 (fpu nt toks)))))
-               (+ (* 32 (len toks)) (fpu-d nt))))
-  :hints (("Goal" :induct (fpu-steps nt toks) :in-theory (enable member-equal len-cdr-consp))
-          (fpu-step-hint id clause '((fpu nt toks) (fpu-steps nt toks)))))
-
-; the openers stay closed past here
-(in-theory (disable fgu-cons-open fyu-cons-open fpu-open))

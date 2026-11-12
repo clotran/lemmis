@@ -37,7 +37,7 @@
 
 (in-package "ACL2")
 
-(include-book "fprog")
+(include-book "fprog-cost")
 (include-book "flex")
 (include-book "freal")
 
