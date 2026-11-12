@@ -4,6 +4,12 @@
 (in-package "ACL2")
 
 (include-book "fstmt-sound")
+(include-book "fstmt-complete-thy")   ; *fsc-runes*
+
+; the theory of name's runes in *fsc-runes*, else dflt
+(defmacro thy-or (name dflt)
+  (let ((r (cdr (assoc-eq name *fsc-runes*))))
+    (if r `(union-theories ',r (theory 'minimal-theory)) dflt)))
 
 (set-ignore-ok t)
 
@@ -142,7 +148,7 @@
        (implies (sfollow-ok :ctl r) (equal (fps :ctl r) (mv t nil r)))
        (implies (sfollow-ok :oitems r) (equal (fps :oitems r) (mv t nil r))))
   :hints (("Goal" :expand ((fps :init r) (fps :attrs r) (fps :items r) (fps :prefix r) (fps :onames r) (fps :ctl r) (fps :oitems r))
-           :in-theory (enable sfollow-ok scont-tok-p cont-tok-p member-equal))))
+           :in-theory (thy-or fps-empty (enable sfollow-ok scont-tok-p cont-tok-p member-equal)))))
 
 ; first tokens of the parts' spellings, and their shapes
 (defthm fys-ts-first
@@ -172,7 +178,7 @@
        (implies (fgs :names1 x) (and (consp (fys :names1 x)) (name-tok-p (car (fys :names1 x)))))
        (implies (and (fgs :ctl x) x)
                 (and (consp (fys :ctl x)) (or (equal (car (fys :ctl x)) (op ",")) (name-tok-p (car (fys :ctl x)))))))
-  :hints (("Goal" :in-theory (enable fgs fys names-p names-y onames-y member-equal)
+  :hints (("Goal" :in-theory (thy-or fys-first (enable fgs fys names-p names-y onames-y member-equal))
            :expand ((fgs :shapes* x) (fys :shapes* x) (fgs :ranges x) (fys :ranges x) (fgs :ixs x) (fys :ixs x) (fgs :ents x) (fys :ents x)
                     (onames-y x) (names-y x) (names-p x)))))
 
@@ -195,28 +201,28 @@
 ; a one-part list, and a six-part list (DO's range), equal the list of their parts
 (defthm equal-list1
   (implies (and (true-listp x) (equal (len x) 1)) (equal (equal x (list a)) (equal (car x) a)))
-  :hints (("Goal" :expand ((len x) (len (cdr x)) (true-listp x) (true-listp (cdr x))))))
+  :hints (("Goal" :in-theory (thy-or equal-list1 (current-theory :here)) :expand ((len x) (len (cdr x)) (true-listp x) (true-listp (cdr x))))))
 (defthm equal-list3
   (implies (and (true-listp x) (equal (len x) 3))
            (equal (equal x (list a b c))
                   (and (equal (car x) a) (equal (cadr x) b) (equal (caddr x) c))))
-  :hints (("Goal" :expand ((len x) (true-listp x) (len (cdr x)) (true-listp (cdr x)) (len (cddr x)) (true-listp (cddr x)) (len (cdddr x)) (true-listp (cdddr x))))))
+  :hints (("Goal" :in-theory (thy-or equal-list3 (current-theory :here)) :expand ((len x) (true-listp x) (len (cdr x)) (true-listp (cdr x)) (len (cddr x)) (true-listp (cddr x)) (len (cdddr x)) (true-listp (cdddr x))))))
 (defthm equal-list4
   (implies (and (true-listp x) (equal (len x) 4))
            (equal (equal x (list a b c d))
                   (and (equal (car x) a) (equal (cadr x) b) (equal (caddr x) c) (equal (cadddr x) d))))
-  :hints (("Goal" :expand ((len x) (true-listp x) (len (cdr x)) (true-listp (cdr x)) (len (cddr x)) (true-listp (cddr x)) (len (cdddr x)) (true-listp (cdddr x)) (len (cddddr x)) (true-listp (cddddr x))))))
+  :hints (("Goal" :in-theory (thy-or equal-list4 (current-theory :here)) :expand ((len x) (true-listp x) (len (cdr x)) (true-listp (cdr x)) (len (cddr x)) (true-listp (cddr x)) (len (cdddr x)) (true-listp (cdddr x)) (len (cddddr x)) (true-listp (cddddr x))))))
 (defthm equal-list5
   (implies (and (true-listp x) (equal (len x) 5))
            (equal (equal x (list a b c d e))
                   (and (equal (car x) a) (equal (cadr x) b) (equal (caddr x) c) (equal (cadddr x) d) (equal (car (cddddr x)) e))))
-  :hints (("Goal" :expand ((len x) (true-listp x) (len (cdr x)) (true-listp (cdr x)) (len (cddr x)) (true-listp (cddr x)) (len (cdddr x)) (true-listp (cdddr x)) (len (cddddr x)) (true-listp (cddddr x)) (len (cdr (cddddr x))) (true-listp (cdr (cddddr x)))))))
+  :hints (("Goal" :in-theory (thy-or equal-list5 (current-theory :here)) :expand ((len x) (true-listp x) (len (cdr x)) (true-listp (cdr x)) (len (cddr x)) (true-listp (cddr x)) (len (cdddr x)) (true-listp (cdddr x)) (len (cddddr x)) (true-listp (cddddr x)) (len (cdr (cddddr x))) (true-listp (cdr (cddddr x)))))))
 (defthm equal-list6
   (implies (and (true-listp x) (equal (len x) 6))
            (equal (equal x (list a b c d e g))
                   (and (equal (car x) a) (equal (cadr x) b) (equal (caddr x) c) (equal (cadddr x) d)
                        (equal (car (cddddr x)) e) (equal (cadr (cddddr x)) g))))
-  :hints (("Goal" :expand ((len x) (len (cdr x)) (len (cddr x)) (len (cdddr x)) (len (cddddr x))
+  :hints (("Goal" :in-theory (thy-or equal-list6 (current-theory :here)) :expand ((len x) (len (cdr x)) (len (cddr x)) (len (cdddr x)) (len (cddddr x))
                             (len (cdr (cddddr x))) (len (cddr (cddddr x)))
                             (true-listp x) (true-listp (cdr x)) (true-listp (cddr x)) (true-listp (cdddr x))
                             (true-listp (cddddr x)) (true-listp (cdr (cddddr x))) (true-listp (cddr (cddddr x)))))))
@@ -254,7 +260,7 @@
                 (equal ,top (mv t x r)))
        :hints (("Goal" ,@(if (member-eq nt '(:shapes* :names1 :onames :attrs :ents :items :prefix :ranges :ixs :oitems :kios))
                               '(:induct (len x)) nil)
-                :expand (,top) :in-theory (enable member-equal))
+                :expand (,top) :in-theory (thy-or ,(packn (list 'fps-complete- nt)) (enable member-equal)))
                (top-expand-hint id ',top)))))
 
 (fps-complete-at :init)
@@ -412,7 +418,7 @@
     `(defthm ,(packn (list 'fps-complete-stmt- k))
        (implies (and (fgs :stmt x) (equal (car x) ,k) (atom r))
                 (equal ,top (mv t x r)))
-       :hints (("Goal" :expand (,top) :in-theory (enable member-equal))))))
+       :hints (("Goal" :expand (,top) :in-theory (thy-or ,(packn (list 'fps-complete-stmt- k)) (enable member-equal)))))))
 
 (fps-complete-kind :program)
 (fps-complete-kind :module)
