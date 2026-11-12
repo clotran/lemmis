@@ -238,6 +238,15 @@ James, 2026-11-01: the proofs come first -- "we need to make sure any
 Fortran program is valid lemmis" -- and `require` works as soon as they
 hold, before any extension.
 
+James, 2026-11-11, the lane order for milestones 1 and 2: finish
+milestone 2's stobj layer (statements, the g-st-fn theorem,
+hpg-spush-fortran-correct as its instance), then Stage A to the end
+(first the derived-type gap -- SCOPE's grammar has no derived types
+while fsem's components back the stobj proofs -- then COMPLEX and the
+other "part" rows, theorems 1-3), then the rest of milestone 2 (values
+and the runtime shims, acl2-fortran printing g-module's output). No
+extension starts before Stage A is done.
+
 1. Stage A: Fortran in ACL2 (theorems 1-3), under way in `model/`.
 2. clotran's generator proved (James, 2026-11-03), alongside theorem 4.
    Stage A's first slice, fsyn and fsem, is exactly the Fortran that
