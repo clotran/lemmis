@@ -33,7 +33,7 @@ Score: **141 of 175** Scope rules proved (81%); 34 more in part; none not yet in
   `fps-sound`; `fstmt-complete.lisp`: `fps-complete` (followed by nothing:
   a statement is whole);
   `fstmt-cost.lisp`: `fps-cost`: at most 64 calls per token read, fp's among them, plus
-  `fps-d` (at most 48), over `fps-steps` (generated, `fstmt-steps.lisp`); the
+  `fps-d` (at most 48), over `fps-steps` (generated, its case clauses split between `fstmt-steps.lisp` and `fstmt-steps2.lisp`); the
   I/O control list's nonterminals and READ and WRITE are bounded first, on
   their own. The tokens and predicates the grammar uses (labels, formats,
   the control list's constraints) are `fstmt-base.lisp`'s. About 8 minutes.

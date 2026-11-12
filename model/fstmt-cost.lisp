@@ -4,7 +4,7 @@
 
 (in-package "ACL2")
 
-(include-book "fstmt-steps")
+(include-book "fstmt-steps2")
 
 (set-ignore-ok t)
 
