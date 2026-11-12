@@ -40,7 +40,7 @@
 ; R722's "*" char-length "," (C724, C725: in a type-declaration-stmt with
 ; no "::"), the ts ("character" (:len tk :comma)); the subset tells it from
 ; an attr-spec's "," by the word after it, never an attr-spec's keyword
-(defconst *attr-kws* '("parameter" "value" "intent" "dimension" "save"))
+(defconst *attr-kws* '("parameter" "value" "intent" "dimension" "save" "allocatable"))
 (defun attr-kw-tok-p (tk) (declare (xargs :guard t)) (and (eq (kar tk) :name) (member-equal (kadr tk) *attr-kws*) t))
 (defun ts-comma-p (ts)
   (declare (xargs :guard t))
@@ -49,7 +49,7 @@
 
 (defun action-kind-p (k)          ; R515, C1143
   (declare (xargs :guard t))
-  (and (member-eq k '(:assign :cassign :simple :stop :call :print :goto :write :read :readf)) t))
+  (and (member-eq k '(:assign :cassign :simple :stop :call :print :goto :write :read :readf :allocate :deallocate)) t))
 
 (defun nonzero-digit-p (cs)
   (declare (xargs :guard t))
@@ -91,6 +91,17 @@
          (null (kadr l4)) (null (kadr l3)) (null (kar l2)) (null (kaddr l2)) (null (kadr add)) (null (kadr mult))
          (member-eq (kar prim) '(:name :ref :sref)) prim)))
 (defun all-lone (es) (declare (xargs :guard t)) (if (atom es) t (and (lone-prim (car es)) (all-lone (cdr es)))))
+; R934 allocate-shape-spec, [lower-bound-expr :] upper-bound-expr: read as a
+; subscript (:sub e) or a triplet (:tri lo hi nil) with both bounds
+(defun alloc-spec-p (a) (declare (xargs :guard t)) (or (eq (kar a) :sub) (and (eq (kar a) :tri) (kadr a) (kaddr a) (null (kadddr a)) t)))
+(defun alloc-specs-p (as) (declare (xargs :guard t)) (if (atom as) t (and (alloc-spec-p (car as)) (alloc-specs-p (cdr as)))))
+; an ALLOCATE's actual (R932 allocation): name ( allocate-shape-spec-list );
+; a DEALLOCATE's: a name (R933 allocate-object: a variable-name)
+(defun alloc-obj-p (a d)
+  (declare (xargs :guard t))
+  (let ((p (and (eq (kar a) :sub) (lone-prim (kadr a)))))
+    (if d (eq (kar p) :name) (and (eq (kar p) :ref) (consp (kaddr p)) (alloc-specs-p (kaddr p))))))
+(defun alloc-objs-p (as d) (declare (xargs :guard t)) (if (atom as) (null as) (and (alloc-obj-p (car as) d) (alloc-objs-p (cdr as) d))))
 ; the three labels of an arithmetic IF after its ( expr ), and the statement's end
 (defun aif-labs-p (r)
   (declare (xargs :guard t))

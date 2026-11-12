@@ -76,6 +76,10 @@
                                 (if (and ok (consp ns)) (mv t (list :save t ns) r) (fail))))
                              (t (mv-let (ok ns r) (fps :onames (kdr toks))
                                   (if (and ok (consp ns)) (mv t (list :save nil ns) r) (fail))))))
+                      ((and (tok-in tk '("allocate" "deallocate")) (equal (kadr toks) (op "(")))   ; R927, R941
+                       (mv-let (ok as r) (fp :args (kdr (kdr toks)))
+                         (let ((d (equal tk (kw "deallocate"))))
+                           (if (and ok (consp as) (alloc-objs-p as d)) (mv t (list (if d :deallocate :allocate) as) r) (fail)))))
                       ((and (equal tk (kw "stop")) (consp (kdr toks)))      ; R1162 STOP stop-code
                        (mv-let (ok e r) (fp :expr (kdr toks)) (if ok (mv t (list :stop e) r) (fail))))
                       ((tok-in tk *simple-kinds*) (mv t (list :simple (kadr tk)) (kdr toks)))
@@ -325,6 +329,7 @@
       (:attr (cond ((equal tk (kw "parameter")) (mv t (list :parameter) (kdr toks)))
                    ((equal tk (kw "value")) (mv t (list :value) (kdr toks)))
                    ((equal tk (kw "save")) (mv t (list :save) (kdr toks)))
+                   ((equal tk (kw "allocatable")) (mv t (list :allocatable) (kdr toks)))
                    ((and (equal tk (kw "intent")) (equal (kadr toks) (op "(")))
                     (cond ((and (equal (kaddr toks) (kw "in")) (equal (kadddr toks) (kw "out"))
                                 (equal (kar (kdr (kdr (kdr (kdr toks))))) (op ")")))

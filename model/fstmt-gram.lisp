@@ -58,6 +58,11 @@
 ;                                   stop-stmt without a stop-code (no
 ;                                   construct name or return value in the
 ;                                   subset)
+;         (:allocate as)            R927 allocate-stmt: ALLOCATE ( allocation-list ),
+;                                   as actual args (alloc-objs-p): each a
+;                                   name ( allocate-shape-spec-list ) (R932, R934)
+;         (:deallocate as)          R941 deallocate-stmt: DEALLOCATE (
+;                                   allocate-object-list ), each a name
 ;         (:save dc ns)             R856 save-stmt: SAVE [[::] ns], ns saved
 ;                                   entity names (not a common block's)
 ;         (:stop e)                 R1162 stop-stmt: STOP stop-code (R1163,
@@ -131,7 +136,7 @@
 ;                                   * ( type-param-value ), e an expr or :star
 ;  :attrs (attr ...)                each written ", attr-spec" (R802):
 ;                                   (:parameter) PARAMETER, (:value) VALUE,
-;                                   (:save) SAVE,
+;                                   (:save) SAVE, (:allocatable) ALLOCATABLE,
 ;                                   (:intent i) INTENT ( intent-spec ) R828
 ;                                   (i "in" "out" "inout" or "in out",
 ;                                   Table 6.2), (:dimension shapes)
@@ -225,6 +230,7 @@
             (:do (and (= (len x) 2) (fgs :ctl (cadr x))))
             (:simple (and (= (len x) 2) (member-equal (cadr x) *simple-kinds*) t))
             (:stop (and (= (len x) 2) (fg :expr (cadr x))))
+            ((:allocate :deallocate) (and (= (len x) 2) (fg :args (cadr x)) (consp (cadr x)) (alloc-objs-p (cadr x) (eq (car x) :deallocate))))
             (:save (and (= (len x) 3) (booleanp (cadr x)) (names-p (caddr x)) (or (null (cadr x)) (consp (caddr x)))))
             (:call (and (= (len x) 4) (name-tok-p (cadr x)) (booleanp (caddr x))
                         (if (caddr x) (fg :args (cadddr x)) (null (cadddr x)))))
@@ -266,7 +272,7 @@
     (:attrs (if (atom x) (null x) (and (fgs :attr (car x)) (fgs :attrs (cdr x)))))
     (:attr (and (true-listp x)
                 (case (car x)
-                  ((:parameter :value :save) (= (len x) 1))
+                  ((:parameter :value :save :allocatable) (= (len x) 1))
                   (:intent (and (= (len x) 2) (member-equal (cadr x) *intents*) t))
                   (:dimension (and (= (len x) 2) (fgs :shapes (cadr x))))
                   (otherwise nil))))
@@ -368,6 +374,8 @@
          (:do (cons (kw "do") (fys :ctl (kadr x))))
          (:simple (list (kw (kadr x))))
          (:stop (cons (kw "stop") (fy :expr (kadr x))))
+         (:allocate (list* (kw "allocate") (op "(") (fy :args (kadr x))))
+         (:deallocate (list* (kw "deallocate") (op "(") (fy :args (kadr x))))
          (:save (cons (kw "save") (append (if (kadr x) (dcolon) nil) (onames-y (kaddr x)))))
          (:call (list* (kw "call") (kadr x) (if (kaddr x) (cons (op "(") (fy :args (kadddr x))) nil)))
          (:print (list* (kw "print") (fmt-tok (kadr x)) (fys :items (kaddr x))))
@@ -406,6 +414,7 @@
                (:parameter (list (kw "parameter")))
                (:value (list (kw "value")))
                (:save (list (kw "save")))
+               (:allocatable (list (kw "allocatable")))
                (:intent (append (list (kw "intent") (op "(")) (kw-list (kadr x)) (list (op ")"))))
                (otherwise (list* (kw "dimension") (op "(") (fys :shapes (kadr x))))))
       (:shapes (fys :shapes* x))

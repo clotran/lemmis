@@ -701,6 +701,8 @@
      ((member-equal name '("tiny" "epsilon"))                ; 16.9.210, 16.9.76
       (let ((k (cond ((rval-p a) (v-kind a)) ((and (aval-p a) (eq (a-ty a) :r)) (a-k a)) (t nil))))
         (if (rkind-p k) (vr k (if (equal name "tiny") (fl-tiny k) (fl-epsilon k))) (err :type))))
+     ((equal name "allocated")                                ; 16.9.11: an allocatable array's status
+      (cond ((not (and (= n 1) (null kw))) (err :arity)) ((aval-p a) (vl 4 t)) ((eq (kar a) :unalloc) (vl 4 nil)) (t (err :type))))
      ((equal name "kind")                                     ; 16.9.118
       (cond ((or (ival-p a) (lval-p a) (rval-p a) (zval-p a)) (vi 4 (v-kind a))) ((cval-p a) (vi 4 1))
             ((aval-p a) (vi 4 (if (eq (a-ty a) :c) 1 (a-k a)))) (t (err :type))))

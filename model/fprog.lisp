@@ -82,7 +82,7 @@
 
 (defun action-stmt-p (s)          ; R515 action-stmt, the logical IF one of them
   (declare (xargs :guard t))
-  (and (fgs :stmt s) (member-eq (kar s) (quote (:assign :cassign :simple :stop :call :print :if :label :goto :aif :format :write :read :readf))) t))
+  (and (fgs :stmt s) (member-eq (kar s) (quote (:assign :cassign :simple :stop :allocate :deallocate :call :print :if :label :goto :aif :format :write :read :readf))) t))
 
 (defun count-defaults (arms)
   (declare (xargs :guard t))
@@ -186,7 +186,7 @@
 
 (defun c-start-p (s)               ; a statement that begins an executable construct
   (declare (xargs :guard t))
-  (and (member-eq (kar s) '(:assign :cassign :simple :stop :call :print :if :if-then :do :select :label :goto :aif :format :write :read :readf)) t))
+  (and (member-eq (kar s) '(:assign :cassign :simple :stop :allocate :deallocate :call :print :if :if-then :do :select :label :goto :aif :format :write :read :readf)) t))
 
 (defun fpu-rank (nt)
   (declare (xargs :guard t))

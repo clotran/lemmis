@@ -431,6 +431,8 @@
 (fps-complete-kind :do)
 (fps-complete-kind :simple)
 (fps-complete-kind :stop)
+(fps-complete-kind :allocate)
+(fps-complete-kind :deallocate)
 (fps-complete-kind :save)
 (fps-complete-kind :call)
 (fps-complete-kind :print)
@@ -454,7 +456,7 @@
   (if (endp ks) nil (cons `(equal (car x) ,(car ks)) (kind-cases (cdr ks)))))
 
 (defconst *stmt-kinds*
-  '(:program :module :end :contains :implicit-none :else :use :decl :assign :cassign :type :tdecl :if-then :else-if :do :simple :stop :save :call :print
+  '(:program :module :end :contains :implicit-none :else :use :decl :assign :cassign :type :tdecl :if-then :else-if :do :simple :stop :allocate :deallocate :save :call :print
     :function :subroutine :if :select :case :case-default :label :goto :aif :ldo :format :write :read :readf))
 (defthm fgs-stmt-kinds                ; a statement is of one of the kinds above
   (implies (fgs :stmt x) (member-equal (car x) *stmt-kinds*))

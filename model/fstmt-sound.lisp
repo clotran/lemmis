@@ -66,7 +66,7 @@
   (and (implies (fmt-head-p tk) (and (fmt-spec-p (fmt-of tk)) (equal (fmt-tok (fmt-of tk)) tk)))
        (implies (fmt-spec-p f) (and (fmt-head-p (fmt-tok f)) (equal (fmt-of (fmt-tok f)) f))))
   :hints (("Goal" :in-theory (enable label-int-p-rules))))
-(in-theory (disable fmt-head-p fmt-of fmt-tok fmt-spec-p ios-ok all-lone))
+(in-theory (disable fmt-head-p fmt-of fmt-tok fmt-spec-p ios-ok all-lone alloc-objs-p))
 (def-cons-opener fgs-cons-open (fgs nt x))
 (def-cons-opener fys-cons-open (fys nt x))
 (in-theory (disable fgs fys shape-kind))
@@ -214,7 +214,8 @@
 (fps-sound-at :sub-rest)
 (fps-sound-at :s-head)
 (fps-sound-at :s-end)
-(fps-sound-at :s-other ((:instance fp-sound (nt :expr) (toks (cdr toks)))))   ; STOP stop-code
+(fps-sound-at :s-other ((:instance fp-sound (nt :expr) (toks (cdr toks)))           ; STOP stop-code
+                        (:instance fp-sound (nt :args) (toks (cdr (cdr toks))))))   ; ALLOCATE, DEALLOCATE
 (fps-sound-at :s-use)
 (fps-sound-at :s-else)
 (fps-sound-at :s-do)

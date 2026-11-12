@@ -23,7 +23,7 @@
 (defun undef-es (es) (declare (xargs :guard t)) (if (atom es) nil (or (eq (car es) :u) (nul-in (car es)) (undef-es (cdr es)))))
 (defun undef-in (v)                  ; a value with an undefined part (a structure's: 19.6.1p2)
   (declare (xargs :guard t))
-  (cond ((aval-p v) (undef-es (a-es v))) ((eq (kar v) :u) t) ((cval-p v) (nul-in (kaddr v)))
+  (cond ((aval-p v) (undef-es (a-es v))) ((member-eq (kar v) '(:u :unalloc)) t) ((cval-p v) (nul-in (kaddr v)))
         ((and (eq (kar v) :s) (consp (kaddr v)))
          (or (undef-in (kdr (kar (kaddr v)))) (undef-in (list :s (kadr v) (kdr (kaddr v))))))
         (t nil)))
@@ -588,3 +588,39 @@
           (if (not (eq (kar rb) :var)) (mv (err :undeclared) st)
             (let ((v (st-get (kadr rb) st)))
               (if (undef-in v) (mv (err :undefined) st) (mv v st)))))))))
+
+; ---- ALLOCATABLE (8.5.3): an allocatable variable's binding is (:var loc
+; :alloc); unallocated, its value is (:unalloc ty k rank)
+(defun deferred-p (ss)               ; R822 deferred-shape-spec-list: each ":"
+  (declare (xargs :guard t))
+  (if (atom ss) (null ss) (and (equal (car ss) '(:as nil)) (deferred-p (cdr ss)))))
+(defun alloc-shapes (as)             ; R934's specs as explicit-shape specs (:ex lo hi)
+  (declare (xargs :guard t))
+  (if (atom as) nil
+    (cons (if (eq (kar (car as)) :sub) (list :ex nil (kadr (car as))) (list :ex (kadr (car as)) (kaddr (car as))))
+          (alloc-shapes (cdr as)))))
+(defun alloc-loc (n env cx)           ; an allocatable variable's location, or an error
+  (declare (xargs :guard t))
+  (mv-let (b suf d) (env-lookup n env)
+    (declare (ignore suf))
+    (cond ((not (eq (kar b) :var)) (err (if b :type :undeclared)))
+          ((not (eq (kaddr b) :alloc)) (err :type))           ; C934: an allocate-object is allocatable
+          ((and (cx-pure cx) (not (equal d 0))) (err :pure))     ; C1594
+          (t (kadr b)))))
+; 9.7.1: n allocated with bounds ls, us, undefined; allocating an
+; allocated variable is an error condition (9.7.4: no STAT=, so the
+; program stops)
+(defun alloc-put (n ls us env st cx)   ; (mv status st)
+  (declare (xargs :guard t))
+  (let* ((loc (alloc-loc n env cx)) (v (if (errp loc) nil (st-get loc st))))
+    (cond ((errp ls) (mv ls st)) ((errp loc) (mv loc st))
+          ((not (and (eq (kar v) :unalloc) (equal (kadddr v) (len ls)))) (mv (err :alloc) st))
+          (t (mv :normal (st-put loc (fresh (kadr v) (kaddr v) ls us) (st-log (list (list :w loc :all)) st)))))))
+; 9.7.3: each name deallocated; deallocating an unallocated one, an error condition
+(defun dealloc-all (os env st cx)     ; (mv status st)
+  (declare (xargs :guard t))
+  (if (atom os) (mv :normal st)
+    (let* ((loc (alloc-loc (tok-name (kadr (lone-prim (kadr (car os))))) env cx)) (v (if (errp loc) nil (st-get loc st))))
+      (cond ((errp loc) (mv loc st))
+            ((not (aval-p v)) (mv (err :alloc) st))
+            (t (dealloc-all (cdr os) env (st-put loc (list :unalloc (a-ty v) (a-k v) (len (a-lbs v))) (st-log (list (list :w loc :all)) st)) cx))))))

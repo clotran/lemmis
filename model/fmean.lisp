@@ -236,7 +236,7 @@
                                    (t (with-v (rs st) (me-elem u (proc-host (kaddr b) suf cx) vs 0 (prod sh) env st cx (1- fuel))
                                         (mv (elem-result rs sh) st)))))))
                         (t (me-call u (proc-host (kaddr b) suf cx) args env st cx (1- fuel))))))
-         ((nil) (with-v (vs st) (mv-let (vs kw st) (me-iargs args (member-equal (tok-name tk) '("size" "lbound" "ubound" "kind" "huge" "len")) env st cx (1- fuel))
+         ((nil) (with-v (vs st) (mv-let (vs kw st) (me-iargs args (member-equal (tok-name tk) '("size" "lbound" "ubound" "kind" "huge" "len" "allocated")) env st cx (1- fuel))
                                   (mv (if (errp vs) vs (list :ok vs kw)) st))
                   (mv (intrinsic (tok-name tk) (kadr vs) (kaddr vs)) st)))
          (otherwise (mv (err :type) st))))))
@@ -303,7 +303,7 @@
                     (declare (ignore suf d))
                     (cond
                      ((and p (eq (kar p) :name) (eq (kar b) :var))
-                      (me-bind (cdr dns) m env st cx (1- fuel) (cons (cons dn b) fr) copies))
+                      (me-bind (cdr dns) m env st cx (1- fuel) (cons (cons dn (list :var (kadr b) (if (eq (kaddr b) :alloc) :rw (kaddr b)))) fr) copies))
                      ((and p (eq (kar p) :ref) (eq (kar b) :var) (aval-p (st-get (kadr b) st)))
                       (let ((arr (st-get (kadr b) st)))
                         (mv-let (ds sc st) (me-subs (kaddr p) (a-lbs arr) (a-ubs arr) env st cx (1- fuel))
@@ -399,6 +399,11 @@
                     (mv-let (v st) (me-ev :expr init envf st cx (1- fuel))
                       (let ((c (if (errp v) v (if (and ss (aval-p v)) (assign-val (fresh ty k (a-lbs v) (a-ubs v)) v) (conv1 ty k v)))))
                         (if (errp c) (mv c nil nil st) (mv nil (cons (cons n (list :const c)) fr) copies st))))))
+                 ((decl-has :allocatable attrs)                  ; 8.5.3: deferred shape, unallocated at first;
+                  (if (or init (member-equal n dns) (decl-has :save attrs) (not (consp ss)) (not (deferred-p ss)))   ; ponytail: no allocatable dummy, scalar or SAVE
+                      (mv (err :syntax) nil nil st)
+                    (mv-let (loc st) (st-new (list :unalloc ty k (len ss)) st)
+                      (mv nil (cons (cons n (list :var loc :alloc)) fr) copies st))))
                  ((member-equal n dns)                           ; a dummy: its actual's binding
                   (me-dummy n ty k ss attrs envf st cx (1- fuel) fr copies))
                  ((eq k :star) (mv (err :syntax) nil nil st))   ; an assumed length: a dummy's or a constant's (C803)
@@ -681,6 +686,8 @@
                                       (mv-let (e in) (rd-end rs (st-in st) adv)
                                         (if e (mv e st) (mv :normal (st-in-set in st)))))))))))))))
        (:simple (mv (simple-status (kadr s)) st))
+       (:allocate (me-alloc (kadr s) env st cx (1- fuel)))
+       (:deallocate (dealloc-all (kadr s) env st cx))
        (:stop (with-v (v st) (me-ev :expr (kadr s) env st cx (1- fuel)) (mv (if (or (ival-scalar v) (cval-p v)) (err :stop) (cond-err v)) st)))   ; R1163
        (:call (mv-let (b suf d) (env-lookup (tok-name (kadr s)) env)
                 (declare (ignore d))
@@ -692,6 +699,16 @@
                     ((v-num v) (me-act (kaddr s) env st cx (1- fuel)))
                     (t (mv :normal st)))))
        (otherwise (mv (err :syntax) st)))))
+
+ ; R927: each allocation's bounds, then the object allocated (9.7.1.2)
+ (defun me-alloc (os env st cx fuel)
+   (declare (xargs :guard t :measure (nfix fuel)))
+   (cond ((not (posp fuel)) (mv (err :fuel) st))
+         ((atom os) (mv :normal st))
+         (t (let ((p (lone-prim (kadr (car os)))))
+              (mv-let (ls us st) (me-bounds (alloc-shapes (kaddr p)) env st cx (1- fuel))
+                (mv-let (s st) (alloc-put (tok-name (kadr p)) ls us env st cx)
+                  (if (errp s) (mv s st) (me-alloc (cdr os) env st cx (1- fuel)))))))))
 
  ; R1033: the expression, then the variable (10.2.1.3)
  ; READ's input items (12.6.4.5), each in turn: its values read, then
@@ -771,5 +788,5 @@
                                   (if (errp n) (mv n st) (mv :normal (st-put loc n (st-log (write-list loc (tuple-offs a ts)) st))))))))))))))))))))
 )
 ; the interpreter stays closed: a proof about it opens the one case it needs
-(in-theory (disable me-parts me-cput me-cassign me-ev me-fold me-list me-iargs me-subs me-rng me-ref me-elem me-call me-bind me-kind me-bounds me-decls me-ents me-dummy me-lowers me-blk me-seq me-c me-sels me-ranges me-eifs me-do me-conc me-conc-lims me-conc-iters me-iter me-while me-forever me-act me-ritems me-assign))
+(in-theory (disable me-parts me-cput me-cassign me-ev me-fold me-list me-iargs me-subs me-rng me-ref me-elem me-call me-bind me-kind me-bounds me-decls me-ents me-dummy me-lowers me-blk me-seq me-c me-sels me-ranges me-eifs me-do me-conc me-conc-lims me-conc-iters me-iter me-while me-forever me-act me-alloc me-ritems me-assign))
 

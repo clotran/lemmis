@@ -11,7 +11,7 @@ proved to accept exactly that grammar (`fp-`, `fps-`, `fpu-sound` and
 `-complete`), for every alternative the Scope uses; **part** when only
 some alternatives are in; **no** otherwise.
 
-Score: **134 of 167** Scope rules proved (80%); 33 more in part; none not yet in.
+Score: **141 of 175** Scope rules proved (81%); 34 more in part; none not yet in.
 
 ## The books
 
@@ -67,7 +67,7 @@ Score: **134 of 167** Scope rules proved (80%); 33 more in part; none not yet in
   (by substrings) holds the code 0 at its undefined characters, so a
   program of the subset writes no such character. After `CHARACTER*n,`
   (R722's comma) the first entity is not named `parameter`, `value`,
-  `intent`, `dimension` or `save`.
+  `intent`, `dimension`, `save` or `allocatable`.
 - No defined operators (R1003, R1023 have no defined-unary-op or
   defined-binary-op), no conditional expressions (R1002), no labels, no
   construct names, no `(/ ... /)` constructors.
@@ -84,6 +84,11 @@ Score: **134 of 167** Scope rules proved (80%); 33 more in part; none not yet in
   every step of the textbook formula (and, for /, Smith's) is exact,
   else a processor-dependent value; a zero part's sign is the textbook
   formula's.
+- ALLOCATABLE: an array of deferred shape, not a dummy argument, a
+  component, a scalar, SAVE'd or initialized. Intrinsic assignment to it
+  does not allocate or reallocate (10.2.1.3): the variable is allocated
+  first, with the expression's shape, else the run stops with an error.
+  `allocate` and `deallocate` are among `*fkeywords*`.
 - `::` is lexed as two `:` tokens (it is two colons in a triplet
   `a(::2)` too); a token is not split across lines, and a character
   context is not continued (6.3.2.4p3, p4).
@@ -102,7 +107,7 @@ Score: **134 of 167** Scope rules proved (80%); 33 more in part; none not yet in
 | R511 | internal-subprogram-part | proved |  |
 | R512 | internal-subprogram | proved |  |
 | R514 | executable-construct | part | action-stmt, do-construct, if-construct, case-construct; no block-construct |
-| R515 | action-stmt | part | assignment, call, cycle, exit, continue, if-stmt, print, return, stop; no allocate, deallocate |
+| R515 | action-stmt | proved | allocate, assignment, call, cycle, deallocate, exit, continue, if-stmt, print, return, stop |
 | R516 | keyword | proved | as an actual-arg-spec's keyword |
 | R601 | alphanumeric-character | proved | in R603 |
 | R603 | name | proved | lower case (flex); not a statement keyword |
@@ -142,15 +147,16 @@ Score: **134 of 167** Scope rules proved (80%); 33 more in part; none not yet in
 | R780 | rbracket | proved | |
 | R781 | ac-value | part | expr; no ac-implied-do |
 | R801 | type-declaration-stmt | proved |  |
-| R802 | attr-spec | part | DIMENSION, INTENT, PARAMETER, SAVE, VALUE; no ALLOCATABLE |
+| R802 | attr-spec | proved | ALLOCATABLE, DIMENSION, INTENT, PARAMETER, SAVE, VALUE |
 | R803 | entity-decl | proved |  |
 | R804 | object-name | proved |  |
 | R805 | initialization | proved | = constant-expr |
-| R814 | array-spec | part | explicit-shape-spec-list, assumed-shape-spec-list; no deferred-shape |
+| R814 | array-spec | proved | explicit-shape-spec-list, assumed-shape-spec-list, deferred-shape-spec-list |
 | R815 | explicit-shape-spec | proved |  |
 | R816 | lower-bound | proved |  |
 | R817 | upper-bound | proved |  |
 | R820 | assumed-shape-spec | proved |  |
+| R822 | deferred-shape-spec | proved | `:`, read as an assumed-shape-spec without a lower bound; an ALLOCATABLE entity's in the meaning |
 | R828 | intent-spec | proved | IN, OUT, INOUT, IN OUT |
 | R856 | save-stmt | proved | SAVE [[::] saved-entity-list], each an object-name (no common block); in the meaning, each saved entity's SAVE attribute (8.5.16) |
 | R866 | implicit-stmt | proved | IMPLICIT NONE |
@@ -168,6 +174,13 @@ Score: **134 of 167** Scope rules proved (80%); 33 more in part; none not yet in
 | R921 | section-subscript | part | subscript, subscript-triplet; no vector-subscript |
 | R922 | subscript-triplet | proved | |
 | R924 | stride | proved | |
+| R927 | allocate-stmt | part | ALLOCATE ( allocation-list ); no type-spec, no alloc-opt (STAT=, ERRMSG=, SOURCE=): allocating an allocated variable stops the program (9.7.4) |
+| R932 | allocation | part | allocate-object ( allocate-shape-spec-list ), read as an actual argument; the list required (no scalar allocatable), no coarray spec |
+| R933 | allocate-object | part | variable-name; no structure-component |
+| R934 | allocate-shape-spec | proved | [lower-bound-expr :] upper-bound-expr, read as a subscript or a triplet without stride |
+| R935 | lower-bound-expr | proved |  |
+| R936 | upper-bound-expr | proved |  |
+| R941 | deallocate-stmt | part | DEALLOCATE ( allocate-object-list ); no dealloc-opt: deallocating an unallocated variable stops the program (9.7.4) |
 | R1001 | primary | part | literal, designator, array-constructor, function-reference, ( expr ) |
 | R1003 | level-1-expr | proved | no defined-unary-op |
 | R1005 | mult-operand | proved | |
