@@ -589,9 +589,18 @@ Two findings from acl2-fortran's `stmt`:
    value has the then type; a `:use` of gs-sem-use in the minimal theory). :bounds propagation
    past the element read is not stated (a-sx's strict `implies` would
    answer :bounds where the code does not).
+   **gen-stnames.lisp**: `sn-ok-thm`, the names induction (`sn-ind`, flags
+   :expr/:args/:vals over g-sexpr, g-sargs, g-svals; `snv-ok` is g-svals'
+   names, as gen-names' gs-ok :binds), under no-calls and `sn-hyps`: the
+   objects within fnames (`(subsetp-equal (st-objs st) fnames)`), and `if`,
+   `implies` not roles in st. Rewrite forms `sn-ok-holds`, `sna-ok-holds`,
+   `snv-ok-holds`. Done before the lambda case, so the lambda and gs-sem
+   theorem use names facts by rewriting. Each glue's subset/disjointness
+   reasoning is an abstract lemma (`sn-if-abs`, `sna-abs`, `snv-abs`,
+   `sn-lam-abs`) used once; `:use` of the parts' `sn-ok-use` splits badly.
+   sn-ind also carries env, fuel and frames for the gs-sem induction.
    Next, in order: (1') lambda (g-svals: a gsb-sem as gen-proof's
    gb-sem, em-ok of (append binds em) against (pairlis$ vars vals));
-   sn-ok/sna-ok by induction over g-sexpr (gen-names' gs-ok-thm pattern);
    then the gs-sem theorem by an induction over g-sexpr dispatching to the
    cases (the-check, implies, :fcall excluded or added); (2) g-stmt vs
    a-st on sx-list for :set (side condition: v reads no component the
