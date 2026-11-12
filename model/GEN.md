@@ -461,10 +461,13 @@ hpg))`: those four changed as ACL2 changes them, every other component
 untouched. **`hpg-spush-fortran-bounds`**: when mref is shorter than mtag
 (hpg-ok forbids it) and msp lies in mtag but past mref, the answer is
 fsem's `:bounds` (the write `hs%mref(i_4) = v_5`), the heap unchanged.
-Proved by symbolic execution (f-ev, f-ex, f-bind, f-invoke expanded with
-`:free` expand hints, nth disabled, component puts sorted by name), 4 s.
-It is a per-function proof on the printed procedure, not yet an instance
-of a general theorem about g-stmt.
+hpg-spush-fortran-correct is now an instance of **`g-st-fn-sem`**
+(gen-stfn.lisp, below), at every fuel past 196 (it was 100 by symbolic
+execution; the general bound is 6 + the values + the body's acl2-count,
+188); otherwise the statement is the old one. hpg-spush-fortran-bounds is
+still proved by symbolic execution (f-ev, f-ex, f-bind, f-invoke expanded
+with `:free` expand hints, nth disabled, component puts sorted by name),
+before gen-stfn is included.
 
 Two findings from acl2-fortran's `stmt` (both fixed now, see above):
 
@@ -537,7 +540,12 @@ Two findings from acl2-fortran's `stmt` (both fixed now, see above):
    function later slices add.
 4. Stobjs: fields, arrays (the bounds error), subroutines, `mv` and the
    `intent(out)` results. fsyn has them already. Two lanes. Translation
-   started (gen-st.lisp, above; hpg-spush checked and proved). Left:
+   started (gen-st.lisp, above; hpg-spush checked and proved).
+   **Status: the stobj layer is done for the st-plain subset** (g-st-fn-sem,
+   gen-stfn.lisp; hpg-spush-fortran-correct its instance), up to the three
+   output side conditions named in (a) step (4) below. Calls of stobj
+   subroutines, mv and tail loops in subroutines are deferred until after
+   Stage A. Left:
    (a) [semantics done: gen-stsem.lisp's `a-sx`/`a-st`, stobj terms
    over a component alist (fsem's object), ACL2's order of evaluation,
    :bounds for an index outside; its tests run fsem on hpg_spush against
@@ -711,9 +719,37 @@ Two findings from acl2-fortran's `stmt` (both fixed now, see above):
    st-plain and no-calls) and **`gst-sem-thm`** (`gst-sem-holds`: plus
    em-nostobj), each dispatching to `-any` lemmas in the minimal theory.
    21 s, 19 of them `stn-seti`.
-   Next: (4) a g-st-fn theorem as g-fn-sem, for st-plain bodies, and
-   hpg-spush-fortran-correct re-derived as its instance. Found while
-   setting it up, to settle first:
+   **Step (4) done for the st-plain subset** (gen-stopen.lisp,
+   gen-stfn.lisp): **`g-st-fn-sem`**. For r = `(fn formals (sv) t x)`,
+   one stobj sv (`g-st-dummies` is `((o :inout c))`) answering itself,
+   x st-plain and call-free, `(tself-ok fn st)` (fn not a :set/:seti role
+   nor `if`), o not a value formal's name, int64 ks, the caller's `ob`
+   bound to `(:obj :inout . key)`, the heap's key to S with st-ok/st-wf,
+   a-st answering no error, and fuel past 6 + (len ks) + the body's
+   acl2-count: f-invoke of the subroutine on `((:var ob) . (g-lits ks))`
+   answers `(mv nil caller (put key S' heap))`, S' a-st's. Three
+   side conditions on the translator's output are still hypotheses,
+   evaluated per instance (for hpg-spush by computation): `(lf-ok locs
+   fnames)` of g-stmt's temporaries, `(cs-stmts stmts)`, and `(not (g-has
+   '(:cycle) stmts))`. **Left: prove them**, one induction over sn-ind
+   (g-sexpr: lf-ok kept, statements cs and CYCLE-free, code cs-expr)
+   and gst-ind (g-stmt on st-plain), as stn-ok-thm was; then drop them
+   from g-st-fn-sem. How (i)-(v) below were settled: (i) as proposed,
+   g-st-fn passes `(append fnames (st-objs st))` (st-objs moved to
+   gen-st; a :sub entry's formal list in it is harmless, g-fresh compares
+   strings; check-gen unchanged); (ii) `tsx-plain`/`g-stmt-tself`: a
+   defun-sk `tsx` (forall em cnt locs outs dests tself), one step lemma
+   per case from openers with dests/tself free (gen-stopen, 40-250 s
+   each), the induction on x alone in the minimal theory; (iii) the
+   hypothesis above; (iv) by restricting st, not st-wf: the instance uses
+   `*spush-st*`, the roles hpg-spush's body uses, and the procedure it
+   generates is *spush-proc* (ground, `spush-proc-small`) -- st-ok's
+   :size clause for every array (e.g. mref's length an int64, which
+   hpg-ok does not bound) would otherwise be an extra hypothesis; (v)
+   `f-bind-obj`, gen-fn's fb lemmas (copied: gen-fn's gen-ret macros
+   clash with gen-stlst's), `sfr-em-ok`/`sfr-decl`/`sfr-obj-at`, then
+   `stfn-run` (gst-sem-holds at the callee frame) and
+   sx-list-is-f-ex-list. The previous notes:
    (i) gst-sem-holds needs `sobjs`, `(subsetp (st-objs st) fnames)`, but
    g-st-fn passes fnames = the value formals' names only (`"tag_"`,
    `"ref_"`, not `"hs"`), and g-st-module's st has the `:sub` entries,
