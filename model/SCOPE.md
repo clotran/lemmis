@@ -11,7 +11,7 @@ proved to accept exactly that grammar (`fp-`, `fps-`, `fpu-sound` and
 `-complete`), for every alternative the Scope uses; **part** when only
 some alternatives are in; **no** otherwise.
 
-Score: **145 of 182** Scope rules proved (80%); 37 more in part; none not yet in.
+Score: **148 of 185** Scope rules proved (80%); 37 more in part; none not yet in.
 
 ## The books
 
@@ -81,9 +81,9 @@ Score: **145 of 182** Scope rules proved (80%); 37 more in part; none not yet in
   execution to the next. `block` is among `*fkeywords*`.
 - R-numbers are J3/24-007's, checked against the draft's text (each
   row's number names its rule there).
-- Derived types: scalars only (no arrays of structures, so a data-ref's
-  first part-ref is a scalar's name), no structure constructors (R756),
-  no dummy arguments of a derived type, no type-bound procedures or
+- Derived types: a part-ref of an array of structures followed by
+  another part-ref is an element (no `a(1:2)%x`); a dummy argument's
+  type is its actual's by the type's name; no type-bound procedures or
   parameters; a structure is printed and read by its components, and a
   component is not an actual argument that the procedure defines.
 - Complex: a part of a complex literal is a signed literal, not a named
@@ -151,6 +151,9 @@ Score: **145 of 182** Scope rules proved (80%); 37 more in part; none not yet in
 | R736 | component-def-stmt | part | data-component-def-stmt; no proc-component-def-stmt |
 | R737 | data-component-def-stmt | part | as a type-declaration-stmt (R801), DIMENSION the attribute a component uses; default initialization (R744's = expr) |
 | R754 | derived-type-spec | part | type-name; no type-param-spec-list |
+| R756 | structure-constructor | proved | derived-type-spec ( [component-spec-list] ), read as a function reference (R1520) and told apart by its name's declaration; the components in order, by keyword, then default-initialized (7.5.10) |
+| R757 | component-spec | proved | [keyword =] component-data-source, read as an actual-arg-spec |
+| R758 | component-data-source | proved | expr |
 | R777 | array-constructor | part | lbracket ac-spec rbracket |
 | R778 | ac-spec | part | ac-value-list |
 | R779 | lbracket | proved | |
@@ -180,7 +183,7 @@ Score: **145 of 182** Scope rules proved (80%); 37 more in part; none not yet in
 | R910 | substring-range | proved | [ scalar-int-expr ] : [ scalar-int-expr ] |
 | R911 | data-ref | proved | part-ref [% part-ref]... |
 | R912 | part-ref | proved | |
-| R913 | structure-component | proved | data-ref; read and assigned (10.2.1.2), an array component's element or section read, its element assigned |
+| R913 | structure-component | proved | data-ref; read and assigned (10.2.1.2), an array component's element or section read and assigned; an element of an array of structures |
 | R917 | array-element | proved | |
 | R918 | array-section | proved | |
 | R919 | subscript | proved | |

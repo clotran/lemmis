@@ -305,9 +305,9 @@
 (defun a-es (a) (declare (xargs :guard t)) (kadr (kdr (kdr (kdr (kdr a))))))
 (defun mk-arr (ty k lbs ubs es) (declare (xargs :guard t)) (list :a ty k lbs ubs es))
 
-(defun wrap (ty k e)                 ; an element as a scalar value
+(defun wrap (ty k e)                 ; an element as a scalar value; a structure's element its components
   (declare (xargs :guard t))
-  (cond ((eq e :u) (list :u ty k)) ((eq e :pd) (list :pd ty k)) ((eq ty :i) (vi k e)) ((eq ty :r) (vr k e)) ((eq ty :z) (list :z k e)) ((eq ty :c) (list :c k e)) (t (vl k e))))
+  (cond ((eq e :u) (list :u ty k)) ((eq e :pd) (list :pd ty k)) ((eq ty :i) (vi k e)) ((eq ty :r) (vr k e)) ((eq ty :z) (list :z k e)) ((eq ty :c) (list :c k e)) ((eq ty :s) (list :s (kar k) e)) (t (vl k e))))
 (defun raw (v) (declare (xargs :guard t)) (cond ((and (consp v) (eq (car v) :u)) :u) ((pd-p v) :pd) (t (kaddr v))))
 (defun scal-ty (v) (declare (xargs :guard t)) (case (kar v) (:i :i) (:l :l) (:r :r) (:z :z) (:c :c) ((:u :pd) (kadr v)) (otherwise nil)))
 (defun scal-k (v) (declare (xargs :guard t)) (if (member-eq (kar v) '(:u :pd)) (kaddr v) (kadr v)))
@@ -384,6 +384,7 @@
         ((and (pd-p v) (eq ty :l) (eq (kadr v) :l)) (list :pd ty k))
         ((and (eq ty :l) (lval-p v)) (vl k (v-num v)))
         ((and (eq ty :c) (cval-p v)) (if (eq k :star) v (c-fit k v)))   ; :star, an assumed length (8.5.13)
+        ((eq ty :s) (if (and (eq (kar v) :s) (equal (kadr v) (kar k))) v (err :type)))   ; 10.2.1.3p13: k (tname . defaults)
         ((and (consp v) (eq (car v) :u)) (err :undefined))
         (t (err :type))))
 (defun conv-raws (ty k fty fk es)

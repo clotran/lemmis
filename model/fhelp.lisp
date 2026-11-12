@@ -21,12 +21,15 @@
 ; such character (no CHAR, ACHAR, nor a literal with one).
 (defun nul-in (s) (declare (xargs :guard t)) (and (stringp s) (member (code-char 0) (coerce s 'list)) t))
 (defun undef-es (es) (declare (xargs :guard t)) (if (atom es) nil (or (eq (car es) :u) (nul-in (car es)) (undef-es (cdr es)))))
-(defun undef-in (v)                  ; a value with an undefined part (a structure's: 19.6.1p2)
-  (declare (xargs :guard t))
-  (cond ((aval-p v) (undef-es (a-es v))) ((member-eq (kar v) '(:u :unalloc)) t) ((cval-p v) (nul-in (kaddr v)))
-        ((and (eq (kar v) :s) (consp (kaddr v)))
-         (or (undef-in (kdr (kar (kaddr v)))) (undef-in (list :s (kadr v) (kdr (kaddr v))))))
-        (t nil)))
+(mutual-recursion
+ (defun undef-in (v)                  ; a value with an undefined part (a structure's: 19.6.1p2)
+   (declare (xargs :guard t))
+   (cond ((and (aval-p v) (eq (a-ty v) :s)) (undef-ses (a-es v)))   ; an array of structures, each its components
+         ((aval-p v) (undef-es (a-es v))) ((member-eq (kar v) '(:u :unalloc)) t) ((cval-p v) (nul-in (kaddr v)))
+         ((eq (kar v) :s) (undef-cs (kaddr v)))
+         (t nil)))
+ (defun undef-cs (cs) (declare (xargs :guard t)) (and (consp cs) (or (undef-in (kdr (car cs))) (undef-cs (cdr cs)))))
+ (defun undef-ses (es) (declare (xargs :guard t)) (and (consp es) (or (undef-cs (car es)) (undef-ses (cdr es))))))
 
 ; ---- structures (7.5): (:s tname comps), comps an alist from each
 ;      component's name to its value; a type's definition binds its name
@@ -44,7 +47,9 @@
         ((and (consp (car fr)) (eq (kar (cdar fr)) :var))
          (cons (cons (caar fr) (st-get (kadr (cdar fr)) st)) (frame-vals (cdr fr) st)))
         (t (frame-vals (cdr fr) st))))
-(defun ents-dims-p (ents) (declare (xargs :guard t)) (if (atom ents) nil (or (and (kadr (car ents)) t) (ents-dims-p (cdr ents)))))
+; a data-ref's base (R911) as a part-ref, its value the one component of a structure
+(defun base-part (bs) (declare (xargs :guard t)) (list (kadr bs) (eq (kar bs) :ref) (kaddr bs)))
+(defun base-s (n v) (declare (xargs :guard t)) (list :s nil (list (cons n v))))
 
 ; ---- substrings (9.4.1): a parent's characters lo .. hi
 (defun substr-arg-p (args)           ; name ( [lo] : [hi] ), a character scalar's substring
@@ -71,9 +76,8 @@
 
 (defun fresh (ty k lbs ubs)          ; a variable's undefined value: scalar when no bounds;
   (declare (xargs :guard t))         ; a structure's (ty :s, k (tname . comps)) its defaults
-  (cond ((eq ty :s) (list :s (kar k) (kdr k)))
-        ((atom lbs) (list :u ty k))
-        (t (mk-arr ty k lbs ubs (repeat-v (prod (extents lbs ubs)) :u)))))
+  (cond ((atom lbs) (if (eq ty :s) (list :s (kar k) (kdr k)) (list :u ty k)))
+        (t (mk-arr ty k lbs ubs (repeat-v (prod (extents lbs ubs)) (if (eq ty :s) (kdr k) :u))))))
 
 ; the indices a section subscript selects: lo, lo+st, ... while within hi
 (defun range-idx (lo hi st n)
@@ -125,6 +129,25 @@
                (if (errp rs) rs (mk-arr ty k (a-lbs old) (a-ubs old) rs)))))
           (t (let ((c (conv1 ty k v)))      ; a scalar into every element
                (if (errp c) c (mk-arr ty k (a-lbs old) (a-ubs old) (repeat-v (prod (shape-of old)) (raw c)))))))))
+
+; R756 structure constructor (7.5.10): the components cs, in declaration
+; order, from the positional values vs, then the keyword values kw, then
+; their default initialization (7.5.4.6); each converted as in intrinsic
+; assignment to the component (7.5.10p2)
+(defun s-build (cs vs kw)
+  (declare (xargs :guard t))
+  (if (atom cs) (if (or (consp vs) (consp kw)) (err :type) nil)
+    (let* ((n (kar (car cs))) (d (kdr (car cs))) (p (alk n kw))
+           (x (cond ((consp vs) (if p (err :type) (assign-val d (car vs))))
+                    (p (assign-val d (cdr p)))
+                    ((undef-in d) (err :type))    ; C7103: a component without default initialization given
+                    (t d)))
+           (r (s-build (cdr cs) (if (consp vs) (cdr vs) nil) (remove-equal p (true-list-fix kw)))))
+      (cond ((errp x) x) ((errp r) r) (t (cons (cons n x) r))))))
+(defun s-cons (tn comps vs kw)         ; comps the type's (:type comps), latest declared first
+  (declare (xargs :guard t))
+  (let ((r (s-build (reverse (true-list-fix comps)) vs kw)))
+    (if (errp r) r (list :s tn (reverse r)))))
 
 (defun strip-cadrs-safe (ds) (declare (xargs :guard t)) (if (atom ds) nil (cons (kadr (car ds)) (strip-cadrs-safe (cdr ds)))))
 
@@ -546,6 +569,10 @@
 
 ; me-dummy's binding of the dummy n once its bounds ls, us are known; b
 ; its actual's binding, v the actual's value, int its intent
+(defun ty-match (ty k v)             ; v of type ty and kind k; a structure's type by its name
+  (declare (xargs :guard t))
+  (let ((vt (if (aval-p v) (a-ty v) (if (eq (kar v) :s) :s (scal-ty v)))) (vk (if (aval-p v) (a-k v) (if (eq (kar v) :s) (kadr v) (scal-k v)))))
+    (and (eq vt ty) (if (eq ty :s) (equal (if (aval-p v) (kar vk) vk) (kar k)) (equal vk k)))))
 (defun dummy-fin (n ty k ss attrs int b v ls us fr copies st)   ; (mv err fr copies st)
   (declare (xargs :guard t))
   (let ((loc (kadr b)))
@@ -557,7 +584,7 @@
      (t
       (let* ((rebound (and ss (not (equal (list ls us) (list (a-lbs v) (a-ubs v))))))
              (v2 (if rebound (mk-arr ty k ls us (take (prod (extents ls us)) (a-es v))) v))
-             (v3 (if (equal int '("out")) (if ss (fresh ty k ls us) (list :u ty k)) v2)))
+             (v3 (if (equal int '("out")) (fresh ty k ls us) v2)))   ; a structure's default-initialized (7.5.4.6)
         (cond
          ((decl-has :value attrs)
           (mv-let (l2 st) (st-new v3 st)
