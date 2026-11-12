@@ -188,3 +188,26 @@
                  (:instance decl-ok-subset (a (sv1 5)) (b (gfv 3)))
                  (:instance g-fresh-out (b (car vars)) (ty (sv1 3)) (cnt (sv1 4)) (locs (sv1 5))
                             (used (append fnames (em-names em))))))))
+
+; ---- the lambda: its bindings, then the body in the new scope
+
+(defthm a-sx-lambda
+  (implies (and (consp x) (consp (car x)) (not (g-st-free x st)))
+           (equal (a-sx x env s st defs n)
+                  (if (zp n) (mv :fuel nil)
+                    (mv-let (e vs) (a-sx-list (cdr x) env s st defs (1- n))
+                      (if e (mv e nil)
+                        (a-sx (caddr (car x)) (pairlis$ (true-list-fix (cadr (car x))) vs) s st defs (1- n)))))))
+  :hints (("Goal" :in-theory (e/d (kar kdr) (a-sx-list g-st-free g-role a-ev)) :expand ((a-sx x env s st defs n)))))
+
+(defthm gsx-lambda
+  (implies (and (gs-lamp x st) (sn-hyps) (em-nostobj em st)
+                (gsb-sem (cadr (car x)) (cdr x) em cnt locs sigs fnames st env s defs (1- n) fr heap o)
+                (gs-sem (caddr (car x)) (append (gl1 2) em) (gl1 3) (gl1 4) sigs fnames st
+                        (pairlis$ (true-list-fix (cadr (car x))) (mv-nth 1 (a-sx-list (cdr x) env s st defs (1- n))))
+                        s defs (1- n) (mv-nth 1 (sx-list (gl1 1) fr heap)) heap o))
+           (gs-sem x em cnt locs sigs fnames st env s defs n fr heap o))
+  :hints (("Goal" :do-not-induct t :expand ((gs-sem x em cnt locs sigs fnames st env s defs n fr heap o))
+           :in-theory (disable g-sexpr g-svals a-sx a-sx-list sx-list sx sv no-calls em-ok st-ok obj-is g-role
+                               scalar-ok decl-ok-subset g-st-ident sv-is-fv fv sx-list-is-fx-list)
+           :use ((:instance decl-ok-subset (a (gl1 4)) (b (gl2 5)))))))

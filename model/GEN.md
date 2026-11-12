@@ -616,10 +616,11 @@ Two findings from acl2-fortran's `stmt`:
    ge-implies) on stobj-free terms, which gs-free relies on; the only
    loss is :bounds propagation through a skipped operand, which is not
    stated.
-   Next, in order: (1') gsx-lambda (gs-sem of the lambda from gsb-sem
-   and gs-sem of the body under em (append binds em), env (pairlis$ vars
-   vals), frame after the bindings; g-sexpr-lambda in gen-stnames is the
-   opener), gsx-the-check (value is a-sx of the last argument at n-4),
+   **`gsx-lambda`** proved (0.5 s): gs-sem of the lambda from gsb-sem of
+   its bindings and gs-sem of the body (em (append binds em), env
+   (pairlis$ vars vals), frame after the bindings), under sn-hyps and
+   em-nostobj (opener `a-sx-lambda`).
+   Next, in order: (1') gsx-the-check (value is a-sx of the last argument at n-4),
    gsx-implies (sif-then/sif-else with sb nil, cb (:true), a-prim's
    implies; fuel n-2/n-3 as sn-ind); then the gs-sem theorem by an induction over g-sexpr dispatching to the
    cases (the-check, implies, :fcall excluded or added); (2) g-stmt vs
