@@ -663,24 +663,52 @@ Two findings from acl2-fortran's `stmt` (both fixed now, see above):
    instantiate gs-sem-holds by :use (disabled, so its gs-sem stays in the
    context for gs-sem-use to bind o). The equality `outs = (list (caddr x))`
    substitutes outs, so a computed hint must name `(list (caddr x))`.
-   Next, in order: (2') the rest of g-stmt's cases, each as gst-set-*:
-   `:seti` (opener as g-stmt-set; i, v into temporaries i_N, v_N+1 before
-   the inner update, `tmp-after-abs` for both; the final sx :elem
-   assignment's `:bounds` when the index is outside S1's array -- a
-   companion lemma to gs-elem-bounds, the inner update answering), `if`
-   (sif-then/sif-else style on the test; branches' gst-sem at the frame
-   after the test), the lambda without mv (g-svals' gsb-sem; then the
-   acts, g-sacts, in the outer em, each a gst-sem; then the body in
-   `(append binds em)` at env `(pairlis$ vars vals)`; the values' temps
-   survive the acts by stn-ok of the acts, as tmp-code-after); then the
-   names induction for stn-ok (as sn-ok-thm, over g-stmt/g-sacts) and the
-   gst-sem induction (as gs-sem-thm; every other g-stmt case -- cons,
-   :sub calls, the mv lambda, a tail self-call -- has a-st answer an
-   error, so it holds vacuously; needs `(not (g-role 'quote st))`);
-   (3) :do/:call/the mv lambda need sx cases for :do and :call
-   (f-invoke on a subroutine: an oracle like f-call-val, now with heap);
-   (4) a g-st-fn theorem as g-fn-sem, for the call-free, loop-free
-   subset, and hpg-spush-fortran-correct re-derived as its instance.
+   **gen-stcase.lisp** (step (2'), part): `g-stmt-seti`/`a-st-seti`
+   openers; **`gst-seti`** (the element update: i, v into i_N, v_N+1, the
+   inner update, `hs%a(i_N) = v_N+1`) and **`gst-seti-bounds`** (i, v and
+   the inner update answering, a-st's :bounds is the statements' status
+   `(errst :bounds)`), each from the inner update's gst-sem/stn-ok at the
+   frame after v's temporary; `g-stmt-if`/`a-st-if` and **`gst-if`** (the
+   branches' gst-sem/stn-ok at the frame after the test). **gen-stlst.lisp**:
+   the lambda without mv. a-st-args is split (`a-st-args-split`) into
+   a-sx-list on `stv` (each stobj argument replaced by its var, whose
+   a-sx is nil, so gsb-sem applies; `g-svals-stv`, `no-calls-stv`,
+   `g-st-ident-stv`) and `a-sacts` (the stobj thread). `gsc-sem`/`stan-ok`
+   are g-sacts' gst-sem and names facts, with `gsc-nil`, `gsc-skip`
+   (a stobj var bound to itself, or to an mv-nth, whose a-st errs), and
+   **`gsc-act`**; **`gst-lam`**: gst-sem of the lambda from gsc-sem/stan-ok
+   of its updates (at the frame after the bindings) and gst-sem/stn-ok of
+   its body (em `(append binds em)`, env `(pairlis$ vars vals)`, S after
+   the updates, the heap put to it); gsb-sem comes from gs-sem-thm.
+   How these are proved (the current-theory style of gst-set-* took
+   5-10 min or blew up here): a glue lemma on plain variables
+   (`seti-glue`, `sif-st-glue`, `lam-em-abs`); the case's whole context as
+   a `defun-nx` predicate (`seti-ctxp`, `if-ctxp`, `lam-ctxp`, disabled);
+   fact lemmas from it (`seti-names`, `seti-vals`, `seti-inner`,
+   `seti-run`; `if-run`; `lam-binds`, `lam-acts`, `lam-run`), each in the
+   minimal theory plus the few rules it needs and `:use` of the parts'
+   -use lemmas; the case lemma then opens gst-sem, the openers and the
+   ctxp, and `:use`s the run lemma. In the minimal theory: disable the
+   `mv-nth` definition (it opens to cadr and substitutes the heap) and
+   use `mv-nth-0-car`/`mv-nth-cons-k`; `car-cons`/`cdr-cons` and the
+   executable counterparts `(equal)`, `(cons)` are not in it. A rule
+   applied after a frame normalization may no longer match (obj-at-after
+   on `(okey o fr)`): `:use` its instance on the unnormalized frame.
+   Each case lemma takes 0.3-9 s; the openers 10-50 s.
+   Next, in order: (2'') the names induction for stn-ok (as sn-ok-thm,
+   over g-stmt/g-sacts: a stn-ok case lemma per g-stmt case -- sym, the
+   three set shapes, seti, if, lambda -- and stan-ok's nil/act/skip;
+   every other case is an error, so stn-ok holds), then the gst-sem
+   induction (as gs-sem-thm, flags :stmt/:acts over gst-sem/gsc-sem, the
+   cases above; cons, :sub calls, the mv lambda, a tail self-call have
+   a-st answer an error -- needs `(not (g-role 'quote st))` and
+   `(not (g-role 'cons st))` -- so they hold vacuously); the lambda case
+   needs no mv in vars, which g-stmt-lam assumes; with mv in vars a-st
+   errs on the mv-nth arguments); (4) a g-st-fn theorem as g-fn-sem, for
+   the call-free, loop-free subset, and hpg-spush-fortran-correct
+   re-derived as its instance. (3), the calls/mv/tail loops for stobjs
+   (sx cases for :do and :call, f-invoke on a subroutine with a
+   heap-aware oracle like f-call-val), is deferred until after Stage A.
 5. Values and the runtime shims (`type(value)`, `rt_*`): fsyn/fsem first need
    an abstract runtime. Two lanes.
 6. Switch acl2-fortran to print g-module's output, and fix or confirm the
