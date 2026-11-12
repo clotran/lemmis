@@ -695,18 +695,50 @@ Two findings from acl2-fortran's `stmt` (both fixed now, see above):
    applied after a frame normalization may no longer match (obj-at-after
    on `(okey o fr)`): `:use` its instance on the unnormalized frame.
    Each case lemma takes 0.3-9 s; the openers 10-50 s.
-   Next, in order: (2'') the names induction for stn-ok (as sn-ok-thm,
-   over g-stmt/g-sacts: a stn-ok case lemma per g-stmt case -- sym, the
-   three set shapes, seti, if, lambda -- and stan-ok's nil/act/skip;
-   every other case is an error, so stn-ok holds), then the gst-sem
-   induction (as gs-sem-thm, flags :stmt/:acts over gst-sem/gsc-sem, the
-   cases above; cons, :sub calls, the mv lambda, a tail self-call have
-   a-st answer an error -- needs `(not (g-role 'quote st))` and
-   `(not (g-role 'cons st))` -- so they hold vacuously); the lambda case
-   needs no mv in vars, which g-stmt-lam assumes; with mv in vars a-st
-   errs on the mv-nth arguments); (4) a g-st-fn theorem as g-fn-sem, for
-   the call-free, loop-free subset, and hpg-spush-fortran-correct
-   re-derived as its instance. (3), the calls/mv/tail loops for stobjs
+   **gen-stind.lisp** (step (2''), done): both inductions, for
+   `st-plain` statements (the call-free, loop-free subset: the stobj
+   itself, field/element updates, if, a lambda without mv whose stobj
+   updates are plain; not cons, a :sub call, the mv lambda, a tail call,
+   nor a quote/cons head). The plan's "every other case is a g-stmt error"
+   does not hold for stn-ok: cons and a :sub call translate without error
+   (g-tvals/g-sacts, g-callst), and gst-if needs stn-ok of the branch not
+   taken, so the subset is a hypothesis on x rather than a vacuous
+   a-st error. Names by `nmk` (the names fact on a name list, chained per
+   case by `nmk-app`/`nmk-cons-fresh`; `nmk-seti-glue` for seti's
+   temporaries' order). `gst-ind` (defun-nx: st-plain's recursion, carrying
+   each part's arguments as the case lemmas name them) drives
+   **`stn-ok-thm`** (`stn-ok-holds`, `stan-ok-holds`: under sn-hyps,
+   st-plain and no-calls) and **`gst-sem-thm`** (`gst-sem-holds`: plus
+   em-nostobj), each dispatching to `-any` lemmas in the minimal theory.
+   21 s, 19 of them `stn-seti`.
+   Next: (4) a g-st-fn theorem as g-fn-sem, for st-plain bodies, and
+   hpg-spush-fortran-correct re-derived as its instance. Found while
+   setting it up, to settle first:
+   (i) gst-sem-holds needs `sobjs`, `(subsetp (st-objs st) fnames)`, but
+   g-st-fn passes fnames = the value formals' names only (`"tag_"`,
+   `"ref_"`, not `"hs"`), and g-st-module's st has the `:sub` entries,
+   whose st-objs are formal lists. Cheapest fix: g-st-fn passes
+   `(append (g-formals vals) (st-objs st))` as g-stmt's fnames (only g-fresh
+   reads it; no temporary `x_N` can be an object name, so the text is
+   unchanged -- check-gen to confirm); otherwise an fnames-enlarging lemma
+   over g-sexpr/g-stmt.
+   (ii) g-st-fn calls g-stmt with tself = fn and dests = (g-rvars rs): for
+   a single stobj result rs is nil; a lemma that on st-plain x, tself not
+   a :set/:seti role nor `if`, g-stmt with tself is g-stmt with nil
+   (tried by induction on the parts with g-stmt expanded whole: over 10
+   min, stopped -- it needs openers with tself/dests free, one per case).
+   (iii) the body is wrapped in `do ... exit end do` when `g-has (:cycle)`:
+   either show it never is on st-plain, or prove f-ex-list of
+   `((:do (ss (:exit))))` is ss's when ss answers :normal.
+   (iv) st-wf is over every :set/:seti role of st, but
+   hpg-spush-fortran-correct allows any comps besides the four it names:
+   the instance needs st-wf of `(hs-put comps hpg)` (a stronger
+   hypothesis), or st-wf restricted to the roles the body names.
+   (v) the frame: f-bind of the INOUT object dummy and the value dummies
+   (as f-bind-g-dummies), undef-locals, em-ok/decl-ok/obj-at of the callee
+   frame, sx-list-is-f-ex-list for the fuel; a-st's env is
+   `(pairlis$ (g-st-vals formals st) ks)` and `em-nostobj (g-em vals) st`.
+   (3), the calls/mv/tail loops for stobjs
    (sx cases for :do and :call, f-invoke on a subroutine with a
    heap-aware oracle like f-call-val), is deferred until after Stage A.
 5. Values and the runtime shims (`type(value)`, `rt_*`): fsyn/fsem first need
