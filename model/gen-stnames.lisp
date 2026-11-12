@@ -73,7 +73,7 @@
                   (not (intersectp-equal (asg :list ss) (append fnames (em-names em) (strip-cars locs))))
                   (subsetp-equal (em-names binds) (strip-cars locs2))))))
 
-(defun st-objs (st) (if (atom st) nil (cons (kadr (cdar st)) (st-objs (cdr st)))))
+; st-objs: gen-st
 
 (defthm g-obj-st-objs
   (implies (g-role x st) (member-equal (g-obj x st) (st-objs st))))

@@ -152,24 +152,6 @@
 
 (in-theory (disable hpgp))
 
-; on a stobj satisfying hpg-ok (the guard), the subroutine updates hs as
-; hpg-spush updates hpg, at every fuel past 100: hs's object any components
-; comps with err, mtag, mref and msp the stobj's (hs-put), and only those
-; four changed
-(defthm hpg-spush-fortran-correct
-  (implies (and (hpgp hpg) (hpg-ok hpg) (int64p tag) (int64p ref)
-                (consp (lkp "err" comps)) (consp (lkp "mtag" comps)) (consp (lkp "mref" comps)) (consp (lkp "msp" comps))
-                (integerp fuel) (< 100 fuel))
-           (equal (f-invoke *spush-proc* (list '(:var "hs") (g-lit tag) (g-lit ref))
-                            (put "hs" (list* :obj :inout key) frame) (put key (hs-put comps hpg) heap) procs fuel)
-                  (mv nil (put "hs" (list* :obj :inout key) frame) (put key (hs-put comps (hpg-spush tag ref hpg)) heap))))
-  :hints (("Goal" :do-not-induct t :expand ((:free (x frame heap procs fuel) (f-ev x frame heap procs fuel))
-                      (:free (x frame heap procs fuel) (f-ex x frame heap procs fuel))
-                      (:free (x frame heap procs fuel) (f-ex-list x frame heap procs fuel))
-                      (:free (ds as caller callee outs heap procs fuel) (f-bind ds as caller callee outs heap procs fuel))
-                      (:free (p as caller heap procs fuel) (f-invoke p as caller heap procs fuel)))
-      :in-theory (e/d (hpg-ok hpg-lens) (f-ev f-ex f-ex-list f-bind f-invoke nth update-nth)))))
-
 ; the bounds error: mref shorter than mtag (which hpg-ok forbids), msp
 ; in mtag but past mref -- hs%mref(i_4) is outside its array
 (defthm hpg-spush-fortran-bounds
@@ -187,3 +169,70 @@
                       (:free (ds as caller callee outs heap procs fuel) (f-bind ds as caller callee outs heap procs fuel))
                       (:free (p as caller heap procs fuel) (f-invoke p as caller heap procs fuel)))
       :in-theory (e/d (hpg-ok hpg-lens) (f-ev f-ex f-ex-list f-bind f-invoke nth update-nth)))))
+
+; the general theorem, included after the symbolic-execution proof above
+; (whose theory its rules would change)
+(include-book "gen-stfn")
+
+;; ---- hpg-spush-fortran-correct, an instance of g-st-fn-sem
+;
+; st restricted to the roles hpg-spush's body uses (and its :sub entry):
+; the procedure is the same (spush-proc-small), and st-ok/st-wf then ask
+; only of err, msp, mtag and mref -- not, say, that every array's length
+; is an int64, which hpg-ok does not say of the ones it does not bound.
+(defconst *spush-st*
+  (append '((hpg :stobj "hs" "heap_state") (h-err :field "hs" "err") (update-h-err :set "hs" "err")
+            (h-msp :field "hs" "msp") (update-h-msp :set "hs" "msp") (h-mtag-length :size "hs" "mtag")
+            (update-h-mtagi :seti "hs" "mtag") (update-h-mrefi :seti "hs" "mref"))
+          (g-st-subs *spush-raw*)))
+
+(defconst *spush-body* (nth 4 (car *spush-raw*)))
+
+(defthm spush-proc-small
+  (and (equal (car *spush-raw*) (list 'hpg-spush '(tag ref hpg) '(hpg) t *spush-body*))
+       (equal (mv-list 2 (g-st-fn (car *spush-raw*) (g-defs *spush-raw*) (g-sigs *spush-raw* nil) *spush-st*))
+              (list nil *spush-proc*)))
+  :rule-classes nil)
+
+(defthm h-mtagp-int64 (implies (h-mtagp x) (int64-listp x)) :hints (("Goal" :in-theory (enable int64p))))
+(defthm h-mrefp-int64 (implies (h-mrefp x) (int64-listp x)) :hints (("Goal" :in-theory (enable int64p))))
+
+(defthm spush-st-ok
+  (implies (and (hpgp hpg) (hpg-ok hpg))
+           (and (st-ok *spush-st* "hs" (hs-put comps hpg)) (st-wf *spush-st* (hs-put comps hpg))))
+  :hints (("Goal" :in-theory (e/d (st-ok st-wf hpg-ok hpg-lens hpgp int64p) (nth))
+           :expand ((st-ok *spush-st* "hs" (hs-put comps hpg)) (st-wf *spush-st* (hs-put comps hpg))))))
+
+; a-st on the body: hpg-spush, on hs-put's components
+(defthm spush-a-st
+  (implies (and (hpgp hpg) (hpg-ok hpg) (int64p tag) (int64p ref)
+                (consp (lkp "err" comps)) (consp (lkp "mtag" comps)) (consp (lkp "mref" comps)) (consp (lkp "msp" comps)))
+           (equal (a-st *spush-body* (list (cons 'tag tag) (cons 'ref ref)) (hs-put comps hpg) *spush-st* nil 100)
+                  (mv nil (hs-put comps (hpg-spush tag ref hpg)))))
+  :hints (("Goal" :do-not-induct t
+           :expand ((:free (x env s n) (a-st x env s *spush-st* nil n))
+                    (:free (x env s n) (a-sx x env s *spush-st* nil n))
+                    (:free (x env s n) (a-sx-list x env s *spush-st* nil n))
+                    (:free (v x env s0 s n) (a-st-args v x env s0 s *spush-st* nil n)))
+           :in-theory (e/d (hpg-ok hpg-lens) (a-st a-sx a-sx-list a-st-args nth update-nth)))))
+
+; on a stobj satisfying hpg-ok (the guard), the subroutine updates hs as
+; hpg-spush updates hpg, at every fuel past 196 (g-st-fn-sem's bound: 6,
+; the two values, the body's size 188): hs's object any components comps
+; with err, mtag, mref and msp the stobj's (hs-put), and only those four
+; changed
+(defthm hpg-spush-fortran-correct
+  (implies (and (hpgp hpg) (hpg-ok hpg) (int64p tag) (int64p ref)
+                (consp (lkp "err" comps)) (consp (lkp "mtag" comps)) (consp (lkp "mref" comps)) (consp (lkp "msp" comps))
+                (integerp fuel) (< 196 fuel))
+           (equal (f-invoke *spush-proc* (list '(:var "hs") (g-lit tag) (g-lit ref))
+                            (put "hs" (list* :obj :inout key) frame) (put key (hs-put comps hpg) heap) procs fuel)
+                  (mv nil (put "hs" (list* :obj :inout key) frame) (put key (hs-put comps (hpg-spush tag ref hpg)) heap))))
+  :hints (("Goal" :do-not-induct t
+           :in-theory (e/d (int64-listp) (g-st-fn-sem spush-a-st spush-st-ok g-st-fn a-st f-invoke hs-put hpg-spush hpg-ok hpgp))
+           :use (spush-proc-small spush-a-st spush-st-ok
+                 (:instance g-st-fn-sem (fn 'hpg-spush) (formals '(tag ref hpg)) (sv 'hpg) (x *spush-body*)
+                            (gdefs (g-defs *spush-raw*)) (sigs (g-sigs *spush-raw* nil)) (st *spush-st*)
+                            (o "hs") (c "heap_state") (ob "hs") (caller (put "hs" (list* :obj :inout key) frame))
+                            (heap (put key (hs-put comps hpg) heap)) (ks (list tag ref)) (s (hs-put comps hpg))
+                            (defs nil) (n 100))))))

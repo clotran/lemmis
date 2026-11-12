@@ -505,6 +505,10 @@
         (cons (cadr x) (g-ccalls (cddr x)))
       (append (g-ccalls (car x)) (g-ccalls (cdr x))))))
 
+;; the stobjs' objects (a :sub entry's formals list among them: harmless,
+;; g-fresh compares strings). g-st-fn's statements avoid them as temporaries.
+(defun st-objs (st) (if (atom st) nil (cons (kadr (cdar st)) (st-objs (cdr st)))))
+
 (defun g-st-fn (r defs sigs st)
   (let* ((fn (kar r)) (formals (kadr r)) (outs (kaddr r)) (body (nth 4 (true-list-fix r)))
          (vals (g-st-vals formals st)) (fnames (g-formals vals))
@@ -523,7 +527,7 @@
                         (append (g-st-dummies formals outs st) (g-dummies vals))
                         (kadr (cdr (lkp fn sigs))) (g-locals locs) stmts)))))
      (t
-      (mv-let (e stmts cnt locs) (g-stmt body (g-em vals) 0 nil sigs fnames st outs (g-rvars rs) fn)
+      (mv-let (e stmts cnt locs) (g-stmt body (g-em vals) 0 nil sigs (append fnames (st-objs st)) st outs (g-rvars rs) fn)
         (declare (ignore cnt))
         (if e (mv e nil)
           (mv nil (list :subroutine (g-sym fn nil)
