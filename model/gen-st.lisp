@@ -61,6 +61,7 @@
 (defun g-role (x st) (declare (xargs :guard t)) (if (symbolp x) (kar (cdr (lkp x st))) nil))
 (defun g-obj (x st) (declare (xargs :guard t)) (kadr (cdr (lkp x st))))
 (defun g-comp (x st) (declare (xargs :guard t)) (kaddr (cdr (lkp x st))))
+(defun g-flat (sss) (declare (xargs :guard t)) (if (atom sss) nil (append (true-list-fix (car sss)) (g-flat (cdr sss)))))
 
 ; x mentions no stobj and no stobj operation: g-expr takes it whole
 (mutual-recursion
@@ -144,9 +145,9 @@
      ; a function answering a value, given the stobj: f(hs, args)
      (let ((sig (cdr (lkp (car x) sigs))))
        (if (not (equal (len (kar sig)) (len (cdr x)))) (mv :type nil nil nil cnt locs)
-         (mv-let (e s sc cs cnt locs) (g-scall-args (kar sig) (cdr x) nil em cnt locs sigs fnames st)
+         (mv-let (e sss sc cs cnt locs) (g-scall-args (kar sig) (cdr x) nil em cnt locs sigs fnames st)
            (if e (mv e nil nil nil cnt locs)
-             (mv nil s (list :fcall (g-sym (car x) nil) (append sc cs)) (kadr sig) cnt locs))))))
+             (mv nil (g-flat sss) (list :fcall (g-sym (car x) nil) (append sc cs)) (kadr sig) cnt locs))))))
     ((or (g-role (car x) st) (eq (car x) 'quote)) (mv :stobj nil nil nil cnt locs))
     (t ; a primitive on arguments reading the stobj
      (mv-let (e s cs ts cnt locs) (g-sargs (cdr x) em cnt locs sigs fnames st)
@@ -164,8 +165,9 @@
            (if e (mv e nil nil nil cnt locs)
              (mv nil (append s ss) (cons c cs) (cons ty ts) cnt locs)))))))
  (defun g-scall-args (formals xs upd em cnt locs sigs fnames st)
-   ; a call's arguments, as acl2-fortran's call-args: (mv err stmts objs codes cnt locs),
-   ; objs the stobj formals' objects, codes the other arguments' (int64). A
+   ; a call's arguments, as acl2-fortran's call-args: (mv err sss objs codes cnt locs),
+   ; objs the stobj formals' objects, codes the other arguments' (int64), sss
+   ; their statements, one list per value argument. A
    ; stobj argument is its formal; under upd (a CALL statement) it may be an
    ; update, which the caller translates
    (declare (xargs :guard t :measure (acl2-count xs)))
@@ -176,9 +178,9 @@
               (mv e s (cons (list :var (g-obj (car formals) st)) sc) cs cnt locs))))
          (t (mv-let (e s c ty cnt locs) (g-sexpr (car xs) em cnt locs sigs fnames st)
               (if (or e (not (eq ty :int64))) (mv (or e :type) nil nil nil cnt locs)
-                (mv-let (e ss sc cs cnt locs) (g-scall-args (cdr formals) (cdr xs) upd em cnt locs sigs fnames st)
+                (mv-let (e sss sc cs cnt locs) (g-scall-args (cdr formals) (cdr xs) upd em cnt locs sigs fnames st)
                   (if e (mv e nil nil nil cnt locs)
-                    (mv nil (append s ss) sc (cons c cs) cnt locs))))))))
+                    (mv nil (cons s sss) sc (cons c cs) cnt locs))))))))
  (defun g-svals (vars xs em cnt locs sigs fnames st)
    ; a let's value bindings: each var bound to a different term, in the outer
    ; scope, into a temporary named after it: (mv err stmts binds cnt locs).
@@ -290,6 +292,39 @@
                            (cons (list :assign (list :var (g-formal (car vars))) (list :var tmp)) as)
                            cnt locs))))))))))
 
+; acl2-fortran's stable?: code reading nothing a stobj update can change --
+; locals and constants, no component and no call (huge(), max() print as calls)
+(defun g-stable (c)
+  (declare (xargs :guard t))
+  (case (kar c)
+    ((:int :true :false :var) t)
+    ((:neg :not) (g-stable (kadr c)))
+    ((:add :sub :mul :eq :lt :le :ge) (and (g-stable (kadr c)) (g-stable (kaddr c))))
+    (otherwise nil)))
+
+
+; acl2-fortran's settle, on each int64 value in turn: its statements, then,
+; unless its code is stable, the code into a temporary v_N read in its place:
+; (mv err stmts codes cnt locs)
+(defun g-settle (sss cs cnt locs used)
+  (declare (xargs :guard t))
+  (if (atom cs) (mv nil nil nil cnt locs)
+    (mv-let (e tmp cnt locs) (if (g-stable (car cs)) (mv nil nil cnt locs) (g-fresh 'v :int64 cnt locs used))
+      (if e (mv e nil nil cnt locs)
+        (mv-let (e ss cs2 cnt locs) (g-settle (cdr sss) (cdr cs) cnt locs used)
+          (if e (mv e nil nil cnt locs)
+            (if tmp
+                (mv nil (append (true-list-fix (kar sss)) (list (list :assign (list :var tmp) (car cs))) ss)
+                    (cons (list :var tmp) cs2) cnt locs)
+              (mv nil (append (true-list-fix (kar sss)) ss) (cons (car cs) cs2) cnt locs))))))))
+
+; some stobj argument of a call is an update, not the formal itself
+(defun g-upd (formals xs st)
+  (declare (xargs :guard t))
+  (if (or (atom formals) (atom xs)) nil
+    (or (and (eq (g-role (car formals) st) :stobj) (not (eq (car xs) (car formals))))
+        (g-upd (cdr formals) (cdr xs) st))))
+
 (mutual-recursion
  (defun g-stmt (x em cnt locs sigs fnames st outs dests tself)
    (declare (xargs :guard t :measure (+ 2 (* 3 (acl2-count x)))
@@ -320,14 +355,18 @@
                (if e (mv e nil cnt locs)
                  (mv nil (append s sm as) cnt locs))))))))
     ((eq (g-role (car x) st) :set)
-     ; (update-f v s): s's statements, then v read (after them, as acl2-fortran writes it)
+     ; (update-f v s): v read first, settled (into a temporary unless stable)
+     ; when s is an update, then s's statements, then the assignment
      (if (not (and (= (len x) 3) (equal outs (list (caddr x))) (equal (g-obj (car x) st) (g-obj (caddr x) st)))) (mv :stobj nil cnt locs)
        (mv-let (e s c ty cnt locs) (g-sexpr (cadr x) em cnt locs sigs fnames st)
          (if (or e (not (eq ty :int64))) (mv (or e :type) nil cnt locs)
-           (mv-let (e si cnt locs) (g-stmt (caddr x) em cnt locs sigs fnames st outs dests nil)
+           (mv-let (e s cs cnt locs) (if (symbolp (caddr x)) (mv nil s (list c) cnt locs)
+                                       (g-settle (list s) (list c) cnt locs (append fnames (em-names em))))
              (if e (mv e nil cnt locs)
-               (mv nil (append si s (list (list :assign (list :comp (g-obj (car x) st) (g-comp (car x) st)) c)))
-                   cnt locs)))))))
+               (mv-let (e si cnt locs) (g-stmt (caddr x) em cnt locs sigs fnames st outs dests nil)
+                 (if e (mv e nil cnt locs)
+                   (mv nil (append s si (list (list :assign (list :comp (g-obj (car x) st) (g-comp (car x) st)) (car cs))))
+                       cnt locs)))))))))
     ((eq (g-role (car x) st) :seti)
      ; (update-fi i v s): i and v into temporaries, read before s's statements run
      (if (not (and (= (len x) 4) (equal outs (list (cadddr x))) (equal (g-obj (car x) st) (g-obj (cadddr x) st)))) (mv :stobj nil cnt locs)
@@ -356,10 +395,10 @@
                  (if e (mv e nil cnt locs)
                    (mv nil (append sc (list (list :if cc sa sb))) cnt locs)))))))))
     ((consp (car x))
-     ; ((lambda vars body) . args): the values first, read in the outer scope;
-     ; then an mv call (mv bound to it), its value results into temporaries;
-     ; then the stobjs' updates -- translated, as acl2-fortran does, with the
-     ; new values in scope (GEN.md's finding) -- then the body
+     ; ((lambda vars body) . args): the values first, then an mv call, its
+     ; value results into temporaries, then the stobjs' updates -- the call
+     ; and the updates in the outer scope (and mv) -- then the body, the new
+     ; values in scope
      (let* ((vars (kadr (car x))) (body (kaddr (car x))) (mvc (g-arg-of 'mv vars (cdr x))))
        (if (not (and (true-listp (car x)) (= (len (car x)) 3) (eq (caar x) 'lambda) (symbol-listp vars)
                      (no-duplicatesp-eq vars) (= (len vars) (len (cdr x)))
@@ -367,37 +406,41 @@
            (mv :stobj nil cnt locs)
          (mv-let (e s binds cnt locs) (g-svals vars (cdr x) em cnt locs sigs fnames st)
            (if e (mv e nil cnt locs)
-             (let ((em (append binds em)))
-               (mv-let (e mbinds mdests cnt locs)
-                 (if (member-eq 'mv vars) (g-mvtmps (g-comp (car mvc) st) 0 cnt locs (append fnames (em-names em)))
-                   (mv nil nil nil cnt locs))
-                 (if e (mv e nil cnt locs)
-                   (mv-let (e sm cnt locs)
-                     (if (member-eq 'mv vars) (g-callst mvc em cnt locs sigs fnames st mdests) (mv nil nil cnt locs))
-                     (if e (mv e nil cnt locs)
-                       (let ((em (if (member-eq 'mv vars) (append (cons (list* '(mv) (car mvc) :mv) mbinds) em) em)))
-                         (if (not (g-acts-place vars (cdr x) em st)) (mv :mv nil cnt locs)
-                           (mv-let (e sa cnt locs) (g-sacts vars (cdr x) em cnt locs sigs fnames st)
-                             (if e (mv e nil cnt locs)
-                               (mv-let (e sb cnt locs) (g-stmt body em cnt locs sigs fnames st outs dests tself)
-                                 (if e (mv e nil cnt locs)
-                                   (mv nil (append s sm sa sb) cnt locs)))))))))))))))))
+             (mv-let (e mbinds mdests cnt locs)
+               (if (member-eq 'mv vars) (g-mvtmps (g-comp (car mvc) st) 0 cnt locs (append fnames (em-names (append binds em))))
+                 (mv nil nil nil cnt locs))
+               (if e (mv e nil cnt locs)
+                 (mv-let (e sm cnt locs)
+                   (if (member-eq 'mv vars) (g-callst mvc em cnt locs sigs fnames st mdests) (mv nil nil cnt locs))
+                   (if e (mv e nil cnt locs)
+                     (let ((mvb (if (member-eq 'mv vars) (cons (list* '(mv) (car mvc) :mv) mbinds) nil)))
+                       (if (not (g-acts-place vars (cdr x) (append mvb em) st)) (mv :mv nil cnt locs)
+                         (mv-let (e sa cnt locs) (g-sacts vars (cdr x) (append mvb em) cnt locs sigs fnames st)
+                           (if e (mv e nil cnt locs)
+                             (mv-let (e sb cnt locs) (g-stmt body (append mvb binds em) cnt locs sigs fnames st outs dests tself)
+                               (if e (mv e nil cnt locs)
+                                 (mv nil (append s sm sa sb) cnt locs))))))))))))))))
     ((eq (g-role (car x) st) :sub)
      ; a call answering the results wanted: CALL f(stobjs, args, dests)
      (if (not (equal (g-comp (car x) st) outs)) (mv :stobj nil cnt locs)
        (g-callst x em cnt locs sigs fnames st dests)))
     (t (mv :stobj nil cnt locs))))
  (defun g-callst (x em cnt locs sigs fnames st dests)
-   ; acl2-fortran's call-stmt: the value arguments' statements, the stobj
-   ; arguments' updates, then CALL f(stobjs, values, dests)
+   ; acl2-fortran's call-stmt: the value arguments' statements (settled,
+   ; when a stobj argument is an update), the stobj arguments' updates,
+   ; then CALL f(stobjs, values, dests)
    (declare (xargs :guard t :measure (+ 1 (* 3 (acl2-count x)))))
    (if (not (and (consp x) (true-listp x) (= (len (g-obj (car x) st)) (len (cdr x))))) (mv :arity nil cnt locs)
-     (mv-let (e s sc cs cnt locs) (g-scall-args (g-obj (car x) st) (cdr x) t em cnt locs sigs fnames st)
+     (mv-let (e sss sc cs cnt locs) (g-scall-args (g-obj (car x) st) (cdr x) t em cnt locs sigs fnames st)
        (if e (mv e nil cnt locs)
-         (mv-let (e sa cnt locs) (g-sacts (g-obj (car x) st) (cdr x) em cnt locs sigs fnames st)
+         (mv-let (e s cs cnt locs) (if (g-upd (g-obj (car x) st) (cdr x) st)
+                                     (g-settle sss cs cnt locs (append fnames (em-names em)))
+                                   (mv nil (g-flat sss) cs cnt locs))
            (if e (mv e nil cnt locs)
-             (mv nil (append s sa (list (list :call (g-sym (car x) nil) (append sc cs (true-list-fix dests)))))
-                 cnt locs)))))))
+             (mv-let (e sa cnt locs) (g-sacts (g-obj (car x) st) (cdr x) em cnt locs sigs fnames st)
+               (if e (mv e nil cnt locs)
+                 (mv nil (append s sa (list (list :call (g-sym (car x) nil) (append sc cs (true-list-fix dests)))))
+                     cnt locs)))))))))
  (defun g-sacts (vars xs em cnt locs sigs fnames st)
    ; each stobj var bound to a different term (not an mv-nth): that term's statements
    (declare (xargs :guard t :measure (+ 2 (* 3 (acl2-count xs)))))

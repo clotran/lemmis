@@ -435,11 +435,19 @@ hpg-run-take (15), hpg-next-tail (63), hpg-seq-op (161) agree. Those are
 all of heapgn's procedures with no `hp_*` extern; every other heapgn
 procedure reads or writes one.
 
-A third copy of finding 2 below, noted not proved: acl2-fortran's mv lambda
-adds the values' bindings before translating the mv call's arguments, and
-call-stmt reads its value arguments' code after the stobj arguments'
-updates run (the analogue of the field-update finding). gen-st copies both;
-the general theorem's side conditions must exclude them too.
+A third copy of finding 2 below: acl2-fortran's mv lambda added the
+values' bindings before translating the mv call's arguments, and call-stmt
+read its value arguments' code after the stobj arguments' updates run.
+**All three findings are fixed** in acl2-fortran (clotran 23ca95ac, every
+generated file byte-identical) and gen-st follows it: `g-settle` (its
+`settle`: the value's statements, then, unless its code is `g-stable` --
+locals and constants, no component, no call -- the code into a temporary
+`v_N`); `(update-f v s)` reads v first, settled when s is an update; a
+lambda's mv call and stobj updates are translated in the outer em (plus
+mv's binding), only the body sees the new values; g-callst settles its
+value arguments when `g-upd` (some stobj argument is an update).
+g-scall-args now answers each value argument's statements as its own list
+(`g-flat` joins them). check-gen agrees unchanged.
 
 **`hpg-spush-fortran-correct`** (gen-st-spush.lisp): clotran's hpgp stobj,
 hpg-lens, hpg-ok and hpg-spush copied in (check-gen compares the copies,
@@ -458,7 +466,7 @@ Proved by symbolic execution (f-ev, f-ex, f-bind, f-invoke expanded with
 It is a per-function proof on the printed procedure, not yet an instance
 of a general theorem about g-stmt.
 
-Two findings from acl2-fortran's `stmt`:
+Two findings from acl2-fortran's `stmt` (both fixed now, see above):
 
 - **A field update reads its value after the inner update.** For
   `(update-f v s)` the lines are s's, then v's, then `st%f = v`; ACL2
