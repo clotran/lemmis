@@ -8,8 +8,8 @@
 
 (defun kw (s) (declare (xargs :guard t)) (list :name s))
 
-(defconst *end-kinds* '("program" "module" "function" "subroutine" "do" "if" "select"))
-(defconst *unit-ends* '("program" "module" "function" "subroutine"))
+(defconst *end-kinds* '("program" "module" "function" "subroutine" "do" "if" "select" "type"))
+(defconst *unit-ends* '("program" "module" "function" "subroutine" "type"))
 (defconst *simple-kinds* '("cycle" "exit" "return" "continue" "stop"))
 (defconst *prefix-kws* '("pure" "elemental" "impure" "recursive" "non_recursive"))
 (defconst *type-kws* '("integer" "logical" "real" "character" "double"))
@@ -49,7 +49,7 @@
 
 (defun action-kind-p (k)          ; R515, C1143
   (declare (xargs :guard t))
-  (and (member-eq k '(:assign :simple :call :print :goto :write :read :readf)) t))
+  (and (member-eq k '(:assign :cassign :simple :call :print :goto :write :read :readf)) t))
 
 (defun nonzero-digit-p (cs)
   (declare (xargs :guard t))

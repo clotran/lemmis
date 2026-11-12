@@ -28,8 +28,8 @@ Score: **126 of 155** Scope rules proved (81%); 29 more in part; none not yet in
     reads, plus a constant per nonterminal (`fp-d`, at most 19) -- with
     fp-complete, n tokens are read in at most 32n + 17 calls.
   All certify in about 25 s.
-- `fstmt.lisp`: one statement's tokens, the same way: `fgs`, `fys`, the
-  parser `fps` (its kind known from the first tokens); `fstmt-sound.lisp`:
+- `fstmt-gram.lisp` and `fstmt.lisp`: one statement's tokens, the same way:
+  `fgs`, `fys` (fstmt-gram), the parser `fps` (fstmt) (its kind known from the first tokens); `fstmt-sound.lisp`:
   `fps-sound`; `fstmt-complete.lisp`: `fps-complete` (followed by nothing:
   a statement is whole);
   `fstmt-cost.lisp`: `fps-cost`: at most 64 calls per token read, fp's among them, plus

@@ -71,7 +71,7 @@
                                (loop$ for c in cs append (list (list (quote fps) c (quote toks)) (list (quote fps-steps) c (quote toks))))))))))
 
 (defthm stmt-nt-is-s
-  (implies (not (member-equal c (quote (:s-head :s-end :s-other :s-use :s-else :s-if :s-do :s-call :s-print :s-assign :s-unit :s-select :s-case :s-label :s-goto :s-format :s-write :s-read))))
+  (implies (not (member-equal c (quote (:s-head :s-end :s-other :s-use :s-else :s-if :s-do :s-call :s-print :s-type :s-assign :s-unit :s-select :s-case :s-label :s-goto :s-format :s-write :s-read))))
            (not (equal (stmt-nt tk) c)))
   :hints (("Goal" :in-theory (enable stmt-nt))))
 

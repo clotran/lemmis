@@ -21,7 +21,7 @@
 (in-theory (disable fps))
 
 ; the tree nt answers: an :s-* answers a statement
-(defun gnt (nt) (declare (xargs :guard t)) (if (member-eq nt '(:s-head :s-end :s-other :s-use :s-else :s-if :s-do :s-call :s-print :s-assign :s-unit :s-select :s-case :s-label :s-goto :s-format :s-write :s-read)) :stmt nt))
+(defun gnt (nt) (declare (xargs :guard t)) (if (member-eq nt '(:s-head :s-end :s-other :s-use :s-else :s-if :s-do :s-call :s-print :s-type :s-assign :s-unit :s-select :s-case :s-label :s-goto :s-format :s-write :s-read)) :stmt nt))
 
 ; the parts' shapes, and fgs and fys opened only on a tree being built
 ; (a cons): a subtree a hypothesis speaks of stays closed
@@ -201,6 +201,7 @@
 (fps-sound-at :s-call)
 (fps-sound-at :s-print)
 (fps-sound-at :s-assign)
+(fps-sound-at :s-type)
 (fps-sound-at :s-select)
 (fps-sound-at :s-case)
 (fps-sound-at :s-label)
@@ -240,7 +241,7 @@
 
 ; the statements other than IF, as one
 (defthm fps-sound-flat
-  (implies (and (member-eq nt '(:s-head :s-end :s-other :s-use :s-else :s-do :s-call :s-print :s-assign :s-unit :s-select :s-case :s-label :s-goto :s-format :s-write :s-read))
+  (implies (and (member-eq nt '(:s-head :s-end :s-other :s-use :s-else :s-do :s-call :s-print :s-type :s-assign :s-unit :s-select :s-case :s-label :s-goto :s-format :s-write :s-read))
                 (mv-nth 0 (fps nt toks)))
            (and (fgs :stmt (mv-nth 1 (fps nt toks)))
                 (equal (append (fys :stmt (mv-nth 1 (fps nt toks))) (mv-nth 2 (fps nt toks))) toks)))
@@ -259,7 +260,7 @@
 ; the statement kinds other than IF's, as fps-sound-flat names them
 (defthm stmt-nt-flat
   (implies (not (equal (stmt-nt tk) :s-if))
-           (member-equal (stmt-nt tk) (quote (:s-head :s-end :s-other :s-use :s-else :s-do :s-call :s-print :s-assign :s-unit :s-select :s-case :s-label :s-goto :s-format :s-write :s-read))))
+           (member-equal (stmt-nt tk) (quote (:s-head :s-end :s-other :s-use :s-else :s-do :s-call :s-print :s-type :s-assign :s-unit :s-select :s-case :s-label :s-goto :s-format :s-write :s-read))))
   :hints (("Goal" :in-theory (enable stmt-nt))))
 
 ; a statement of a kind other than IF's
@@ -305,7 +306,7 @@
           ("Subgoal 2.1" :expand ((fps :stmt toks)))))
 
 (defconst *fps-nts*
-  '(:stmt :s-head :s-end :s-other :s-use :s-else :s-if :s-do :s-call :s-print :s-assign :s-unit :s-select :s-case
+  '(:stmt :s-head :s-end :s-other :s-use :s-else :s-if :s-do :s-call :s-print :s-type :s-assign :s-unit :s-select :s-case
     :s-label :s-goto :s-format :s-write :s-read :oitems :ios :kios :io
     :fn-rest :sub-rest :decl-rest :ts :attrs :attr :shapes :shapes* :shape :ranges :range :ixs :ix :ents :ent :init
     :names :names1 :onames :items :ctl :prefix))
