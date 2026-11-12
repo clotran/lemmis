@@ -447,7 +447,7 @@
 (doseq [[f m] (map vector fcvs-files (concat fcvs-model (repeat nil)))]
   (let [nm (fs/file-name f)
         ref (str/replace f #"\.f$" ".reference_output")
-        want (when (fs/exists? ref) (vec (map str/trimr (str/split-lines (str/trimr (slurp ref))))))]
+        want (when (fs/exists? ref) (let [ls (vec (map str/trimr (str/split-lines (str/trimr (slurp ref)))))] (if (= (peek ls) "exit 0") (pop ls) ls)))]  ; LLVM appends the exit status
     (cond (nil? m) nil
           (and want (#{":STOP" ":NORMAL"} (:status m)) (= want (:recs m))) (swap! fcvs-pass conj nm)
           :else nil)))

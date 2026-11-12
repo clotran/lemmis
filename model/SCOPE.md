@@ -13,6 +13,33 @@ some alternatives are in; **no** otherwise.
 
 Score: **148 of 185** Scope rules proved (80%); 37 more in part; none not yet in.
 
+## Theorem 3: checked against the compilers (status)
+
+Not a theorem: a test, run by `make check` (exit 1 on any difference).
+
+- **Oracle programs**: check-fsem.bb's 7 fsyn cases (the subset clotran's
+  generator emits) and the 29 whole programs of `cases/`, each run by the
+  model and by gfortran (-std=f2018) and flang; all agree, and the two
+  compilers agree with each other on all of them.
+- **The fuzzer**: `fuzz.bb` (`make fuzz`, run by `make check` with seed
+  1, 40 programs; `make fuzz FUZZ_SEED=7 FUZZ_N=100` for more). It
+  generates programs of a slice of the subset only: integer and logical
+  scalars and one integer array; assignment, DO (with a step, EXIT,
+  CYCLE), IF constructs, PRINT *; + - * /, MOD, MODULO, MIN, MAX, ABS,
+  SIGN; the relations and the logical operators. No reals, characters,
+  procedures, modules, derived types, I/O under a format: those are
+  checked by the oracle programs only. A disagreement is kept in
+  `build/fuzz/` as a regression case. Seeds 1 (40) and 7 (100): all agree.
+  It found DIM missing from the model's intrinsics (not in the Scope).
+- **FCVS**: scored, not failed, and only when `fcvs/` is fetched
+  (`bb fetch-fcvs.bb`; not committed): 29 of 180 programs print their
+  reference output exactly (FM002-006, 008-010, 012, 019, 030-045, 060,
+  061, 109). Of the rest, 146 stop at a statement outside the subset
+  (DATA, DIMENSION, ASSIGN, computed GO TO, ...), 3 at an undeclared
+  name, 2 at a processor-dependent value. (The score read 0 until the
+  harness dropped the "exit 0" line LLVM's reference outputs end with.)
+- **flang's parse tree** (PLAN.md's parsing oracle) is not compared yet.
+
 ## The books
 
 - `fgram.lisp`: the expression grammar as `fg` (a recognizer of parse
