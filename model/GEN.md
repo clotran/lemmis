@@ -639,14 +639,48 @@ Two findings from acl2-fortran's `stmt` (both fixed now, see above):
    no-calls and the length itself, the error cases by `gs-err` and
    `gs-nocalls`); `em-nostobj-g-svals` (binds never name a stobj) gives
    the lambda body's em-nostobj. 27 s.
-   Next, in order: (2) g-stmt vs
-   a-st on sx-list for :set (side condition: v reads no component the
-   inner update writes -- finding 1), :seti (bounds), if, lambda (side
-   condition: the update terms read no var the lambda rebinds -- finding
-   2); (3) :do/:call/the mv lambda need sx cases for :do and :call
+   **gen-stst.lisp** (step (2), part): g-stmt against a-st on sx-list,
+   on the fixed translator, no side conditions. `gst-sem` (outs given,
+   dests nil, tself nil): under gs-sem's hypotheses plus `st-wf st s`
+   (every :set role's component of S an int64, every :seti's an array),
+   `obj-at o s fr heap` (obj-is, INOUT, the heap entry present), sn-hyps
+   and em-nostobj, the statements answer :normal, the heap is
+   `(put (okey o fr) S' heap)`, S' keeps st-ok and st-wf. `stn-ok` is the
+   statement's names fact (it assigns only new temporaries), over `asgv`
+   (asg less the objects a :comp/:elem assignment names: those assignments
+   leave the frame alone; `sx-list-keeps-v`, `em-ok-after-sx-v`). Proved:
+   the field update in all three shapes -- `gst-set-sym` (inner is the
+   stobj), `gst-set-stable` (v's code `g-stable`: read after the inner
+   update, unchanged by it, `set-code-after`), `gst-set-tmp` (v into the
+   temporary v_N first, `tmp-code-after`). Each takes the inner update's
+   gst-sem and stn-ok as hypotheses, as gsx-if did. gen-stsem's
+   `a-st-args` fixed too: the lambda's value arguments read S as it was
+   before the lambda (it had read S after an earlier stobj argument's
+   update, which neither ACL2 nor the code does).
+   Lessons: a rule with a free variable bound only through a function
+   value (o via g-obj, s via obj-at, ty via dty) never fires in these
+   contexts -- state it on the term (`hs-of`, `(consp (dty k fr))`), or
+   instantiate gs-sem-holds by :use (disabled, so its gs-sem stays in the
+   context for gs-sem-use to bind o). The equality `outs = (list (caddr x))`
+   substitutes outs, so a computed hint must name `(list (caddr x))`.
+   Next, in order: (2') the rest of g-stmt's cases, each as gst-set-*:
+   `:seti` (opener as g-stmt-set; i, v into temporaries i_N, v_N+1 before
+   the inner update, `tmp-after-abs` for both; the final sx :elem
+   assignment's `:bounds` when the index is outside S1's array -- a
+   companion lemma to gs-elem-bounds, the inner update answering), `if`
+   (sif-then/sif-else style on the test; branches' gst-sem at the frame
+   after the test), the lambda without mv (g-svals' gsb-sem; then the
+   acts, g-sacts, in the outer em, each a gst-sem; then the body in
+   `(append binds em)` at env `(pairlis$ vars vals)`; the values' temps
+   survive the acts by stn-ok of the acts, as tmp-code-after); then the
+   names induction for stn-ok (as sn-ok-thm, over g-stmt/g-sacts) and the
+   gst-sem induction (as gs-sem-thm; every other g-stmt case -- cons,
+   :sub calls, the mv lambda, a tail self-call -- has a-st answer an
+   error, so it holds vacuously; needs `(not (g-role 'quote st))`);
+   (3) :do/:call/the mv lambda need sx cases for :do and :call
    (f-invoke on a subroutine: an oracle like f-call-val, now with heap);
-   (4) a g-st-fn theorem as g-fn-sem, and hpg-spush-fortran-correct
-   re-derived as its instance.
+   (4) a g-st-fn theorem as g-fn-sem, for the call-free, loop-free
+   subset, and hpg-spush-fortran-correct re-derived as its instance.
 5. Values and the runtime shims (`type(value)`, `rt_*`): fsyn/fsem first need
    an abstract runtime. Two lanes.
 6. Switch acl2-fortran to print g-module's output, and fix or confirm the

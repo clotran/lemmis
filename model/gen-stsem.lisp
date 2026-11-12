@@ -78,24 +78,26 @@
                   (c (a-st (kaddr x) env s st defs (1- n)))
                   (t (a-st (kadddr x) env s st defs (1- n))))))
          ((consp (car x))
-          ; the arguments in the outer scope, in order; a stobj's is its update
-          (mv-let (e vs s1) (a-st-args (kadr (car x)) (cdr x) env s st defs (1- n))
+          ; the arguments in the outer scope: the values read S as it was
+          ; (ACL2 evaluates them all before the body); a stobj's is its update
+          (mv-let (e vs s1) (a-st-args (kadr (car x)) (cdr x) env s s st defs (1- n))
             (if e (mv e s)
               (a-st (kaddr (car x)) (pairlis$ (true-list-fix (kadr (car x))) vs) s1 st defs (1- n)))))
          (t (mv :stobj s))))
- (defun a-st-args (vars xs env s st defs n)
-   ; (mv err vals S'): a stobj var's value is nil, the stobj being S
+ (defun a-st-args (vars xs env s0 s st defs n)
+   ; (mv err vals S'): a stobj var's value is nil, the stobj being S; the
+   ; values read S0, the stobj before the lambda
    (declare (xargs :measure (nfix n)))
    (cond ((zp n) (mv :fuel nil s))
          ((atom xs) (mv nil nil s))
          ((eq (g-role (kar vars) st) :stobj)
           (mv-let (e s1) (a-st (car xs) env s st defs (1- n))
             (if e (mv e nil s)
-              (mv-let (e vs s2) (a-st-args (kdr vars) (cdr xs) env s1 st defs (1- n))
+              (mv-let (e vs s2) (a-st-args (kdr vars) (cdr xs) env s0 s1 st defs (1- n))
                 (mv e (cons nil vs) s2)))))
-         (t (mv-let (e v) (a-sx (car xs) env s st defs (1- n))
+         (t (mv-let (e v) (a-sx (car xs) env s0 st defs (1- n))
               (if e (mv e nil s)
-                (mv-let (e vs s2) (a-st-args (kdr vars) (cdr xs) env s st defs (1- n))
+                (mv-let (e vs s2) (a-st-args (kdr vars) (cdr xs) env s0 s st defs (1- n))
                   (mv e (cons v vs) s2))))))))
 
 ; ---- the tests: fsem on g-st-module's hpg_spush against a-st on the source
