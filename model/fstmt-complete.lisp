@@ -401,6 +401,11 @@
 (defthm append-cons-fs (equal (append (cons a x) y) (cons a (append x y))))
 (defthm decl-rest-ents-consp (implies (fgs :decl-rest d) (consp (caddr d))) :hints (("Goal" :expand ((fgs :decl-rest d)))))
 
+; SAVE's names: none, or a name first
+(defthm onames-y-consp (equal (consp (onames-y x)) (consp x)) :hints (("Goal" :expand ((onames-y x)))))
+(defthm onames-y-first
+  (implies (and (names-p x) (consp x)) (and (name-tok-p (car (onames-y x))) (not (equal (car (onames-y x)) '(:op ":")))))
+  :hints (("Goal" :expand ((onames-y x) (names-p x)))))
 ; the statements, kind by kind: a statement is whole, nothing follows it
 (defmacro fps-complete-kind (k)
   (let ((top '(fps :stmt (binary-append (fys :stmt x) r))))
@@ -426,6 +431,7 @@
 (fps-complete-kind :do)
 (fps-complete-kind :simple)
 (fps-complete-kind :stop)
+(fps-complete-kind :save)
 (fps-complete-kind :call)
 (fps-complete-kind :print)
 (fps-complete-kind :function)
@@ -448,7 +454,7 @@
   (if (endp ks) nil (cons `(equal (car x) ,(car ks)) (kind-cases (cdr ks)))))
 
 (defconst *stmt-kinds*
-  '(:program :module :end :contains :implicit-none :else :use :decl :assign :cassign :type :tdecl :if-then :else-if :do :simple :stop :call :print
+  '(:program :module :end :contains :implicit-none :else :use :decl :assign :cassign :type :tdecl :if-then :else-if :do :simple :stop :save :call :print
     :function :subroutine :if :select :case :case-default :label :goto :aif :ldo :format :write :read :readf))
 (defthm fgs-stmt-kinds                ; a statement is of one of the kinds above
   (implies (fgs :stmt x) (member-equal (car x) *stmt-kinds*))

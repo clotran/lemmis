@@ -11,7 +11,7 @@ proved to accept exactly that grammar (`fp-`, `fps-`, `fpu-sound` and
 `-complete`), for every alternative the Scope uses; **part** when only
 some alternatives are in; **no** otherwise.
 
-Score: **133 of 166** Scope rules proved (80%); 33 more in part; none not yet in.
+Score: **134 of 167** Scope rules proved (80%); 33 more in part; none not yet in.
 
 ## The books
 
@@ -67,7 +67,7 @@ Score: **133 of 166** Scope rules proved (80%); 33 more in part; none not yet in
   (by substrings) holds the code 0 at its undefined characters, so a
   program of the subset writes no such character. After `CHARACTER*n,`
   (R722's comma) the first entity is not named `parameter`, `value`,
-  `intent` or `dimension`.
+  `intent`, `dimension` or `save`.
 - No defined operators (R1003, R1023 have no defined-unary-op or
   defined-binary-op), no conditional expressions (R1002), no labels, no
   construct names, no `(/ ... /)` constructors.
@@ -97,7 +97,7 @@ Score: **133 of 166** Scope rules proved (80%); 33 more in part; none not yet in
 | R503 | external-subprogram | proved |  |
 | R504 | specification-part | proved | use-stmts, IMPLICIT NONE, type-declaration-stmts |
 | R505 | implicit-part | proved | IMPLICIT NONE only |
-| R507 | declaration-construct | part | type-declaration-stmt, derived-type-def; no interface-block |
+| R507 | declaration-construct | part | type-declaration-stmt, derived-type-def, save-stmt; no interface-block |
 | R509 | execution-part | proved |  |
 | R511 | internal-subprogram-part | proved |  |
 | R512 | internal-subprogram | proved |  |
@@ -142,7 +142,7 @@ Score: **133 of 166** Scope rules proved (80%); 33 more in part; none not yet in
 | R780 | rbracket | proved | |
 | R781 | ac-value | part | expr; no ac-implied-do |
 | R801 | type-declaration-stmt | proved |  |
-| R802 | attr-spec | part | DIMENSION, INTENT, PARAMETER, VALUE; no ALLOCATABLE, SAVE |
+| R802 | attr-spec | part | DIMENSION, INTENT, PARAMETER, SAVE, VALUE; no ALLOCATABLE |
 | R803 | entity-decl | proved |  |
 | R804 | object-name | proved |  |
 | R805 | initialization | proved | = constant-expr |
@@ -152,6 +152,7 @@ Score: **133 of 166** Scope rules proved (80%); 33 more in part; none not yet in
 | R817 | upper-bound | proved |  |
 | R820 | assumed-shape-spec | proved |  |
 | R828 | intent-spec | proved | IN, OUT, INOUT, IN OUT |
+| R856 | save-stmt | proved | SAVE [[::] saved-entity-list], each an object-name (no common block); in the meaning, each saved entity's SAVE attribute (8.5.16) |
 | R866 | implicit-stmt | proved | IMPLICIT NONE |
 | R901 | designator | proved | object-name, array-element, array-section |
 | R902 | variable | proved | in assignment-stmt |

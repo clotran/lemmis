@@ -142,7 +142,30 @@
 (defun prefix-ts (hd) (declare (xargs :guard t)) (kar (cdr (assoc-equal :ts (alist-fix (kadr hd))))))
 (defun unit-key (u) (declare (xargs :guard t)) (hd-name (kadr u)))
 (defun unit-hd (u) (declare (xargs :guard t)) (kadr u))
-(defun unit-spec (u) (declare (xargs :guard t)) (kaddr u))
+;; R856 SAVE statements (8.6.14) as each entity's SAVE attribute: with one in
+;; the declarations, each declaration is split an entity at a time, a saved
+;; one's with (:save) among its attributes; SAVE alone saves every entity
+(defun save-all-p (ds) (declare (xargs :guard t)) (and (consp ds) (or (equal (car ds) '(:save nil nil)) (save-all-p (cdr ds)))))
+(defun save-names (ds)
+  (declare (xargs :guard t))
+  (if (atom ds) nil (append (if (eq (kar (car ds)) :save) (true-list-fix (kaddr (car ds))) nil) (save-names (cdr ds)))))
+(defun save-ents (d ents all ns)            ; d a :decl or :tdecl, one per entity
+  (declare (xargs :guard t))
+  (if (atom ents) nil
+    (cons (list (kar d) (kadr d) (if (or all (member-equal (kar (car ents)) ns)) (cons '(:save) (true-list-fix (kaddr d))) (kaddr d))
+                (kadddr d) (list (car ents)))
+          (save-ents d (cdr ents) all ns))))
+(defun save-decls (ds all ns)
+  (declare (xargs :guard t))
+  (cond ((atom ds) nil)
+        ((eq (kar (car ds)) :save) (save-decls (cdr ds) all ns))
+        ((member-eq (kar (car ds)) '(:decl :tdecl))
+         (append (save-ents (car ds) (kar (kdr (kdr (kdr (kdr (car ds)))))) all ns) (save-decls (cdr ds) all ns)))
+        (t (cons (car ds) (save-decls (cdr ds) all ns)))))
+(defun unit-spec (u)                        ; (uses imp decls), SAVE statements applied
+  (declare (xargs :guard t))
+  (let* ((s (kaddr u)) (ds (kaddr s)))
+    (if (or (save-all-p ds) (save-names ds)) (list (kar s) (kadr s) (save-decls ds (save-all-p ds) (save-names ds))) s)))
 (defun unit-exec (u) (declare (xargs :guard t)) (if (eq (kar u) :module) nil (kadddr u)))
 (defun unit-int (u) (declare (xargs :guard t)) (if (eq (kar u) :module) (kadddr u) (kar (kdr (kdr (kdr (kdr u)))))))
 

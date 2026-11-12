@@ -58,6 +58,8 @@
 ;                                   stop-stmt without a stop-code (no
 ;                                   construct name or return value in the
 ;                                   subset)
+;         (:save dc ns)             R856 save-stmt: SAVE [[::] ns], ns saved
+;                                   entity names (not a common block's)
 ;         (:stop e)                 R1162 stop-stmt: STOP stop-code (R1163,
 ;                                   e an expr; its type is the meaning's)
 ;         (:call n parens args)     R1521 call-stmt: CALL procedure-designator
@@ -129,6 +131,7 @@
 ;                                   * ( type-param-value ), e an expr or :star
 ;  :attrs (attr ...)                each written ", attr-spec" (R802):
 ;                                   (:parameter) PARAMETER, (:value) VALUE,
+;                                   (:save) SAVE,
 ;                                   (:intent i) INTENT ( intent-spec ) R828
 ;                                   (i "in" "out" "inout" or "in out",
 ;                                   Table 6.2), (:dimension shapes)
@@ -222,6 +225,7 @@
             (:do (and (= (len x) 2) (fgs :ctl (cadr x))))
             (:simple (and (= (len x) 2) (member-equal (cadr x) *simple-kinds*) t))
             (:stop (and (= (len x) 2) (fg :expr (cadr x))))
+            (:save (and (= (len x) 3) (booleanp (cadr x)) (names-p (caddr x)) (or (null (cadr x)) (consp (caddr x)))))
             (:call (and (= (len x) 4) (name-tok-p (cadr x)) (booleanp (caddr x))
                         (if (caddr x) (fg :args (cadddr x)) (null (cadddr x)))))
             (:print (and (= (len x) 3) (fmt-spec-p (cadr x)) (fgs :items (caddr x))))
@@ -262,7 +266,7 @@
     (:attrs (if (atom x) (null x) (and (fgs :attr (car x)) (fgs :attrs (cdr x)))))
     (:attr (and (true-listp x)
                 (case (car x)
-                  ((:parameter :value) (= (len x) 1))
+                  ((:parameter :value :save) (= (len x) 1))
                   (:intent (and (= (len x) 2) (member-equal (cadr x) *intents*) t))
                   (:dimension (and (= (len x) 2) (fgs :shapes (cadr x))))
                   (otherwise nil))))
@@ -364,6 +368,7 @@
          (:do (cons (kw "do") (fys :ctl (kadr x))))
          (:simple (list (kw (kadr x))))
          (:stop (cons (kw "stop") (fy :expr (kadr x))))
+         (:save (cons (kw "save") (append (if (kadr x) (dcolon) nil) (onames-y (kaddr x)))))
          (:call (list* (kw "call") (kadr x) (if (kaddr x) (cons (op "(") (fy :args (kadddr x))) nil)))
          (:print (list* (kw "print") (fmt-tok (kadr x)) (fys :items (kaddr x))))
          (:readf (list* (kw "read") (fmt-tok (kadr x)) (fys :items (kaddr x))))
@@ -400,6 +405,7 @@
       (:attr (case (car x)
                (:parameter (list (kw "parameter")))
                (:value (list (kw "value")))
+               (:save (list (kw "save")))
                (:intent (append (list (kw "intent") (op "(")) (kw-list (kadr x)) (list (op ")"))))
                (otherwise (list* (kw "dimension") (op "(") (fys :shapes (kadr x))))))
       (:shapes (fys :shapes* x))

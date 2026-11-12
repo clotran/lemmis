@@ -413,7 +413,7 @@
                     (cond
                      ((errp ls) (mv ls nil nil st))
                      ((and ss (all-assumed ss)) (mv (err :syntax) nil nil st))   ; assumed shape only for a dummy (C836)
-                     ((and init (assoc-equal (list key n) (st-saves st)))       ; saved: its location already
+                     ((and (or init (decl-has :save attrs)) (assoc-equal (list key n) (st-saves st)))   ; saved (8.5.16)
                       (mv nil (cons (cons n (list :var (cdr (assoc-equal (list key n) (st-saves st))) :rw)) fr) copies st))
                      (init
                       (mv-let (v st) (me-ev :expr init envf st cx (1- fuel))
@@ -422,7 +422,7 @@
                             (mv-let (loc st) (st-new c st)
                               (mv nil (cons (cons n (list :var loc :rw)) fr) copies (st-save (list key n) loc st)))))))
                      (t (mv-let (loc st) (st-new (fresh ty k ls us) st)
-                          (mv nil (cons (cons n (list :var loc :rw)) fr) copies st)))))))
+                          (mv nil (cons (cons n (list :var loc :rw)) fr) copies (if (decl-has :save attrs) (st-save (list key n) loc st) st))))))))
                 (if e (mv e nil nil st) (me-ents (cdr ents) ty k attrs env st cx (1- fuel) fr copies key dns)))))))
 
  ; a dummy's declaration against its actual (15.5.2.4): type and kind agree;

@@ -40,7 +40,7 @@
 ; R722's "*" char-length "," (C724, C725: in a type-declaration-stmt with
 ; no "::"), the ts ("character" (:len tk :comma)); the subset tells it from
 ; an attr-spec's "," by the word after it, never an attr-spec's keyword
-(defconst *attr-kws* '("parameter" "value" "intent" "dimension"))
+(defconst *attr-kws* '("parameter" "value" "intent" "dimension" "save"))
 (defun attr-kw-tok-p (tk) (declare (xargs :guard t)) (and (eq (kar tk) :name) (member-equal (kadr tk) *attr-kws*) t))
 (defun ts-comma-p (ts)
   (declare (xargs :guard t))

@@ -69,6 +69,13 @@
       (:s-other (cond ((equal tk (kw "contains")) (mv t (list :contains) (kdr toks)))
                       ((and (equal tk (kw "implicit")) (equal (kadr toks) (kw "none")))
                        (mv t (list :implicit-none) (kdr (kdr toks))))
+                      ((equal tk (kw "save"))                               ; R856 save-stmt
+                       (cond ((atom (kdr toks)) (mv t (list :save nil nil) (kdr toks)))
+                             ((and (equal (kadr toks) (op ":")) (equal (kaddr toks) (op ":")))
+                              (mv-let (ok ns r) (fps :onames (kdr (kdr (kdr toks))))
+                                (if (and ok (consp ns)) (mv t (list :save t ns) r) (fail))))
+                             (t (mv-let (ok ns r) (fps :onames (kdr toks))
+                                  (if (and ok (consp ns)) (mv t (list :save nil ns) r) (fail))))))
                       ((and (equal tk (kw "stop")) (consp (kdr toks)))      ; R1162 STOP stop-code
                        (mv-let (ok e r) (fp :expr (kdr toks)) (if ok (mv t (list :stop e) r) (fail))))
                       ((tok-in tk *simple-kinds*) (mv t (list :simple (kadr tk)) (kdr toks)))
@@ -317,6 +324,7 @@
                 (mv t nil toks)))
       (:attr (cond ((equal tk (kw "parameter")) (mv t (list :parameter) (kdr toks)))
                    ((equal tk (kw "value")) (mv t (list :value) (kdr toks)))
+                   ((equal tk (kw "save")) (mv t (list :save) (kdr toks)))
                    ((and (equal tk (kw "intent")) (equal (kadr toks) (op "(")))
                     (cond ((and (equal (kaddr toks) (kw "in")) (equal (kadddr toks) (kw "out"))
                                 (equal (kar (kdr (kdr (kdr (kdr toks))))) (op ")")))
