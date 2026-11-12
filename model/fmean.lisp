@@ -721,6 +721,7 @@
                   (cond ((equal k "cycle") (mv :cycle st)) ((equal k "exit") (mv :exit st))
                         ((equal k "return") (mv :return st)) ((equal k "continue") (mv :normal st))
                         (t (mv (err :stop) st)))))
+       (:stop (with-v (v st) (me-ev :expr (kadr s) env st cx (1- fuel)) (mv (if (or (ival-scalar v) (cval-p v)) (err :stop) (cond-err v)) st)))   ; R1163
        (:call (mv-let (b suf d) (env-lookup (tok-name (kadr s)) env)
                 (declare (ignore d))
                 (if (and (eq (kar b) :proc) (eq (kar (unit-hd (kadr b))) :subroutine))

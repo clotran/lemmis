@@ -393,7 +393,7 @@
 (defthm decl-rest-comma-second-append
   (implies (and (fgs :decl-rest d) (equal (car (fys :decl-rest d)) '(:op ",")))
            (and (consp (cdr (append (fys :decl-rest d) r))) (attr-kw-tok-p (cadr (append (fys :decl-rest d) r)))))
-  :hints (("Goal" :use decl-rest-comma-second :in-theory (disable decl-rest-comma-second attr-kw-tok-p))))
+  :hints (("Goal" :use decl-rest-comma-second :in-theory (disable decl-rest-comma-second attr-kw-tok-p fgs-var-open fys-var-open))))
 (defthm name-not-attr-kw-punct (not (attr-kw-tok-p '(:op ":"))) :hints (("Goal" :in-theory (enable attr-kw-tok-p))))
 (in-theory (disable ts-comma-p attr-kw-tok-p))
 
@@ -425,6 +425,7 @@
 (fps-complete-kind :else-if)
 (fps-complete-kind :do)
 (fps-complete-kind :simple)
+(fps-complete-kind :stop)
 (fps-complete-kind :call)
 (fps-complete-kind :print)
 (fps-complete-kind :function)
@@ -447,7 +448,7 @@
   (if (endp ks) nil (cons `(equal (car x) ,(car ks)) (kind-cases (cdr ks)))))
 
 (defconst *stmt-kinds*
-  '(:program :module :end :contains :implicit-none :else :use :decl :assign :cassign :type :tdecl :if-then :else-if :do :simple :call :print
+  '(:program :module :end :contains :implicit-none :else :use :decl :assign :cassign :type :tdecl :if-then :else-if :do :simple :stop :call :print
     :function :subroutine :if :select :case :case-default :label :goto :aif :ldo :format :write :read :readf))
 (defthm fgs-stmt-kinds                ; a statement is of one of the kinds above
   (implies (fgs :stmt x) (member-equal (car x) *stmt-kinds*))

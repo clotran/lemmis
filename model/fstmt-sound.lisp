@@ -194,7 +194,7 @@
 (fps-sound-at :sub-rest)
 (fps-sound-at :s-head)
 (fps-sound-at :s-end)
-(fps-sound-at :s-other)
+(fps-sound-at :s-other ((:instance fp-sound (nt :expr) (toks (cdr toks)))))   ; STOP stop-code
 (fps-sound-at :s-use)
 (fps-sound-at :s-else)
 (fps-sound-at :s-do)

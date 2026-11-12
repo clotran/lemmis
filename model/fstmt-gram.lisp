@@ -55,8 +55,11 @@
 ;         (:do ctl)                 R1122 nonlabel-do-stmt: DO [loop-control]
 ;         (:simple k)               R1135 cycle-stmt, R1158 exit-stmt, R1545
 ;                                   return-stmt, R1161 continue-stmt, R1162
-;                                   stop-stmt (no construct name, return
-;                                   value or stop-code in the subset)
+;                                   stop-stmt without a stop-code (no
+;                                   construct name or return value in the
+;                                   subset)
+;         (:stop e)                 R1162 stop-stmt: STOP stop-code (R1163,
+;                                   e an expr; its type is the meaning's)
 ;         (:call n parens args)     R1521 call-stmt: CALL procedure-designator
 ;                                   [( [actual-arg-spec-list] )], R1522
 ;         (:print f items)          R1212 print-stmt: PRINT format [,
@@ -218,6 +221,7 @@
                       (action-kind-p (car (caddr x))) (fgs :stmt (caddr x))))
             (:do (and (= (len x) 2) (fgs :ctl (cadr x))))
             (:simple (and (= (len x) 2) (member-equal (cadr x) *simple-kinds*) t))
+            (:stop (and (= (len x) 2) (fg :expr (cadr x))))
             (:call (and (= (len x) 4) (name-tok-p (cadr x)) (booleanp (caddr x))
                         (if (caddr x) (fg :args (cadddr x)) (null (cadddr x)))))
             (:print (and (= (len x) 3) (fmt-spec-p (cadr x)) (fgs :items (caddr x))))
@@ -359,6 +363,7 @@
          (:if (list* (kw "if") (op "(") (append (fy :expr (kadr x)) (cons (op ")") (fys :stmt (kaddr x))))))
          (:do (cons (kw "do") (fys :ctl (kadr x))))
          (:simple (list (kw (kadr x))))
+         (:stop (cons (kw "stop") (fy :expr (kadr x))))
          (:call (list* (kw "call") (kadr x) (if (kaddr x) (cons (op "(") (fy :args (kadddr x))) nil)))
          (:print (list* (kw "print") (fmt-tok (kadr x)) (fys :items (kaddr x))))
          (:readf (list* (kw "read") (fmt-tok (kadr x)) (fys :items (kaddr x))))

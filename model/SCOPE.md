@@ -11,7 +11,7 @@ proved to accept exactly that grammar (`fp-`, `fps-`, `fpu-sound` and
 `-complete`), for every alternative the Scope uses; **part** when only
 some alternatives are in; **no** otherwise.
 
-Score: **132 of 166** Scope rules proved (80%); 34 more in part; none not yet in.
+Score: **133 of 166** Scope rules proved (80%); 33 more in part; none not yet in.
 
 ## The books
 
@@ -218,7 +218,7 @@ Score: **132 of 166** Scope rules proved (80%); 34 more in part; none not yet in
 | R1157 | goto-stmt | proved |  |
 | R1158 | exit-stmt | proved |  |
 | R1161 | continue-stmt | proved |  |
-| R1162 | stop-stmt | part | no stop-code |
+| R1162 | stop-stmt | proved | STOP [stop-code]: an integer or character scalar expr (R1163, the meaning) |
 | R1201 | io-unit | part | *, file-unit-number; no internal-file-variable (the unit * only, 5 or 6, in the meaning) |
 | R1202 | file-unit-number | proved | |
 | R1210 | read-stmt | proved | both forms |

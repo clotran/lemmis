@@ -69,6 +69,8 @@
       (:s-other (cond ((equal tk (kw "contains")) (mv t (list :contains) (kdr toks)))
                       ((and (equal tk (kw "implicit")) (equal (kadr toks) (kw "none")))
                        (mv t (list :implicit-none) (kdr (kdr toks))))
+                      ((and (equal tk (kw "stop")) (consp (kdr toks)))      ; R1162 STOP stop-code
+                       (mv-let (ok e r) (fp :expr (kdr toks)) (if ok (mv t (list :stop e) r) (fail))))
                       ((tok-in tk *simple-kinds*) (mv t (list :simple (kadr tk)) (kdr toks)))
                       (t (fail))))
       (:s-use

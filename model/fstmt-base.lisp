@@ -49,7 +49,7 @@
 
 (defun action-kind-p (k)          ; R515, C1143
   (declare (xargs :guard t))
-  (and (member-eq k '(:assign :cassign :simple :call :print :goto :write :read :readf)) t))
+  (and (member-eq k '(:assign :cassign :simple :stop :call :print :goto :write :read :readf)) t))
 
 (defun nonzero-digit-p (cs)
   (declare (xargs :guard t))
