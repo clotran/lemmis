@@ -523,3 +523,68 @@
          (implicit-vars (cdr ns) fr env st))
         (t (mv-let (loc st) (st-new (list :u (implicit-ty (car ns)) 4) st)
              (implicit-vars (cdr ns) (cons (cons (car ns) (list :var loc :rw)) fr) env st)))))
+
+; ---- fmean's non-recursive steps, kept out of its mutual recursion
+
+; me-dummy's binding of the dummy n once its bounds ls, us are known; b
+; its actual's binding, v the actual's value, int its intent
+(defun dummy-fin (n ty k ss attrs int b v ls us fr copies st)   ; (mv err fr copies st)
+  (declare (xargs :guard t))
+  (let ((loc (kadr b)))
+    (cond
+     ((errp ls) (mv ls nil nil st))
+     ((and ss (not (equal (len ls) (len (a-lbs v)))) (all-assumed ss)) (mv (err :shape) nil nil st))
+     ((and ss (not (all-assumed ss)) (< (prod (extents (a-lbs v) (a-ubs v))) (prod (extents ls us))))
+      (mv (err :shape) nil nil st))
+     (t
+      (let* ((rebound (and ss (not (equal (list ls us) (list (a-lbs v) (a-ubs v))))))
+             (v2 (if rebound (mk-arr ty k ls us (take (prod (extents ls us)) (a-es v))) v))
+             (v3 (if (equal int '("out")) (if ss (fresh ty k ls us) (list :u ty k)) v2)))
+        (cond
+         ((decl-has :value attrs)
+          (mv-let (l2 st) (st-new v3 st)
+            (mv nil (cons (cons n (list :var l2 :rw)) fr) (drop-copies n copies) st)))
+         (rebound
+          (mv-let (l2 st) (st-new v3 st)
+            (mv nil (cons (cons n (list :var l2 (if (equal int '("in")) :in (kaddr b)))) fr)
+                (if (equal int '("in")) (drop-copies n copies)
+                  (cons (list n l2 (if (all-assumed ss) (list :whole loc) (list :prefix loc))) copies))
+                st)))
+         ((equal int '("in"))
+          (mv nil (cons (cons n (list :var loc :in)) fr) (drop-copies n copies) st))
+         ((equal int '("out")) (mv nil fr copies (st-put loc v3 st)))
+         (t (mv nil fr copies st))))))))
+
+; a character dummy n of length k shorter than its scalar actual v: the
+; actual's leftmost characters (15.5.2.4p2)
+(defun dummy-short (n k attrs int b v fr copies st)   ; (mv err fr copies st)
+  (declare (xargs :guard t))
+  (mv-let (l2 st) (st-new (if (or (equal int '("out")) (eq (kar v) :u)) (list :u :c k) (c-fit k v)) st)
+    (cond ((decl-has :value attrs) (mv nil (cons (cons n (list :var l2 :rw)) fr) (drop-copies n copies) st))
+          ((equal int '("in")) (mv nil (cons (cons n (list :var l2 :in)) fr) (drop-copies n copies) st))
+          (t (mv nil (cons (cons n (list :var l2 (kaddr b))) fr) (cons (list n l2 (list :cprefix (kadr b))) copies) st)))))
+
+(defun aif-goto (s v)               ; B.1: the label for negative, zero, positive v; nil if v is no number
+  (declare (xargs :guard t))
+  (let ((sg (cond ((ival-scalar v) (cond ((< (v-num v) 0) -1) ((= (v-num v) 0) 0) (t 1)))
+                  ((and (rval-p v) (not (eq (v-num v) :nan)))
+                   (cond ((fl-zero-p (v-num v)) 0) ((fl-neg-p (v-num v)) -1) (t 1)))
+                  (t nil))))
+    (and sg (list :goto (case sg (-1 (kaddr s)) (0 (kadddr s)) (otherwise (kar (kdr (kdr (kdr (kdr s)))))))))))
+
+(defun simple-status (k)            ; CYCLE, EXIT, RETURN, CONTINUE, STOP
+  (declare (xargs :guard t))
+  (cond ((equal k "cycle") :cycle) ((equal k "exit") :exit)
+        ((equal k "return") :return) ((equal k "continue") :normal)
+        (t (err :stop))))
+
+; a call's end: its copies back, then a function's result or a subroutine's :normal
+(defun call-result (fn hd copies fr st)
+  (declare (xargs :guard t))
+  (let ((st (copy-back copies fr st)))
+    (if (errp st) (mv st nil)
+      (if (not fn) (mv :normal st)
+        (let ((rb (cdr (alk (result-name hd) fr))))
+          (if (not (eq (kar rb) :var)) (mv (err :undeclared) st)
+            (let ((v (st-get (kadr rb) st)))
+              (if (undef-in v) (mv (err :undefined) st) (mv v st)))))))))

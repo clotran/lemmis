@@ -284,13 +284,7 @@
                          (mv-let (s st) (me-blk (unit-exec u) env2 st cx2 (1- fuel))
                            (cond ((errp s) (mv s st))
                                  ((not (member-eq s '(:normal :return))) (mv (err :syntax) st))
-                                 (t (let ((st (copy-back copies fr st)))
-                                      (if (errp st) (mv st nil)
-                                        (if (not fn) (mv :normal st)
-                                          (let ((rb (cdr (alk (result-name hd) fr))))
-                                            (if (not (eq (kar rb) :var)) (mv (err :undeclared) st)
-                                              (let ((v (st-get (kadr rb) st)))
-                                                (if (undef-in v) (mv (err :undefined) st) (mv v st))))))))))))))))))))))))
+                                 (t (call-result fn hd copies fr st)))))))))))))))))
 
  ; each dummy dn bound to its actual: a whole variable by reference; an
  ; element or section to a temporary copied back; an expression to a
@@ -444,11 +438,7 @@
          (mv (err :type) nil nil st))
         ((if ss (not (aval-p v)) (aval-p v)) (mv (err :type) nil nil st))
         ((and (member-equal int '(("out") ("inout") ("in" "out"))) (eq (kaddr b) :in)) (mv (err :intent) nil nil st))
-        (short
-         (mv-let (l2 st) (st-new (if (or (equal int '("out")) (eq (kar v) :u)) (list :u :c k) (c-fit k v)) st)
-           (cond ((decl-has :value attrs) (mv nil (cons (cons n (list :var l2 :rw)) fr) (drop-copies n copies) st))
-                 ((equal int '("in")) (mv nil (cons (cons n (list :var l2 :in)) fr) (drop-copies n copies) st))
-                 (t (mv nil (cons (cons n (list :var l2 (kaddr b))) fr) (cons (list n l2 (list :cprefix loc)) copies) st)))))
+        (short (dummy-short n k attrs int b v fr copies st))
         (t
          (mv-let (ls us st)
            (cond ((not ss) (mv nil nil st))
@@ -456,29 +446,7 @@
                   (mv-let (los st) (me-lowers (shapes-lower ss) env st cx (1- fuel))
                     (mv los (if (errp los) nil (uppers los (extents (a-lbs v) (a-ubs v)))) st)))
                  (t (me-bounds ss env st cx (1- fuel))))
-           (cond
-            ((errp ls) (mv ls nil nil st))
-            ((and ss (not (equal (len ls) (len (a-lbs v)))) (all-assumed ss)) (mv (err :shape) nil nil st))
-            ((and ss (not (all-assumed ss)) (< (prod (extents (a-lbs v) (a-ubs v))) (prod (extents ls us))))
-             (mv (err :shape) nil nil st))
-            (t
-             (let* ((rebound (and ss (not (equal (list ls us) (list (a-lbs v) (a-ubs v))))))
-                    (v2 (if rebound (mk-arr ty k ls us (take (prod (extents ls us)) (a-es v))) v))
-                    (v3 (if (equal int '("out")) (if ss (fresh ty k ls us) (list :u ty k)) v2)))
-               (cond
-                ((decl-has :value attrs)
-                 (mv-let (l2 st) (st-new v3 st)
-                   (mv nil (cons (cons n (list :var l2 :rw)) fr) (drop-copies n copies) st)))
-                (rebound
-                 (mv-let (l2 st) (st-new v3 st)
-                   (mv nil (cons (cons n (list :var l2 (if (equal int '("in")) :in (kaddr b)))) fr)
-                       (if (equal int '("in")) (drop-copies n copies)
-                         (cons (list n l2 (if (all-assumed ss) (list :whole loc) (list :prefix loc))) copies))
-                       st)))
-                ((equal int '("in"))
-                 (mv nil (cons (cons n (list :var loc :in)) fr) (drop-copies n copies) st))
-                ((equal int '("out")) (mv nil fr copies (st-put loc v3 st)))
-                (t (mv nil fr copies st))))))))))))
+           (dummy-fin n ty k ss attrs int b v ls us fr copies st)))))))
 
  (defun me-lowers (los env st cx fuel)
    (declare (xargs :guard t :measure (nfix fuel)))
@@ -691,13 +659,8 @@
        (:cassign (me-cassign s env st cx (1- fuel)))
        ((:label :format) (mv :normal st))
        (:goto (mv (list :goto (kadr s)) st))
-       (:aif (with-v (v st) (me-ev :expr (kadr s) env st cx (1- fuel))   ; B.1: negative, zero, positive
-               (let ((sg (cond ((ival-scalar v) (cond ((< (v-num v) 0) -1) ((= (v-num v) 0) 0) (t 1)))
-                               ((and (rval-p v) (not (eq (v-num v) :nan)))
-                                (cond ((fl-zero-p (v-num v)) 0) ((fl-neg-p (v-num v)) -1) (t 1)))
-                               (t nil))))
-                 (if (not sg) (mv (cond-err v) st)
-                   (mv (list :goto (case sg (-1 (kaddr s)) (0 (kadddr s)) (otherwise (kar (kdr (kdr (kdr (kdr s)))))))) st)))))
+       (:aif (with-v (v st) (me-ev :expr (kadr s) env st cx (1- fuel))
+               (let ((g (aif-goto s v))) (mv (or g (cond-err v)) st))))
        ((:write :print :read :readf)
         (cond ((cx-pure cx) (mv (err :pure) st))            ; C1599: no I/O in a pure procedure
               ((st-trace st) (mv (err :pd) st))             ; in an order the processor picks (11.1.7.4.2)
@@ -717,10 +680,7 @@
                                     (if (errp e) (mv e st)
                                       (mv-let (e in) (rd-end rs (st-in st) adv)
                                         (if e (mv e st) (mv :normal (st-in-set in st)))))))))))))))
-       (:simple (let ((k (kadr s)))
-                  (cond ((equal k "cycle") (mv :cycle st)) ((equal k "exit") (mv :exit st))
-                        ((equal k "return") (mv :return st)) ((equal k "continue") (mv :normal st))
-                        (t (mv (err :stop) st)))))
+       (:simple (mv (simple-status (kadr s)) st))
        (:stop (with-v (v st) (me-ev :expr (kadr s) env st cx (1- fuel)) (mv (if (or (ival-scalar v) (cval-p v)) (err :stop) (cond-err v)) st)))   ; R1163
        (:call (mv-let (b suf d) (env-lookup (tok-name (kadr s)) env)
                 (declare (ignore d))
