@@ -424,6 +424,7 @@
 (fps-complete-kind :module)
 (fps-complete-kind :end)
 (fps-complete-kind :contains)
+(fps-complete-kind :block)
 (fps-complete-kind :implicit-none)
 (fps-complete-kind :else)
 (fps-complete-kind :use)
@@ -462,7 +463,7 @@
   (if (endp ks) nil (cons `(equal (car x) ,(car ks)) (kind-cases (cdr ks)))))
 
 (defconst *stmt-kinds*
-  '(:program :module :end :contains :implicit-none :else :use :decl :assign :cassign :type :tdecl :if-then :else-if :do :simple :stop :allocate :deallocate :save :call :print
+  '(:program :module :end :contains :block :implicit-none :else :use :decl :assign :cassign :type :tdecl :if-then :else-if :do :simple :stop :allocate :deallocate :save :call :print
     :function :subroutine :if :select :case :case-default :label :goto :aif :ldo :format :write :read :readf))
 (defthm fgs-stmt-kinds                ; a statement is of one of the kinds above
   (implies (fgs :stmt x) (member-equal (car x) *stmt-kinds*))

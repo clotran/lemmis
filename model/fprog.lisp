@@ -27,7 +27,7 @@
 ;  :decls (d ...)                    R507 declaration-construct, each d a :decl
 ;  :decl  s                          a type-declaration-stmt (R801), a :decl
 ;                                    or :tdecl statement, or a :save
-;                                    statement (R856, a specification-stmt)
+;                                    statement (R859, a specification-stmt)
 ;         (:dtype ts comps end)      R726 derived-type-def: derived-type-stmt
 ;                                    [component-part] end-type-stmt; ts a
 ;                                    (:type dc n), end (:end "type" n') with
@@ -48,6 +48,10 @@
 ;                                   [case-stmt block]... end-select-stmt;
 ;                                   arms ((cs blk) ...), cs a CASE statement,
 ;                                   at most one CASE DEFAULT (C1151)
+;         (:blockc ds blk)          R1107 block-construct: block-stmt
+;                                   [block-specification-part] block
+;                                   end-block-stmt (R1108, R1110); R1109
+;                                   block-specification-part here :decls
 ;  :int   nil or (:has (sub ...))    R511 internal-subprogram-part,
 ;                                    R1407 module-subprogram-part:
 ;                                    contains-stmt [subprogram]...; nil when
@@ -136,6 +140,7 @@
                                    (fgu :exec (car (car (cddddr x))))))))
                (:doc (and (= (len x) 3) (fgs :ctl (cadr x)) (fgu :exec (caddr x))))
                (:casec (and (= (len x) 3) (fg :expr (cadr x)) (fgu :arms (caddr x)) (<= (count-defaults (caddr x)) 1)))
+               (:blockc (and (= (len x) 3) (fgu :decls (cadr x)) (fgu :exec (caddr x))))
                (otherwise nil))))
     (:arms (if (atom x) (null x)
              (and (true-listp (car x)) (= (len (car x)) 2) (member-eq (kar (caar x)) '(:case :case-default))
@@ -175,6 +180,7 @@
                               (cons '(:else) (fyu :exec (kar (kar (kdr (kdr (kdr (kdr x)))))))) nil)
                           (list '(:end "if" nil))))
             (:casec (append (list (list :select (kadr x))) (fyu :arms (kaddr x)) (list '(:end "select" nil))))
+            (:blockc (append (list '(:block)) (fyu :decls (kadr x)) (fyu :exec (kaddr x)) (list '(:end "block" nil))))
             (otherwise (append (list (list :do (kadr x))) (fyu :exec (kaddr x)) (list '(:end "do" nil)))))))
     (:arms (if (atom x) nil (append (list (kar (car x))) (fyu :exec (kadr (car x))) (fyu :arms (cdr x)))))
     (:eifs (if (atom x) nil
@@ -186,7 +192,7 @@
 
 (defun c-start-p (s)               ; a statement that begins an executable construct
   (declare (xargs :guard t))
-  (and (member-eq (kar s) '(:assign :cassign :simple :stop :allocate :deallocate :call :print :if :if-then :do :select :label :goto :aif :format :write :read :readf)) t))
+  (and (member-eq (kar s) '(:assign :cassign :simple :stop :allocate :deallocate :call :print :if :if-then :do :select :block :label :goto :aif :format :write :read :readf)) t))
 
 (defun fpu-rank (nt)
   (declare (xargs :guard t))
@@ -260,6 +266,12 @@
                    (if (and ok (equal (kar r) '(:end "do" nil)))
                        (mv t (list :doc (kadr s) blk) (cdr r))
                      (fail))))
+            (:block (mv-let (ok ds r) (fpu :decls (cdr toks))
+                      (if (not (and ok (<= (len r) (len (cdr toks))))) (fail)
+                        (mv-let (ok2 blk r2) (fpu :exec r)
+                          (if (and ok2 (equal (kar r2) '(:end "block" nil)))
+                              (mv t (list :blockc ds blk) (cdr r2))
+                            (fail))))))
             (:select (mv-let (ok arms r) (fpu :arms (cdr toks))
                        (if (and ok (equal (kar r) '(:end "select" nil)) (<= (count-defaults arms) 1))
                            (mv t (list :casec (kadr s) arms) (cdr r))
@@ -302,7 +314,8 @@
            (and (implies (equal (car s) :if-then) (and (consp (cdr s)) (fg :expr (cadr s)) (equal (list :if-then (cadr s)) s)))
                 (implies (equal (car s) :else-if) (and (consp (cdr s)) (fg :expr (cadr s)) (equal (list :else-if (cadr s)) s)))
                 (implies (equal (car s) :do) (and (consp (cdr s)) (fgs :ctl (cadr s)) (equal (list :do (cadr s)) s)))
-                (implies (equal (car s) :select) (and (consp (cdr s)) (fg :expr (cadr s)) (equal (list :select (cadr s)) s)))))
+                (implies (equal (car s) :select) (and (consp (cdr s)) (fg :expr (cadr s)) (equal (list :select (cadr s)) s)))
+                (implies (equal (car s) :block) (and (equal (equal s '(:block)) t) (equal (equal '(:block) s) t)))))
   :hints (("Goal" :expand ((fgs :stmt s)))))
 
 ; the statement layer is opaque here: its trees are tokens
@@ -413,6 +426,8 @@
                         (fgu-ind :exec (kar els) tl))))
           (:doc (fgu-ind :exec (kaddr x) (cons '(:end "do" nil) r)))
           (:casec (fgu-ind :arms (kaddr x) (cons '(:end "select" nil) r)))
+          (:blockc (list (fgu-ind :decls (kadr x) (append (fyu :exec (kaddr x)) (cons '(:end "block" nil) r)))
+                         (fgu-ind :exec (kaddr x) (cons '(:end "block" nil) r))))
           (otherwise r)))
     (:arms (if (atom x) r
              (list (fgu-ind :exec (kadr (car x)) (append (fyu :arms (cdr x)) r))

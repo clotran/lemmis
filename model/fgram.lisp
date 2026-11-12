@@ -35,7 +35,7 @@
     "double" "character" "complex" "type" "if" "else" "elseif" "endif" "do" "enddo"
     "select" "case" "cycle" "exit" "return" "stop" "continue" "call" "print"
     "function" "subroutine" "pure" "elemental" "impure" "recursive" "non_recursive"
-    "endprogram" "endmodule" "endfunction" "endsubroutine" "endselect" "selectcase" "go" "goto" "write" "format" "read" "doubleprecision" "save" "allocate" "deallocate"))
+    "endprogram" "endmodule" "endfunction" "endsubroutine" "endselect" "selectcase" "go" "goto" "write" "format" "read" "doubleprecision" "save" "allocate" "deallocate" "block" "endblock"))
 
 (defconst *fops*
   '("+" "-" "*" "/" "**" "==" "/=" "<" "<=" ">" ">=" "(" ")" "," "=" ":" "::" "[" "]" "%" "//"
@@ -171,8 +171,7 @@
 ;                               imag-part ), R719, R720 each a signed int- or
 ;                               real-literal-constant, an :expr tree (cpart-p)
 ;          (:acons es)          R777 array-constructor: lbracket ac-spec rbracket
-;                               (R779, R780), R778 ac-spec: ac-value-list, R781
-;                               ac-value: expr
+;                               (R779, R780), R778 ac-spec: ac-value-list
 ;  :args   (arg ...)            ( [section-subscript-list | actual-arg-spec-list] ),
 ;                               the ")" included; :args* the same after a ","
 ;  :arg    (:kw tok e)          R1523 actual-arg-spec: keyword = actual-arg (R516)
@@ -184,7 +183,15 @@
 ;  :base                        the :name, :ref and :sref trees, read on their own
 ;  :parts  (part ...) nonempty  each a :part, % name [( args )]
 ;  :part   (tok refp args)      % tok, then ( args ) when refp
-;  :elist  (e ...)              ac-value-list, the "]" included; :elist* after a ","
+;  :elist  (v ...)              ac-value-list, the "]" included; :elist* after a ","
+;  :acv    (:e e) | (:ido . il) R781 ac-value: expr (not beginning with "(": the
+;                               subset's), or R782 ac-implied-do: ( il ), il an :ilist
+;  :ilist  (v . il*)            R782's ac-value-list , ac-implied-do-control (R783):
+;                               an ac-value, then the :ilist* after it
+;  :ilist* (v . il*) | (:ctl var lo hi st)   ", ac-value" and more, or the
+;                               control ", var = lo , hi [, st] )": R783
+;                               ac-implied-do-control, R784 ac-do-variable; st nil
+;                               when absent
 
 ;  R719 real-part, R720 imag-part: [sign] int- or real-literal-constant
 ;  (no named constant), read as the expression it spells: the :expr tree
@@ -201,6 +208,56 @@
 (defun fg-measure (nt x)
   (declare (xargs :guard t))
   (+ (* 2 (acl2-count x)) (if (member-eq nt '(:args :elist :prim)) 1 0)))
+
+; the tokens a tree spells
+(defun fy (nt x)
+  (declare (xargs :guard t :measure (fg-measure nt x)))
+  (if (atom x)
+      (case nt ((:args :args*) (list (op ")"))) ((:elist :elist*) (list (op "]"))) (otherwise nil))
+  (case nt
+    ((:expr :equiv :or :l3 :add)
+     (append (fy (lev-sub nt) (kar x)) (fy (lev-rest nt) (kadr x))))
+    ((:expr* :equiv* :or* :l3* :l2* :add*)
+     (if (atom x) nil
+       (cons (kar (car x)) (append (fy (lev-sub nt) (kadr (car x))) (fy nt (cdr x))))))
+    (:and (if (kar x) (cons (op ".not.") (fy :l4 (kadr x))) (fy :l4 (kadr x))))
+    (:l4 (append (fy :l3 (kar x)) (if (kadr x) (cons (kadr x) (fy :l3 (kaddr x))) nil)))
+    (:l2 (append (if (kar x) (list (kar x)) nil) (fy :add (kadr x)) (fy :l2* (kaddr x))))
+    (:mult (append (fy :prim (kar x)) (if (kadr x) (cons (op "**") (fy :mult (kadr x))) nil)))
+    (:prim (case (kar x)
+             (:lit (list (kadr x)))
+             ((:name :ref :sref) (fy :base x))
+             (:dref (append (fy :base (kadr x)) (fy :parts (kaddr x))))
+             (:paren (cons (op "(") (append (fy :expr (kadr x)) (list (op ")")))))
+             (:cplx (cons (op "(") (append (fy :expr (kadr x)) (cons (op ",") (append (fy :expr (kaddr x)) (list (op ")")))))))
+             (otherwise (cons (op "[") (fy :elist (kadr x))))))
+    (:base (case (kar x)
+             (:name (list (kadr x)))
+             (:ref (list* (kadr x) (op "(") (fy :args (kaddr x))))
+             (otherwise (list* (kadr x) (op "(") (append (fy :args (kaddr x)) (cons (op "(") (append (fy :arg (kadddr x)) (list (op ")")))))))))
+    (:parts (append (fy :part (car x)) (fy :parts (cdr x))))
+    (:part (list* (op "%") (car x) (if (kadr x) (cons (op "(") (fy :args (kaddr x))) nil)))
+    (:args (if (atom x) (list (op ")")) (append (fy :arg (car x)) (fy :args* (cdr x)))))
+    (:args* (if (atom x) (list (op ")")) (cons (op ",") (append (fy :arg (car x)) (fy :args* (cdr x))))))
+    (:arg (case (kar x)
+            (:kw (list* (kadr x) (op "=") (fy :expr (kaddr x))))
+            (:sub (fy :expr (kadr x)))
+            (otherwise
+             (append (if (kadr x) (fy :expr (kadr x)) nil) (cons (op ":") (fy :tri* (kdr (kdr x))))))))
+    (:tri* (append (if (kar x) (fy :expr (kar x)) nil) (if (kadr x) (cons (op ":") (fy :expr (kadr x))) nil)))
+    (:elist (if (atom x) (list (op "]")) (append (fy :acv (car x)) (fy :elist* (cdr x)))))
+    (:elist* (if (atom x) (list (op "]")) (cons (op ",") (append (fy :acv (car x)) (fy :elist* (cdr x))))))
+    (:acv (if (eq (kar x) :ido) (cons (op "(") (fy :ilist (kdr x))) (fy :expr (kadr x))))
+    (:ilist (append (fy :acv (kar x)) (fy :ilist* (kdr x))))
+    (:ilist* (if (eq (kar x) :ctl)
+                 (list* (op ",") (kadr x) (op "=")
+                        (append (fy :expr (kaddr x))
+                                (cons (op ",") (append (fy :expr (kadddr x))
+                                                        (if (kar (kdr (kdr (kdr (kdr x)))))
+                                                            (cons (op ",") (append (fy :expr (kar (kdr (kdr (kdr (kdr x)))))) (list (op ")"))))
+                                                          (list (op ")")))))))
+               (cons (op ",") (append (fy :acv (kar x)) (fy :ilist* (kdr x))))))
+    (otherwise nil))))
 
 (defun fg (nt x)
   (declare (xargs :guard t :measure (fg-measure nt x)))
@@ -259,7 +316,19 @@
                 (or (null (cadr x)) (fg :expr (cadr x)))))
     ((:elist :elist*)
      (if (atom x) (and (eq nt :elist*) (null x))
-       (and (fg :expr (car x)) (fg :elist* (cdr x)))))
+       (and (fg :acv (car x)) (fg :elist* (cdr x)))))
+    ; an ac-value: an ac-implied-do, or an expression not beginning with "("
+    (:acv (if (eq (kar x) :ido)
+              (and (consp (cdr x)) (fg :ilist (cdr x)))
+            (and (true-listp x) (= (len x) 2) (eq (car x) :e)
+                 (fg :expr (cadr x)) (not (equal (car (fy :expr (cadr x))) (op "("))))))
+    (:ilist (and (consp x) (fg :acv (car x)) (fg :ilist* (cdr x))))
+    (:ilist* (and (consp x)
+                  (if (eq (car x) :ctl)
+                      (and (true-listp x) (= (len x) 5) (name-tok-p (cadr x))
+                           (fg :expr (caddr x)) (fg :expr (cadddr x))
+                           (or (null (car (cddddr x))) (fg :expr (car (cddddr x)))))
+                    (and (fg :acv (car x)) (fg :ilist* (cdr x))))))
     (otherwise nil)))
 
 (defthm acl2-count-kar
@@ -270,46 +339,6 @@
   (and (<= (acl2-count (kdr x)) (acl2-count x))
        (implies (consp x) (< (acl2-count (kdr x)) (acl2-count x))))
   :rule-classes :linear)
-
-; the tokens a tree spells
-(defun fy (nt x)
-  (declare (xargs :guard t :measure (fg-measure nt x)))
-  (if (atom x)
-      (case nt ((:args :args*) (list (op ")"))) ((:elist :elist*) (list (op "]"))) (otherwise nil))
-  (case nt
-    ((:expr :equiv :or :l3 :add)
-     (append (fy (lev-sub nt) (kar x)) (fy (lev-rest nt) (kadr x))))
-    ((:expr* :equiv* :or* :l3* :l2* :add*)
-     (if (atom x) nil
-       (cons (kar (car x)) (append (fy (lev-sub nt) (kadr (car x))) (fy nt (cdr x))))))
-    (:and (if (kar x) (cons (op ".not.") (fy :l4 (kadr x))) (fy :l4 (kadr x))))
-    (:l4 (append (fy :l3 (kar x)) (if (kadr x) (cons (kadr x) (fy :l3 (kaddr x))) nil)))
-    (:l2 (append (if (kar x) (list (kar x)) nil) (fy :add (kadr x)) (fy :l2* (kaddr x))))
-    (:mult (append (fy :prim (kar x)) (if (kadr x) (cons (op "**") (fy :mult (kadr x))) nil)))
-    (:prim (case (kar x)
-             (:lit (list (kadr x)))
-             ((:name :ref :sref) (fy :base x))
-             (:dref (append (fy :base (kadr x)) (fy :parts (kaddr x))))
-             (:paren (cons (op "(") (append (fy :expr (kadr x)) (list (op ")")))))
-             (:cplx (cons (op "(") (append (fy :expr (kadr x)) (cons (op ",") (append (fy :expr (kaddr x)) (list (op ")")))))))
-             (otherwise (cons (op "[") (fy :elist (kadr x))))))
-    (:base (case (kar x)
-             (:name (list (kadr x)))
-             (:ref (list* (kadr x) (op "(") (fy :args (kaddr x))))
-             (otherwise (list* (kadr x) (op "(") (append (fy :args (kaddr x)) (cons (op "(") (append (fy :arg (kadddr x)) (list (op ")")))))))))
-    (:parts (append (fy :part (car x)) (fy :parts (cdr x))))
-    (:part (list* (op "%") (car x) (if (kadr x) (cons (op "(") (fy :args (kaddr x))) nil)))
-    (:args (if (atom x) (list (op ")")) (append (fy :arg (car x)) (fy :args* (cdr x)))))
-    (:args* (if (atom x) (list (op ")")) (cons (op ",") (append (fy :arg (car x)) (fy :args* (cdr x))))))
-    (:arg (case (kar x)
-            (:kw (list* (kadr x) (op "=") (fy :expr (kaddr x))))
-            (:sub (fy :expr (kadr x)))
-            (otherwise
-             (append (if (kadr x) (fy :expr (kadr x)) nil) (cons (op ":") (fy :tri* (kdr (kdr x))))))))
-    (:tri* (append (if (kar x) (fy :expr (kar x)) nil) (if (kadr x) (cons (op ":") (fy :expr (kadr x))) nil)))
-    (:elist (if (atom x) (list (op "]")) (append (fy :expr (car x)) (fy :elist* (cdr x)))))
-    (:elist* (if (atom x) (list (op "]")) (cons (op ",") (append (fy :expr (car x)) (fy :elist* (cdr x))))))
-    (otherwise nil))))
 
 ; ---- what may follow a complete nt
 ;
@@ -346,7 +375,7 @@
            ; a component is continued by "(" after its name, a list of them by "%" too
            (:part (equal tk (op "(")))
            (:parts (or (equal tk (op "(")) (equal tk (op "%")))) ((:add :add*) a) ((:l2 :l2*) l2) ((:l3 :l3*) l3) ((:l4 :and) l4)
-           ((:or :or*) o) ((:equiv :equiv*) q) ((:expr :expr*) e)
+           ((:or :or*) o) ((:equiv :equiv*) q) ((:expr :expr* :acv) e)
            ; an argument, and a triplet's tail, are ended by "," or ")" only
            ((:arg :tri*) (not (member-equal tk (list (op ",") (op ")")))))
            (otherwise nil))

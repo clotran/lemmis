@@ -15,6 +15,8 @@
 ;                                   R1140 end-if-stmt (k do or if, no
 ;                                   construct name in the subset)
 ;         (:contains)               R1546 contains-stmt
+;         (:block)                  R1108 block-stmt: BLOCK (no construct name);
+;                                   END BLOCK, R1110 end-block-stmt, is (:end "block" nil)
 ;         (:use nat n onlyp ns)     R1409 use-stmt: USE [[, module-nature]
 ;                                   ::] module-name [, ONLY : [only-list]];
 ;                                   R1410 module-nature (nat nil, :dc for a
@@ -58,12 +60,12 @@
 ;                                   stop-stmt without a stop-code (no
 ;                                   construct name or return value in the
 ;                                   subset)
-;         (:allocate as)            R927 allocate-stmt: ALLOCATE ( allocation-list ),
+;         (:allocate as)            R929 allocate-stmt: ALLOCATE ( allocation-list ),
 ;                                   as actual args (alloc-objs-p): each a
-;                                   name ( allocate-shape-spec-list ) (R932, R934)
-;         (:deallocate as)          R941 deallocate-stmt: DEALLOCATE (
+;                                   name ( allocate-shape-spec-list ) (R933, R935)
+;         (:deallocate as)          R944 deallocate-stmt: DEALLOCATE (
 ;                                   allocate-object-list ), each a name
-;         (:save dc ns)             R856 save-stmt: SAVE [[::] ns], ns saved
+;         (:save dc ns)             R859 save-stmt: SAVE [[::] ns], ns saved
 ;                                   entity names (not a common block's)
 ;         (:stop e)                 R1162 stop-stmt: STOP stop-code (R1163,
 ;                                   e an expr; its type is the meaning's)
@@ -95,7 +97,7 @@
 ;         (:label l)                R611 label, written before a statement
 ;                                   (6.2.5): its own statement here, the
 ;                                   token (:lab l) the lexers make
-;         (:goto l)                 R1157 goto-stmt: GO TO label
+;         (:goto l)                 R1159 goto-stmt: GO TO label
 ;         (:aif e l1 l2 l3)         arithmetic IF, a deleted feature (B.1;
 ;                                   Fortran 2008 R853): IF ( expr ) l1, l2, l3
 ;         (:ldo l ctl)              R1121 label-do-stmt: DO label [loop-control]
@@ -204,7 +206,7 @@
                                 (or (null (caddr x))
                                     (and (member-equal (cadr x) *unit-ends*) (name-tok-p (caddr x)))))
                          (null (caddr x)))))
-            ((:contains :implicit-none :else) (= (len x) 1))
+            ((:contains :implicit-none :else :block) (= (len x) 1))
             (:use (and (= (len x) 5)
                        (member-equal (cadr x) '(nil :dc "intrinsic" "non_intrinsic"))
                        (name-tok-p (caddr x)) (booleanp (cadddr x))
@@ -352,6 +354,7 @@
          (:module (list (kw "module") (kadr x)))
          (:end (cons (kw "end") (if (kadr x) (cons (kw (kadr x)) (if (kaddr x) (list (kaddr x)) nil)) nil)))
          (:contains (list (kw "contains")))
+         (:block (list (kw "block")))
          (:implicit-none (list (kw "implicit") (kw "none")))
          (:else (list (kw "else")))
          (:use (append (list (kw "use"))

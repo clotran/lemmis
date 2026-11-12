@@ -10,7 +10,7 @@
 
 (set-verify-guards-eagerness 0)
 
-(mutual-recursion
+(me-mutual   ; each defun without a declare: (xargs :guard t :measure (nfix fuel))
 
  (defun me-ev (nt x env st cx fuel)
    (declare (xargs :guard t :measure (nfix fuel) :verify-guards nil))
@@ -71,7 +71,6 @@
  ; the component the part-refs ps name in the structure v (9.4.2): an
  ; array component's element, or its section when the last part-ref
  (defun me-parts (ps v env st cx fuel)
-   (declare (xargs :guard t :measure (nfix fuel)))
    (cond ((not (posp fuel)) (mv (err :fuel) st))
          ((atom ps) (mv v st))
          (t (let* ((p (car ps)) (c (s-comp v (tok-name (kar p)))))
@@ -90,7 +89,6 @@
  ; the structure old with the component ps names given v: (mv new st);
  ; ponytail: an array component's element only, not a section
  (defun me-cput (ps old v env st cx fuel)
-   (declare (xargs :guard t :measure (nfix fuel)))
    (cond ((not (posp fuel)) (mv (err :fuel) st))
          ((atom ps) (mv (assign-val old v) st))
          (t (let* ((p (car ps)) (cn (tok-name (kar p))) (c (s-comp old cn)))
@@ -108,7 +106,6 @@
 
  ; R1033 with a structure component the variable (10.2.1.2)
  (defun me-cassign (s env st cx fuel)
-   (declare (xargs :guard t :measure (nfix fuel)))
    (if (not (posp fuel)) (mv (err :fuel) st)
      (with-v (v st) (me-ev :expr (kadr (kdr (kdr (kdr (kdr s))))) env st cx (1- fuel))
        (mv-let (b suf d) (env-lookup (tok-name (kadr s)) env)
@@ -123,7 +120,6 @@
 
  ; the (op operand) list after a level's first operand, left to right
  (defun me-fold (nt rest v env st cx fuel)
-   (declare (xargs :guard t :measure (nfix fuel)))
    (cond ((not (posp fuel)) (mv (err :fuel) st))
          ((atom rest) (mv v st))
          ; 10.1.7: an operand the value does not need (.and. after false,
@@ -139,17 +135,30 @@
                 (if (errp r) (mv r st) (me-fold nt (cdr rest) r env st cx (1- fuel))))))))
 
  (defun me-list (es env st cx fuel)
-   (declare (xargs :guard t :measure (nfix fuel)))
    (cond ((not (posp fuel)) (mv (err :fuel) st))
          ((atom es) (mv nil st))
-         (t (with-v (v st) (me-ev :expr (car es) env st cx (1- fuel))
+         (t (with-v (v st) (if (eq (kar (car es)) :ido)   ; R782: its values, for each value of its variable (7.8)
+                               (with-v (ds st) (me-conc-lims (list (cdr (ido-ctl (cdar es)))) nil env st cx (1- fuel))
+                                 (me-ido (ido-vals (cdar es)) (car ds) env st cx (1- fuel)))
+                             (with-v (v st) (me-ev :expr (if (eq (kar (car es)) :e) (kadr (car es)) (car es)) env st cx (1- fuel))
+                               (mv (list v) st)))
               (with-v (vs st) (me-list (cdr es) env st cx (1- fuel))
-                (mv (cons v vs) st))))))
+                (mv (append v vs) st))))))
+
+ ; an ac-implied-do's values, its variable a construct entity (19.4) taking
+ ; each of d's (name kind indices) in turn
+ (defun me-ido (vals d env st cx fuel)
+   (cond ((not (posp fuel)) (mv (err :fuel) st))
+         ((atom (kaddr d)) (mv nil st))
+         (t (mv-let (fr locs st) (conc-frame (list (kar d)) (list (kadr d)) (list (car (kaddr d))) st)
+              (declare (ignore locs))
+              (with-v (v st) (me-list vals (cons fr env) st cx (1- fuel))
+                (with-v (vs st) (me-ido vals (list (kar d) (kadr d) (cdr (kaddr d))) env st cx (1- fuel))
+                  (mv (append v vs) st)))))))
 
  ; an intrinsic's arguments: values, and keyword values (16.9.1); an
  ; inquiry function's variable argument need not be defined (16.1)
  (defun me-iargs (args inq env st cx fuel)      ; (mv vals-or-err kw st)
-   (declare (xargs :guard t :measure (nfix fuel)))
    (cond ((not (posp fuel)) (mv (err :fuel) nil st))
          ((atom args) (mv nil nil st))
          ((member-eq (kar (car args)) '(:sub :kw))
@@ -169,7 +178,6 @@
  ; subscripts of array a: per subscript, the list of indices, and whether
  ; it is a scalar subscript (9.5.3.3: a section keeps its triplets' ranks)
  (defun me-subs (args lbs ubs env st cx fuel)  ; (mv dims-or-err scal st)
-   (declare (xargs :guard t :measure (nfix fuel)))
    (cond ((not (posp fuel)) (mv (err :fuel) nil st))
          ((atom args) (mv (if (atom lbs) nil (err :bounds)) nil st))
          ((atom lbs) (mv (err :bounds) nil st))
@@ -193,7 +201,6 @@
 
  ; R910 substring-range: (mv (lo hi) st), lo 1 and hi n when omitted
  (defun me-rng (g n env st cx fuel)
-   (declare (xargs :guard t :measure (nfix fuel)))
    (if (not (posp fuel)) (mv (err :fuel) st)
      (mv-let (lo st) (if (kadr g) (me-ev :expr (kadr g) env st cx (1- fuel)) (mv (vi 4 1) st))
        (mv-let (hi st) (if (kaddr g) (me-ev :expr (kaddr g) env st cx (1- fuel)) (mv (vi 4 n) st))
@@ -203,7 +210,6 @@
 
  ; name(args): an array element or section, a function reference, or an intrinsic
  (defun me-ref (tk args env st cx fuel)
-   (declare (xargs :guard t :measure (nfix fuel)))
    (if (not (posp fuel)) (mv (err :fuel) st)
      (mv-let (b suf d) (env-lookup (tok-name tk) env)
        (declare (ignore d))
@@ -242,7 +248,6 @@
          (otherwise (mv (err :type) st))))))
 
  (defun me-elem (u host vs i n env st cx fuel)   ; the results at elements i .. n-1
-   (declare (xargs :guard t :measure (nfix fuel)))
    (cond ((not (posp fuel)) (mv (err :fuel) st))
          ((not (and (natp i) (natp n) (< i n))) (mv nil st))
          (t (with-v (r st) (me-call u host (val-args vs i) env st cx (1- fuel))
@@ -252,7 +257,6 @@
  ; a call: bind the arguments, elaborate the specification, run the body,
  ; copy back; a function answers its result, a subroutine its status
  (defun me-call (u host args env st cx fuel)
-   (declare (xargs :guard t :measure (nfix fuel)))
    (if (not (posp fuel)) (mv (err :fuel) st)
      (let* ((hd (unit-hd u))
             (fn (eq (kar hd) :function))
@@ -290,7 +294,6 @@
  ; element or section to a temporary copied back; an expression to a
  ; temporary that is not definable (15.5.2.4)
  (defun me-bind (dns m env st cx fuel fr copies)   ; (mv err fr copies st)
-   (declare (xargs :guard t :measure (nfix fuel)))
    (cond ((not (posp fuel)) (mv (err :fuel) nil nil st))
          ((atom dns) (mv nil fr copies st))
          (t (let* ((dn (car dns)) (a (cdr (alk dn m))))
@@ -325,7 +328,6 @@
  ; DOUBLE PRECISION's, 8 (7.4.3.2p2); for CHARACTER, the length (R721,
  ; R722): 1 when absent, :star an assumed length (R701), a negative one 0 (7.4.4.2p4)
  (defun me-kind (ts env st cx fuel)
-   (declare (xargs :guard t :measure (nfix fuel)))
    (if (not (posp fuel)) (mv (err :fuel) st)
      (cond
       ((equal (kar ts) "double") (mv 8 st))
@@ -344,7 +346,6 @@
 
  ; explicit bounds (R815): (mv lbs-or-err ubs st)
  (defun me-bounds (ss env st cx fuel)
-   (declare (xargs :guard t :measure (nfix fuel)))
    (cond ((not (posp fuel)) (mv (err :fuel) nil st))
          ((atom ss) (mv nil nil st))
          (t (mv-let (lo st) (if (kadr (car ss)) (me-ev :expr (kadr (car ss)) env st cx (1- fuel)) (mv (vi 4 1) st))
@@ -356,7 +357,6 @@
 
  ; the declarations, in order (8.2): each entity's binding in fr
  (defun me-decls (ds env st cx fuel fr copies key dns)   ; (mv err fr copies st)
-   (declare (xargs :guard t :measure (nfix fuel)))
    (cond ((not (posp fuel)) (mv (err :fuel) nil nil st))
          ((atom ds) (if (subsetp-equal dns (strip-cars (alist-fix fr))) (mv nil fr copies st)
                       (mv (err :undeclared) nil nil st)))      ; the subset has no implicit typing
@@ -387,7 +387,6 @@
                     (if e (mv e nil nil st) (me-decls (cdr ds) env st cx (1- fuel) fr copies key dns)))))))))
 
  (defun me-ents (ents ty k attrs env st cx fuel fr copies key dns)
-   (declare (xargs :guard t :measure (nfix fuel)))
    (cond ((not (posp fuel)) (mv (err :fuel) nil nil st))
          ((atom ents) (mv nil fr copies st))
          (t (let* ((ent (car ents)) (n (tok-name (kar ent)))
@@ -430,7 +429,6 @@
  ; dummy takes the actual's shape with its own lower bounds (8.5.8.3); an
  ; explicit-shape one the actual's leading elements (15.5.2.12)
  (defun me-dummy (n ty k ss attrs env st cx fuel fr copies)
-   (declare (xargs :guard t :measure (nfix fuel)))
    (if (not (posp fuel)) (mv (err :fuel) nil nil st)
      (let* ((b (cdr (alk n fr))) (loc (kadr b)) (v (st-get loc st)) (int (decl-intent attrs))
             ; a character dummy of assumed length takes its actual's (8.5.13); a
@@ -454,7 +452,6 @@
            (dummy-fin n ty k ss attrs int b v ls us fr copies st)))))))
 
  (defun me-lowers (los env st cx fuel)
-   (declare (xargs :guard t :measure (nfix fuel)))
    (cond ((not (posp fuel)) (mv (err :fuel) st))
          ((atom los) (mv nil st))
          (t (mv-let (v st) (if (car los) (me-ev :expr (car los) env st cx (1- fuel)) (mv (vi 4 1) st))
@@ -465,13 +462,11 @@
  ; ---- statements
 
  (defun me-blk (cs env st cx fuel)
-   (declare (xargs :guard t :measure (nfix fuel)))
    (if (not (posp fuel)) (mv (err :fuel) st) (me-seq cs cs env st cx (1- fuel))))
 
  ; a block's statements from cs on; a GO TO to a label of the block's own
  ; list all goes on from there, any other ends the block
  (defun me-seq (cs all env st cx fuel)
-   (declare (xargs :guard t :measure (nfix fuel)))
    (cond ((not (posp fuel)) (mv (err :fuel) st))
          ((atom cs) (mv :normal st))
          (t (mv-let (s st) (me-c (car cs) env st cx (1- fuel))
@@ -480,7 +475,6 @@
                     (t (mv s st)))))))
 
  (defun me-c (c env st cx fuel)
-   (declare (xargs :guard t :measure (nfix fuel)))
    (if (not (posp fuel)) (mv (err :fuel) st)
      (case (kar c)
        (:act (me-act (kadr c) env st cx (1- fuel)))
@@ -498,11 +492,15 @@
                              (t (let ((i (sel-pick (v-num v) sels 0 nil)))
                                   (if (natp i) (me-blk (kadr (nth i (true-list-fix (kaddr c)))) env st cx (1- fuel))
                                     (mv :normal st))))))))))
+       ; R1107: the block's entities a frame of their own (11.1.4), elaborated each time
+       (:blockc (if (not (block-decls-ok (kadr c))) (mv (err :syntax) st)
+                  (mv-let (e fr copies st) (me-decls (kadr c) env st cx (1- fuel) nil nil nil nil)
+                    (declare (ignore copies))
+                    (if e (mv e st) (me-blk (kaddr c) (cons fr env) st cx (1- fuel))))))
        (otherwise (mv (err :syntax) st)))))
 
  ; each arm's selector: its ranges' intervals, or :default
  (defun me-sels (arms ty env st cx fuel)
-   (declare (xargs :guard t :measure (nfix fuel)))
    (cond ((not (posp fuel)) (mv (err :fuel) st))
          ((atom arms) (mv nil st))
          (t (mv-let (ivs st) (if (equal (kar (car arms)) '(:case-default)) (mv :default st)
@@ -512,7 +510,6 @@
                   (if (errp rest) (mv rest st) (mv (cons ivs rest) st))))))))
 
  (defun me-ranges (rs ty env st cx fuel)
-   (declare (xargs :guard t :measure (nfix fuel)))
    (cond ((not (posp fuel)) (mv (err :fuel) st))
          ((atom rs) (mv nil st))
          (t (let* ((r (car rs)) (open (member-eq (kar r) '(:from :to :rng))))
@@ -528,7 +525,6 @@
                                      st))))))))))))
 
  (defun me-eifs (eifs els env st cx fuel)    ; 11.1.8.2: the first true condition's block
-   (declare (xargs :guard t :measure (nfix fuel)))
    (cond ((not (posp fuel)) (mv (err :fuel) st))
          ((atom eifs) (if (consp els) (me-blk (car els) env st cx (1- fuel)) (mv :normal st)))
          (t (with-v (v st) (me-ev :expr (kar (car eifs)) env st cx (1- fuel))
@@ -539,7 +535,6 @@
  ; 11.1.7.4.1: the parameters evaluated and converted to the DO variable's
  ; kind, the iteration count max((m2-m1+m3)/m3, 0), the variable set to m1
  (defun me-do (ctl blk env st cx fuel)
-   (declare (xargs :guard t :measure (nfix fuel)))
    (if (not (posp fuel)) (mv (err :fuel) st)
      (case (kar ctl)
        (:range
@@ -568,7 +563,6 @@
        (otherwise (me-forever blk env st cx (1- fuel))))))
 
  (defun me-conc (ctl blk env st cx fuel)
-   (declare (xargs :guard t :measure (nfix fuel)))
    (if (not (posp fuel)) (mv (err :fuel) st)
      (mv-let (k st) (if (kaddr ctl) (me-kind (kaddr ctl) env st cx (1- fuel)) (mv nil st))
        (if (errp k) (mv k st)
@@ -586,7 +580,6 @@
  ; each (name k values); an index's kind its type-spec's, else that of
  ; the variable of its name outside (R1125)
  (defun me-conc-lims (ixs k env st cx fuel)
-   (declare (xargs :guard t :measure (nfix fuel)))
    (cond ((not (posp fuel)) (mv (err :fuel) st))
          ((atom ixs) (mv nil st))
          (t (let* ((ix (car ixs)) (n (tok-name (kar ix))))
@@ -609,7 +602,6 @@
 
  ; the iterations, each with its own indices and its accesses traced
  (defun me-conc-iters (tups names ks blk env st cx fuel sets)   ; (mv status st sets)
-   (declare (xargs :guard t :measure (nfix fuel)))
    (cond ((not (posp fuel)) (mv (err :fuel) st nil))
          ((atom tups) (mv :normal st sets))
          (t (mv-let (fr locs st) (conc-frame names ks (car tups) st)
@@ -626,7 +618,6 @@
  ; incremented by m3 and the count decremented; EXIT ends the loop, CYCLE
  ; the pass
  (defun me-iter (loc m3 count blk env st cx fuel)
-   (declare (xargs :guard t :measure (nfix fuel)))
    (cond ((not (posp fuel)) (mv (err :fuel) st))
          ((not (and (integerp count) (< 0 count))) (mv :normal st))
          (t (mv-let (s st) (me-blk blk env st cx (1- fuel))
@@ -638,7 +629,6 @@
                     (t (mv s st)))))))
 
  (defun me-while (e blk env st cx fuel)       ; 11.1.7.4.3: DO WHILE
-   (declare (xargs :guard t :measure (nfix fuel)))
    (if (not (posp fuel)) (mv (err :fuel) st)
      (with-v (v st) (me-ev :expr e env st cx (1- fuel))
        (cond ((not (and (lval-p v) (booleanp (v-num v)))) (mv (cond-err v) st))
@@ -649,7 +639,6 @@
                         (t (mv s st)))))))))
 
  (defun me-forever (blk env st cx fuel)        ; DO without loop-control
-   (declare (xargs :guard t :measure (nfix fuel)))
    (if (not (posp fuel)) (mv (err :fuel) st)
      (mv-let (s st) (me-blk blk env st cx (1- fuel))
        (cond ((eq s :exit) (mv :normal st))
@@ -657,7 +646,6 @@
              (t (mv s st))))))
 
  (defun me-act (s env st cx fuel)
-   (declare (xargs :guard t :measure (nfix fuel)))
    (if (not (posp fuel)) (mv (err :fuel) st)
      (case (kar s)
        (:assign (me-assign s env st cx (1- fuel)))
@@ -700,9 +688,8 @@
                     (t (mv :normal st)))))
        (otherwise (mv (err :syntax) st)))))
 
- ; R927: each allocation's bounds, then the object allocated (9.7.1.2)
+ ; R929: each allocation's bounds, then the object allocated (9.7.1.2)
  (defun me-alloc (os env st cx fuel)
-   (declare (xargs :guard t :measure (nfix fuel)))
    (cond ((not (posp fuel)) (mv (err :fuel) st))
          ((atom os) (mv :normal st))
          (t (let ((p (lone-prim (kadr (car os)))))
@@ -715,7 +702,6 @@
  ; defined; a whole array or a section takes as many values as it has
  ; elements (9.5.3.2); (mv status rs st)
  (defun me-ritems (items rs env st cx fuel)
-   (declare (xargs :guard t :measure (nfix fuel)))
    (if (not (posp fuel)) (mv (err :fuel) rs st)
      (if (atom items) (mv :normal rs st)
        (let* ((p (lone-prim (car items))) (tk (kadr p)))
@@ -746,7 +732,6 @@
                                                       cx (1- fuel))))))))))))))))))
 
  (defun me-assign (s env st cx fuel)
-   (declare (xargs :guard t :measure (nfix fuel)))
    (if (not (posp fuel)) (mv (err :fuel) st)
      (with-v (v st) (me-ev :expr (kar (kdr (kdr (kdr (kdr s))))) env st cx (1- fuel))
        (mv-let (b suf d) (env-lookup (tok-name (kadr s)) env)
@@ -788,5 +773,5 @@
                                   (if (errp n) (mv n st) (mv :normal (st-put loc n (st-log (write-list loc (tuple-offs a ts)) st))))))))))))))))))))
 )
 ; the interpreter stays closed: a proof about it opens the one case it needs
-(in-theory (disable me-parts me-cput me-cassign me-ev me-fold me-list me-iargs me-subs me-rng me-ref me-elem me-call me-bind me-kind me-bounds me-decls me-ents me-dummy me-lowers me-blk me-seq me-c me-sels me-ranges me-eifs me-do me-conc me-conc-lims me-conc-iters me-iter me-while me-forever me-act me-alloc me-ritems me-assign))
+(in-theory (disable me-parts me-cput me-cassign me-ev me-fold me-list me-ido me-iargs me-subs me-rng me-ref me-elem me-call me-bind me-kind me-bounds me-decls me-ents me-dummy me-lowers me-blk me-seq me-c me-sels me-ranges me-eifs me-do me-conc me-conc-lims me-conc-iters me-iter me-while me-forever me-act me-alloc me-ritems me-assign))
 

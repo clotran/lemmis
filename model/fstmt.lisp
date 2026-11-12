@@ -67,16 +67,17 @@
                     (mv t (list :end (kadr (kadr toks)) nil) (kdr (kdr toks))))
                 (mv t (list :end nil nil) (kdr toks)))))
       (:s-other (cond ((equal tk (kw "contains")) (mv t (list :contains) (kdr toks)))
+                      ((equal tk (kw "block")) (mv t (list :block) (kdr toks)))
                       ((and (equal tk (kw "implicit")) (equal (kadr toks) (kw "none")))
                        (mv t (list :implicit-none) (kdr (kdr toks))))
-                      ((equal tk (kw "save"))                               ; R856 save-stmt
+                      ((equal tk (kw "save"))                               ; R859 save-stmt
                        (cond ((atom (kdr toks)) (mv t (list :save nil nil) (kdr toks)))
                              ((and (equal (kadr toks) (op ":")) (equal (kaddr toks) (op ":")))
                               (mv-let (ok ns r) (fps :onames (kdr (kdr (kdr toks))))
                                 (if (and ok (consp ns)) (mv t (list :save t ns) r) (fail))))
                              (t (mv-let (ok ns r) (fps :onames (kdr toks))
                                   (if (and ok (consp ns)) (mv t (list :save nil ns) r) (fail))))))
-                      ((and (tok-in tk '("allocate" "deallocate")) (equal (kadr toks) (op "(")))   ; R927, R941
+                      ((and (tok-in tk '("allocate" "deallocate")) (equal (kadr toks) (op "(")))   ; R929, R944
                        (mv-let (ok as r) (fp :args (kdr (kdr toks)))
                          (let ((d (equal tk (kw "deallocate"))))
                            (if (and ok (consp as) (alloc-objs-p as d)) (mv t (list (if d :deallocate :allocate) as) r) (fail)))))

@@ -11,7 +11,7 @@ proved to accept exactly that grammar (`fp-`, `fps-`, `fpu-sound` and
 `-complete`), for every alternative the Scope uses; **part** when only
 some alternatives are in; **no** otherwise.
 
-Score: **141 of 175** Scope rules proved (81%); 34 more in part; none not yet in.
+Score: **145 of 182** Scope rules proved (80%); 37 more in part; none not yet in.
 
 ## The books
 
@@ -27,7 +27,7 @@ Score: **141 of 175** Scope rules proved (81%); 34 more in part; none not yet in
   - `fp-cost` (`fparse-cost.lisp`): a successful parse makes at most 32 calls per token it
     reads, plus a constant per nonterminal (`fp-d`, at most 19) -- with
     fp-complete, n tokens are read in at most 32n + 17 calls.
-  All certify in about 25 s.
+  All certify in about a minute.
 - `fstmt-gram.lisp` and `fstmt.lisp`: one statement's tokens, the same way:
   `fgs`, `fys` (fstmt-gram), the parser `fps` (fstmt) (its kind known from the first tokens); `fstmt-sound.lisp`:
   `fps-sound`; `fstmt-complete.lisp`: `fps-complete` (followed by nothing:
@@ -71,6 +71,16 @@ Score: **141 of 175** Scope rules proved (81%); 34 more in part; none not yet in
 - No defined operators (R1003, R1023 have no defined-unary-op or
   defined-binary-op), no conditional expressions (R1002), no labels, no
   construct names, no `(/ ... /)` constructors.
+- An array constructor's ac-value that begins with `(` is an
+  ac-implied-do (write `+(a + b)` or `1 * (a + b)` for a parenthesized
+  first primary), so each ac-value's kind is known from its first token;
+  a constructor has at least one value (its type is its first value's,
+  no type-spec).
+- A BLOCK's declarations are type declarations, none SAVE'd or
+  initialized but a named constant: nothing a BLOCK keeps from one
+  execution to the next. `block` is among `*fkeywords*`.
+- R-numbers are J3/24-007's, checked against the draft's text (each
+  row's number names its rule there).
 - Derived types: scalars only (no arrays of structures, so a data-ref's
   first part-ref is a scalar's name), no structure constructors (R756),
   no dummy arguments of a derived type, no type-bound procedures or
@@ -106,7 +116,7 @@ Score: **141 of 175** Scope rules proved (81%); 34 more in part; none not yet in
 | R509 | execution-part | proved |  |
 | R511 | internal-subprogram-part | proved |  |
 | R512 | internal-subprogram | proved |  |
-| R514 | executable-construct | part | action-stmt, do-construct, if-construct, case-construct; no block-construct |
+| R514 | executable-construct | part | action-stmt, block-construct, do-construct, if-construct, case-construct |
 | R515 | action-stmt | proved | allocate, assignment, call, cycle, deallocate, exit, continue, if-stmt, print, return, stop |
 | R516 | keyword | proved | as an actual-arg-spec's keyword |
 | R601 | alphanumeric-character | proved | in R603 |
@@ -145,7 +155,10 @@ Score: **141 of 175** Scope rules proved (81%); 34 more in part; none not yet in
 | R778 | ac-spec | part | ac-value-list |
 | R779 | lbracket | proved | |
 | R780 | rbracket | proved | |
-| R781 | ac-value | part | expr; no ac-implied-do |
+| R781 | ac-value | proved | expr (not beginning with `(`: the subset's), ac-implied-do |
+| R782 | ac-implied-do | proved | ( ac-value-list , ac-implied-do-control ) |
+| R783 | ac-implied-do-control | part | ac-do-variable = scalar-int-expr , scalar-int-expr [, scalar-int-expr]; no integer-type-spec :: |
+| R784 | ac-do-variable | proved | a construct entity (19.4) of the type of the variable of its name, which is integer (the meaning) |
 | R801 | type-declaration-stmt | proved |  |
 | R802 | attr-spec | proved | ALLOCATABLE, DIMENSION, INTENT, PARAMETER, SAVE, VALUE |
 | R803 | entity-decl | proved |  |
@@ -158,7 +171,7 @@ Score: **141 of 175** Scope rules proved (81%); 34 more in part; none not yet in
 | R820 | assumed-shape-spec | proved |  |
 | R822 | deferred-shape-spec | proved | `:`, read as an assumed-shape-spec without a lower bound; an ALLOCATABLE entity's in the meaning |
 | R828 | intent-spec | proved | IN, OUT, INOUT, IN OUT |
-| R856 | save-stmt | proved | SAVE [[::] saved-entity-list], each an object-name (no common block); in the meaning, each saved entity's SAVE attribute (8.5.16) |
+| R859 | save-stmt | proved | SAVE [[::] saved-entity-list], each an object-name (no common block); in the meaning, each saved entity's SAVE attribute (8.5.16) |
 | R866 | implicit-stmt | proved | IMPLICIT NONE |
 | R901 | designator | proved | object-name, array-element, array-section |
 | R902 | variable | proved | in assignment-stmt |
@@ -174,13 +187,13 @@ Score: **141 of 175** Scope rules proved (81%); 34 more in part; none not yet in
 | R921 | section-subscript | part | subscript, subscript-triplet; no vector-subscript |
 | R922 | subscript-triplet | proved | |
 | R924 | stride | proved | |
-| R927 | allocate-stmt | part | ALLOCATE ( allocation-list ); no type-spec, no alloc-opt (STAT=, ERRMSG=, SOURCE=): allocating an allocated variable stops the program (9.7.4) |
-| R932 | allocation | part | allocate-object ( allocate-shape-spec-list ), read as an actual argument; the list required (no scalar allocatable), no coarray spec |
-| R933 | allocate-object | part | variable-name; no structure-component |
-| R934 | allocate-shape-spec | proved | [lower-bound-expr :] upper-bound-expr, read as a subscript or a triplet without stride |
-| R935 | lower-bound-expr | proved |  |
-| R936 | upper-bound-expr | proved |  |
-| R941 | deallocate-stmt | part | DEALLOCATE ( allocate-object-list ); no dealloc-opt: deallocating an unallocated variable stops the program (9.7.4) |
+| R929 | allocate-stmt | part | ALLOCATE ( allocation-list ); no type-spec, no alloc-opt (STAT=, ERRMSG=, SOURCE=): allocating an allocated variable stops the program (9.7.4) |
+| R933 | allocation | part | allocate-object ( allocate-shape-spec-list ), read as an actual argument; the list required (no scalar allocatable), no coarray spec |
+| R934 | allocate-object | part | variable-name; no structure-component |
+| R935 | allocate-shape-spec | proved | [lower-bound-expr :] upper-bound-expr, read as a subscript or a triplet without stride |
+| R936 | lower-bound-expr | proved |  |
+| R938 | upper-bound-expr | proved |  |
+| R944 | deallocate-stmt | part | DEALLOCATE ( allocate-object-list ); no dealloc-opt: deallocating an unallocated variable stops the program (9.7.4) |
 | R1001 | primary | part | literal, designator, array-constructor, function-reference, ( expr ) |
 | R1003 | level-1-expr | proved | no defined-unary-op |
 | R1005 | mult-operand | proved | |
@@ -204,6 +217,10 @@ Score: **141 of 175** Scope rules proved (81%); 34 more in part; none not yet in
 | R1023 | expr | proved | no defined-binary-op |
 | R1033 | assignment-stmt | proved |  |
 | R1101 | block | proved |  |
+| R1107 | block-construct | proved | block-stmt [block-specification-part] block end-block-stmt; its entities a frame elaborated each time it runs |
+| R1108 | block-stmt | part | BLOCK; no construct name |
+| R1109 | block-specification-part | part | declaration-constructs (R507); in the meaning, type declarations only, none SAVE'd or initialized but a named constant |
+| R1110 | end-block-stmt | part | END BLOCK; no construct name |
 | R1119 | do-construct | proved |  |
 | R1120 | do-stmt | proved | both forms |
 | R1121 | label-do-stmt | proved | rewritten as a nonlabel DO before the units are read |
@@ -229,7 +246,7 @@ Score: **141 of 175** Scope rules proved (81%); 34 more in part; none not yet in
 | R1147 | case-selector | proved | ( case-value-range-list ), DEFAULT |
 | R1148 | case-value-range | proved | all four forms |
 | R1149 | case-value | proved |  |
-| R1157 | goto-stmt | proved |  |
+| R1159 | goto-stmt | proved |  |
 | R1158 | exit-stmt | proved |  |
 | R1161 | continue-stmt | proved |  |
 | R1162 | stop-stmt | proved | STOP [stop-code]: an integer or character scalar expr (R1163, the meaning) |

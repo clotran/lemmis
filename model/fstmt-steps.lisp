@@ -19,6 +19,7 @@
     (:s-other
      (cond
       ((equal tk (kw "contains")) (+ 1))
+      ((equal tk (kw "block")) (+ 1))
       ((and (equal tk (kw "implicit")) (equal (kadr toks) (kw "none"))) (+ 1))
       ((equal tk (kw "save"))
        (cond

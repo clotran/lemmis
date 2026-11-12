@@ -26,7 +26,7 @@
   (declare (xargs :guard t))
   (case nt
     (:base 0) (:part 1) (:parts 2) (:prim 1) (:mult 2) (:add 3) (:l2 4) (:l3 5) (:l4 6) (:and 7) (:or 8) (:equiv 9) (:expr 10)
-    ((:arg :elist :tri*) 11) (:args 12)
+    ((:arg :acv :tri*) 11) ((:args :elist :ilist) 12)
     (otherwise 1)))
 
 ; a keyword argument's head, name =
@@ -154,25 +154,54 @@
                       (mv-let (ok2 st r2) (fp :expr (cdr r))
                         (if ok2 (mv t (list hi st) r2) (fail))))
                      (t (mv t (list hi nil) r)))))
-      (:elist (mv-let (ok e r) (fp :expr toks)
+      (:elist (mv-let (ok e r) (fp :acv toks)
                 (if (not (and ok (<= (len r) (len toks)))) (fail)
                   (mv-let (ok2 es r2) (fp :elist* r)
                     (if ok2 (mv t (cons e es) r2) (fail))))))
       (:elist* (cond ((not (consp toks)) (fail))
                      ((equal tk (op "]")) (mv t nil (cdr toks)))
                      ((not (equal tk (op ","))) (fail))
-                     (t (mv-let (ok e r) (fp :expr (cdr toks))
+                     (t (mv-let (ok e r) (fp :acv (cdr toks))
                           (if (not (and ok (<= (len r) (len (cdr toks))))) (fail)
                             (mv-let (ok2 es r2) (fp :elist* r)
                               (if ok2 (mv t (cons e es) r2) (fail))))))))
+      ; an ac-value: "(" begins an ac-implied-do, anything else an expression
+      (:acv (cond ((not (consp toks)) (fail))
+                  ((equal tk (op "("))
+                   (mv-let (ok il r) (fp :ilist (cdr toks))
+                     (if ok (mv t (cons :ido il) r) (fail))))
+                  (t (mv-let (ok e r) (fp :expr toks)
+                       (if ok (mv t (list :e e) r) (fail))))))
+      (:ilist (mv-let (ok v r) (fp :acv toks)
+                (if (not (and ok (<= (len r) (len toks)))) (fail)
+                  (mv-let (ok2 vs r2) (fp :ilist* r)
+                    (if ok2 (mv t (cons v vs) r2) (fail))))))
+      ; ", ac-value" and more, or the control ", var = lo , hi [, st] )"
+      (:ilist* (cond ((not (and (consp toks) (equal tk (op ",")))) (fail))
+                     ((kw-head-p (cdr toks))
+                      (mv-let (ok lo r) (fp :expr (cdddr toks))
+                        (if (not (and ok (<= (len r) (len (cdddr toks))) (consp r) (equal (car r) (op ",")))) (fail)
+                          (mv-let (ok2 hi r2) (fp :expr (cdr r))
+                            (cond ((not (and ok2 (<= (len r2) (len (cdr r))) (consp r2))) (fail))
+                                  ((equal (car r2) (op ")")) (mv t (list :ctl (cadr toks) lo hi nil) (cdr r2)))
+                                  ((equal (car r2) (op ","))
+                                   (mv-let (ok3 st r3) (fp :expr (cdr r2))
+                                     (if (and ok3 (consp r3) (equal (car r3) (op ")")))
+                                         (mv t (list :ctl (cadr toks) lo hi st) (cdr r3))
+                                       (fail))))
+                                  (t (fail)))))))
+                     (t (mv-let (ok v r) (fp :acv (cdr toks))
+                          (if (not (and ok (<= (len r) (len (cdr toks))))) (fail)
+                            (mv-let (ok2 vs r2) (fp :ilist* r)
+                              (if ok2 (mv t (cons v vs) r2) (fail))))))))
       (otherwise (fail)))))
 
 (defthm fp-len
   (<= (len (mv-nth 2 (fp nt toks))) (len toks))
   :rule-classes :linear
-  :hints (("Goal" :induct (fp nt toks) :in-theory (disable xname-tok-p name-tok-p lit-tok-p))
+  :hints (("Goal" :induct (fp nt toks) :in-theory (disable xname-tok-p name-tok-p lit-tok-p kw-head-p cpart-p))
           (and stable-under-simplificationp
-               '(:expand ((fp :prim toks) (fp :base toks) (fp :part toks) (fp :parts toks))))))
+               '(:expand ((fp :prim toks) (fp :base toks) (fp :part toks) (fp :parts toks) (fp :ilist* toks))))))
 
 ; ---- the tokens' facts, then their recognizers closed
 
@@ -206,6 +235,12 @@
 (defthm fg-prim-of-base
   (implies (fg :base x) (and (fg :prim x) (equal (fy :prim x) (fy :base x))))
   :hints (("Goal" :expand ((fg :base x) (fg :prim x) (fy :prim x)))))
+
+; an ac-value is a cons: never the :ctl that ends an :ilist*
+(defthm fg-acv-consp
+  (implies (fg :acv x) (consp x))
+  :rule-classes :forward-chaining
+  :hints (("Goal" :expand ((fg :acv x)))))
 
 (defthm fp-sound
   (implies (mv-nth 0 (fp nt toks))
@@ -276,7 +311,7 @@
 
 ; a list closed by its own punctuation is followed by anything
 (defthm follow-closed
-  (implies (member-eq nt '(:args :args* :elist :elist*)) (follow-ok nt r))
+  (implies (member-eq nt '(:args :args* :elist :elist* :ilist :ilist*)) (follow-ok nt r))
   :hints (("Goal" :in-theory (enable follow-ok cont-tok-p))))
 
 (defthm follow-append
@@ -294,7 +329,7 @@
 
 ; a list closed by its own punctuation is followed by anything
 (defthm follow-closed
-  (implies (member-eq nt '(:args :args* :elist :elist*)) (follow-ok nt r))
+  (implies (member-eq nt '(:args :args* :elist :elist* :ilist :ilist*)) (follow-ok nt r))
   :hints (("Goal" :in-theory (enable follow-ok cont-tok-p))))
 
 (defthm follow-append
@@ -312,6 +347,11 @@
   (implies (and (member-eq nt '(:arg :tri*)) (follow-ok nt r) (consp r))
            (and (member-equal (car r) '((:op ",") (:op ")")))
                 (member-equal (car r) '((:op ":") (:op ",") (:op ")")))))
+  :hints (("Goal" :in-theory (enable follow-ok cont-tok-p))))
+
+; an ac-value's expression is followed as an expression is
+(defthm follow-acv
+  (equal (follow-ok :acv r) (follow-ok :expr r))
   :hints (("Goal" :in-theory (enable follow-ok cont-tok-p))))
 
 (in-theory (disable follow-ok cont-tok-p))
@@ -339,7 +379,8 @@
                 (not (equal nt :add*)) (not (equal nt :and)) (not (equal nt :l4)) (not (equal nt :l2))
                 (not (equal nt :l3)) (not (equal nt :l3*))
                 (not (equal nt :mult)) (not (equal nt :prim)) (not (equal nt :base)) (not (equal nt :part)) (not (equal nt :parts)) (not (equal nt :args)) (not (equal nt :args*))
-                (not (equal nt :arg)) (not (equal nt :tri*)) (not (equal nt :elist)) (not (equal nt :elist*)))
+                (not (equal nt :arg)) (not (equal nt :tri*)) (not (equal nt :elist)) (not (equal nt :elist*))
+                (not (equal nt :acv)) (not (equal nt :ilist)) (not (equal nt :ilist*)))
            (not (fg nt x)))
   :hints (("Goal" :expand ((fg nt x)))))
 
@@ -403,8 +444,18 @@
                                (fg-ind :tri* (kdr (kdr x)) r)))))
       (:tri* (list (fg-ind :expr (car x) (if (kadr x) (cons (op ":") (append (fy :expr (kadr x)) r)) r))
                    (fg-ind :expr (kadr x) r)))
-      ((:elist :elist*) (list (fg-ind :expr (car x) (append (fy :elist* (cdr x)) r))
+      ((:elist :elist*) (list (fg-ind :acv (car x) (append (fy :elist* (cdr x)) r))
                               (fg-ind :elist* (cdr x) r)))
+      (:acv (if (eq (car x) :ido) (fg-ind :ilist (cdr x) r) (fg-ind :expr (kadr x) r)))
+      (:ilist (list (fg-ind :acv (car x) (append (fy :ilist* (cdr x)) r))
+                    (fg-ind :ilist* (cdr x) r)))
+      (:ilist* (if (eq (car x) :ctl)
+                   (let ((st (car (cddddr x))) (cl (cons (op ")") r)))
+                     (list (fg-ind :expr (caddr x) (cons (op ",") (append (fy :expr (cadddr x)) (if st (cons (op ",") (append (fy :expr st) cl)) cl))))
+                           (fg-ind :expr (cadddr x) (if st (cons (op ",") (append (fy :expr st) cl)) cl))
+                           (fg-ind :expr st cl)))
+                 (list (fg-ind :acv (car x) (append (fy :ilist* (cdr x)) r))
+                       (fg-ind :ilist* (cdr x) r))))
       (otherwise nil))))
 
 ; what a tree's spelling begins with
@@ -421,6 +472,8 @@
     (:arg (and (consp ys) (or (start-tok-p (car ys)) (equal (car ys) '(:op ":")))))
     (:args* (and (consp ys) (member-equal (car ys) '((:op ",") (:op ")"))) t))
     (:elist* (and (consp ys) (member-equal (car ys) '((:op ",") (:op "]"))) t))
+    ((:acv :ilist) (and (consp ys) (start-tok-p (car ys))))
+    (:ilist* (and (consp ys) (equal (car ys) '(:op ","))))
     (otherwise t)))
 
 (defthm fy-first
@@ -447,6 +500,7 @@
 (fy-first-at :arg (and (consp (fy :arg x)) (or (start-tok-p (car (fy :arg x))) (equal (car (fy :arg x)) '(:op ":")))))
 (fy-first-at :args* (and (consp (fy :args* x)) (member-equal (car (fy :args* x)) '((:op ",") (:op ")")))))
 (fy-first-at :elist* (and (consp (fy :elist* x)) (member-equal (car (fy :elist* x)) '((:op ",") (:op "]")))))
+(fy-first-at :acv (and (consp (fy :acv x)) (start-tok-p (car (fy :acv x)))))
 (defmacro fy-first-lev (nt)
   `(defthm ,(packn (list 'fy-first- nt))
      (implies (fg ,nt x)
@@ -487,6 +541,12 @@
                 (equal (equal x (list a b c d))
                        (and (equal (car x) a) (equal (cadr x) b) (equal (caddr x) c) (equal (cadddr x) d)))))
   :hints (("Goal" :expand ((len (cdddr x)) (len (cddddr x)) (true-listp (cdddr x)) (true-listp (cddddr x))))))
+
+(defthm equal-quint                  ; an implied-do's control, (:ctl var lo hi st)
+  (implies (and (consp x) (consp (cdr x)) (consp (cddr x)) (consp (cdddr x)) (true-listp (cddddr x)) (equal (len (cddddr x)) 1))
+           (equal (equal x (list a b c d e))
+                  (and (equal (car x) a) (equal (cadr x) b) (equal (caddr x) c) (equal (cadddr x) d) (equal (car (cddddr x)) e))))
+  :hints (("Goal" :expand ((len (cddddr x)) (len (cdr (cddddr x))) (true-listp (cddddr x)) (true-listp (cdr (cddddr x)))))))
 
 ; an argument's spelling does not begin with the ")" that would end the list
 (defthm fy-arg-not-close
@@ -573,13 +633,13 @@
 (defthm fp-complete-atom
   (implies (and (atom x) (fg nt x) (follow-ok nt r))
            (and (equal (fp nt (append (fy nt x) r)) (mv t x r))
-                (not (member-eq nt '(:prim :mult :add :l2 :l3 :l4 :and :or :equiv :expr)))))
+                (not (member-eq nt '(:prim :mult :add :l2 :l3 :l4 :and :or :equiv :expr :acv)))))
   :hints (("Goal" :use fg-atom :in-theory (enable member-equal))))
 
 (defthm fp-complete
   (implies (and (fg nt x) (follow-ok nt r))
            (and (equal (fp nt (append (fy nt x) r)) (mv t x r))
-                (implies (member-eq nt '(:prim :mult :add :l2 :l3 :l4 :and :or :equiv :expr))
+                (implies (member-eq nt '(:prim :mult :add :l2 :l3 :l4 :and :or :equiv :expr :acv))
                          (not (kw-head-p (append (fy nt x) r))))))
   :hints (("Goal" :induct (fg-ind nt x r)) (fp-open-hint clause stable-under-simplificationp)))
 

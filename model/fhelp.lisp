@@ -142,7 +142,7 @@
 (defun prefix-ts (hd) (declare (xargs :guard t)) (kar (cdr (assoc-equal :ts (alist-fix (kadr hd))))))
 (defun unit-key (u) (declare (xargs :guard t)) (hd-name (kadr u)))
 (defun unit-hd (u) (declare (xargs :guard t)) (kadr u))
-;; R856 SAVE statements (8.6.14) as each entity's SAVE attribute: with one in
+;; R859 SAVE statements (8.6.14) as each entity's SAVE attribute: with one in
 ;; the declarations, each declaration is split an entity at a time, a saved
 ;; one's with (:save) among its attributes; SAVE alone saves every entity
 (defun save-all-p (ds) (declare (xargs :guard t)) (and (consp ds) (or (equal (car ds) '(:save nil nil)) (save-all-p (cdr ds)))))
@@ -260,6 +260,24 @@
   (let* ((v (kar vs)) (ty (if (aval-p v) (a-ty v) (scal-ty v))) (k (if (aval-p v) (a-k v) (scal-k v)))
          (es (acons-raws vs ty k)))
     (if (or (errp es) (not ty)) (err :type) (mk-arr ty k (list 1) (list (len es)) es))))
+
+; a BLOCK's declarations, in the subset: type declarations, none SAVE'd
+; or initialized but a named constant (8.5.16: nothing a BLOCK keeps
+; from one execution to the next)
+(defun block-decls-ok (ds)
+  (declare (xargs :guard t))
+  (or (atom ds)
+      (let ((d (car ds)))
+        (and (member-eq (kar d) '(:decl :tdecl)) (not (decl-has :save (kaddr d)))
+             (or (decl-has :parameter (kaddr d)) (not (ents-init-p (kar (kdr (kdr (kdr (kdr d))))))))
+             (block-decls-ok (cdr ds))))))
+
+(defun ido-vals (il)                 ; an ac-implied-do's values: its :ilist before the :ctl
+  (declare (xargs :guard t))
+  (if (or (atom il) (eq (car il) :ctl)) nil (cons (car il) (ido-vals (cdr il)))))
+(defun ido-ctl (il)                  ; and its control, (:ctl var lo hi st)
+  (declare (xargs :guard t))
+  (if (or (atom il) (eq (car il) :ctl)) il (ido-ctl (cdr il))))
 
 (defun section-shape (ds sc)          ; the extents of the triplet subscripts
   (declare (xargs :guard t))
@@ -594,7 +612,7 @@
 (defun deferred-p (ss)               ; R822 deferred-shape-spec-list: each ":"
   (declare (xargs :guard t))
   (if (atom ss) (null ss) (and (equal (car ss) '(:as nil)) (deferred-p (cdr ss)))))
-(defun alloc-shapes (as)             ; R934's specs as explicit-shape specs (:ex lo hi)
+(defun alloc-shapes (as)             ; R935's specs as explicit-shape specs (:ex lo hi)
   (declare (xargs :guard t))
   (if (atom as) nil
     (cons (if (eq (kar (car as)) :sub) (list :ex nil (kadr (car as))) (list :ex (kadr (car as)) (kaddr (car as))))
@@ -624,3 +642,14 @@
       (cond ((errp loc) (mv loc st))
             ((not (aval-p v)) (mv (err :alloc) st))
             (t (dealloc-all (cdr os) env (st-put loc (list :unalloc (a-ty v) (a-k v) (len (a-lbs v))) (st-log (list (list :w loc :all)) st)) cx))))))
+
+; fmean's clique, its interpreter: a mutual-recursion whose every defun
+; without a declare of its own is (declare (xargs :guard t :measure (nfix fuel)))
+(defun me-decl-defs (defs)
+  (declare (xargs :mode :program))
+  (if (atom defs) nil
+    (cons (let ((d (car defs)))
+            (if (and (consp (cadddr d)) (eq (car (cadddr d)) 'declare)) d
+              (list* (car d) (cadr d) (caddr d) '(declare (xargs :guard t :measure (nfix fuel))) (cdddr d))))
+          (me-decl-defs (cdr defs)))))
+(defmacro me-mutual (&rest defs) (cons 'mutual-recursion (me-decl-defs defs)))

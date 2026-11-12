@@ -8,7 +8,7 @@
 
 (defun kw (s) (declare (xargs :guard t)) (list :name s))
 
-(defconst *end-kinds* '("program" "module" "function" "subroutine" "do" "if" "select" "type"))
+(defconst *end-kinds* '("program" "module" "function" "subroutine" "do" "if" "select" "type" "block"))
 (defconst *unit-ends* '("program" "module" "function" "subroutine" "type"))
 (defconst *simple-kinds* '("cycle" "exit" "return" "continue" "stop"))
 (defconst *prefix-kws* '("pure" "elemental" "impure" "recursive" "non_recursive"))
@@ -91,12 +91,12 @@
          (null (kadr l4)) (null (kadr l3)) (null (kar l2)) (null (kaddr l2)) (null (kadr add)) (null (kadr mult))
          (member-eq (kar prim) '(:name :ref :sref)) prim)))
 (defun all-lone (es) (declare (xargs :guard t)) (if (atom es) t (and (lone-prim (car es)) (all-lone (cdr es)))))
-; R934 allocate-shape-spec, [lower-bound-expr :] upper-bound-expr: read as a
+; R935 allocate-shape-spec, [lower-bound-expr :] upper-bound-expr: read as a
 ; subscript (:sub e) or a triplet (:tri lo hi nil) with both bounds
 (defun alloc-spec-p (a) (declare (xargs :guard t)) (or (eq (kar a) :sub) (and (eq (kar a) :tri) (kadr a) (kaddr a) (null (kadddr a)) t)))
 (defun alloc-specs-p (as) (declare (xargs :guard t)) (if (atom as) t (and (alloc-spec-p (car as)) (alloc-specs-p (cdr as)))))
-; an ALLOCATE's actual (R932 allocation): name ( allocate-shape-spec-list );
-; a DEALLOCATE's: a name (R933 allocate-object: a variable-name)
+; an ALLOCATE's actual (R933 allocation): name ( allocate-shape-spec-list );
+; a DEALLOCATE's: a name (R934 allocate-object: a variable-name)
 (defun alloc-obj-p (a d)
   (declare (xargs :guard t))
   (let ((p (and (eq (kar a) :sub) (lone-prim (kadr a)))))

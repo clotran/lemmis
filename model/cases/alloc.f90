@@ -1,5 +1,5 @@
-! ALLOCATABLE (R802), deferred shape (R822), ALLOCATE (R927, R932, R934),
-! DEALLOCATE (R941) and ALLOCATED (16.9.11): an array whose bounds are
+! ALLOCATABLE (R802), deferred shape (R822), ALLOCATE (R929, R933, R935),
+! DEALLOCATE (R944) and ALLOCATED (16.9.11): an array whose bounds are
 ! given at run time
 module stats
   implicit none

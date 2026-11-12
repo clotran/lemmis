@@ -1,4 +1,4 @@
-! SAVE (R802's attribute, R856 save-stmt): a procedure's local keeps its
+! SAVE (R802's attribute, R859 save-stmt): a procedure's local keeps its
 ! value from one call to the next (8.5.16)
 module counters
   implicit none

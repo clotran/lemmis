@@ -187,39 +187,38 @@
        (let
         ((c18 (fpu-steps :exec (cdr toks))))
         (if (and ok (equal (kar r) ' (:end "do" nil))) (+ 1 c18) (+ 1 c18)))))
+     (:block
+      (mv-let
+       (ok ds r)
+       (fpu :decls (cdr toks))
+       (declare (ignorable ok ds r))
+       (let
+        ((c19 (fpu-steps :decls (cdr toks))))
+        (if
+         (not (and ok (<= (len r) (len (cdr toks)))))
+         (+ 1 c19)
+         (mv-let
+          (ok2 blk r2)
+          (fpu :exec r)
+          (declare (ignorable ok2 blk r2))
+          (let
+           ((c20 (fpu-steps :exec r)))
+           (if (and ok2 (equal (kar r2) ' (:end "block" nil))) (+ 1 c20 c19) (+ 1 c20 c19))))))))
      (:select
       (mv-let
        (ok arms r)
        (fpu :arms (cdr toks))
        (declare (ignorable ok arms r))
        (let
-        ((c19 (fpu-steps :arms (cdr toks))))
+        ((c21 (fpu-steps :arms (cdr toks))))
         (if
          (and ok (equal (kar r) ' (:end "select" nil)) (<= (count-defaults arms) 1))
-         (+ 1 c19)
-         (+ 1 c19)))))
+         (+ 1 c21)
+         (+ 1 c21)))))
      (otherwise (if (c-start-p s) (+ 1) (+ 1)))))
    (:arms
     (if
      (member-eq (kar s) ' (:case :case-default))
-     (mv-let
-      (ok blk r)
-      (fpu :exec (cdr toks))
-      (declare (ignorable ok blk r))
-      (let
-       ((c20 (fpu-steps :exec (cdr toks))))
-       (if
-        (not (and ok (<= (len r) (len (cdr toks)))))
-        (+ 1 c20)
-        (mv-let
-         (ok2 as r2)
-         (fpu :arms r)
-         (declare (ignorable ok2 as r2))
-         (let ((c21 (fpu-steps :arms r))) (if ok2 (+ 1 c21 c20) (+ 1 c21 c20)))))))
-     (+ 1)))
-   (:eifs
-    (if
-     (eq (kar s) :else-if)
      (mv-let
       (ok blk r)
       (fpu :exec (cdr toks))
@@ -230,10 +229,28 @@
         (not (and ok (<= (len r) (len (cdr toks)))))
         (+ 1 c22)
         (mv-let
+         (ok2 as r2)
+         (fpu :arms r)
+         (declare (ignorable ok2 as r2))
+         (let ((c23 (fpu-steps :arms r))) (if ok2 (+ 1 c23 c22) (+ 1 c23 c22)))))))
+     (+ 1)))
+   (:eifs
+    (if
+     (eq (kar s) :else-if)
+     (mv-let
+      (ok blk r)
+      (fpu :exec (cdr toks))
+      (declare (ignorable ok blk r))
+      (let
+       ((c24 (fpu-steps :exec (cdr toks))))
+       (if
+        (not (and ok (<= (len r) (len (cdr toks)))))
+        (+ 1 c24)
+        (mv-let
          (ok2 es r2)
          (fpu :eifs r)
          (declare (ignorable ok2 es r2))
-         (let ((c23 (fpu-steps :eifs r))) (if ok2 (+ 1 c23 c22) (+ 1 c23 c22)))))))
+         (let ((c25 (fpu-steps :eifs r))) (if ok2 (+ 1 c25 c24) (+ 1 c25 c24)))))))
      (+ 1)))
    (:int
     (if
@@ -242,7 +259,7 @@
       (ok ss r)
       (fpu :subs (cdr toks))
       (declare (ignorable ok ss r))
-      (let ((c24 (fpu-steps :subs (cdr toks)))) (if ok (+ 1 c24) (+ 1 c24))))
+      (let ((c26 (fpu-steps :subs (cdr toks)))) (if ok (+ 1 c26) (+ 1 c26))))
      (+ 1)))
    (:subs
     (if
@@ -252,15 +269,15 @@
       (fpu :sub toks)
       (declare (ignorable ok u r))
       (let
-       ((c25 (fpu-steps :sub toks)))
+       ((c27 (fpu-steps :sub toks)))
        (if
         (not (and ok (< (len r) (len toks))))
-        (+ 1 c25)
+        (+ 1 c27)
         (mv-let
          (ok2 us r2)
          (fpu :subs r)
          (declare (ignorable ok2 us r2))
-         (let ((c26 (fpu-steps :subs r))) (if ok2 (+ 1 c26 c25) (+ 1 c26 c25)))))))
+         (let ((c28 (fpu-steps :subs r))) (if ok2 (+ 1 c28 c27) (+ 1 c28 c27)))))))
      (+ 1)))
    (otherwise (+ 1)))))
 
