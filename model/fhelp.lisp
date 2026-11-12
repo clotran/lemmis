@@ -298,7 +298,7 @@
 
 (defun op-str (tk) (declare (xargs :guard t)) (kadr tk))
 (defun ts-ty (name) (declare (xargs :guard t))
-  (cond ((equal name "integer") :i) ((member-equal name '("real" "double")) :r) ((equal name "character") :c) (t :l)))
+  (cond ((equal name "integer") :i) ((member-equal name '("real" "double")) :r) ((equal name "complex") :z) ((equal name "character") :c) (t :l)))
 (defun cond-err (v) (declare (xargs :guard t)) (if (pd-p v) (err :pd) (err :type)))   ; control on the processor's choice
 
 ; a real literal's value (R714): the significand's digits over a power of
@@ -335,6 +335,21 @@
           ((eq (kar tk) :log) (vl k (kadr tk)))
           (t (mk-int k (digits-val (kadr tk))))))))
 (in-theory (disable lit-val))
+
+; R718 complex-literal-constant (7.4.3.3): its parts' signed literals; the
+; kind that of the part of greater precision, default real when both are integer
+(defun cpart-val (e env)
+  (declare (xargs :guard t))
+  (let* ((l2 (kar (kar (kadr (kar (kar (kar e)))))))
+         (v (lit-val (kadr (kar (kar (kadr l2)))) env)))
+    (if (equal (kar l2) (op "-")) (scalar-neg v) v)))
+(defun cplx-lit (e1 e2 env)
+  (declare (xargs :guard t))
+  (let ((a (cpart-val e1 env)) (b (cpart-val e2 env)))
+    (cond ((errp a) a) ((errp b) b)
+          (t (let ((k (cond ((and (rval-p a) (rval-p b)) (kmax (v-kind a) (v-kind b)))
+                            ((rval-p a) (v-kind a)) ((rval-p b) (v-kind b)) (t 4))))
+               (if (rkind-p k) (vz k (to-fl k a) (to-fl k b)) (err :type)))))))
 
 ; SELECT CASE (11.1.9): a case-value-range is the interval (lo . hi) of
 ; raw values, nil for an open end (11.1.9.2); an arm's selector is its

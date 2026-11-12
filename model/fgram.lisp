@@ -167,6 +167,9 @@
 ;                               one: b the first part-ref, a :name or :ref
 ;                               tree, then the :parts
 ;          (:paren e)           R1001 ( expr )
+;          (:cplx re im)        R718 complex-literal-constant: ( real-part ,
+;                               imag-part ), R719, R720 each a signed int- or
+;                               real-literal-constant, an :expr tree (cpart-p)
 ;          (:acons es)          R777 array-constructor: lbracket ac-spec rbracket
 ;                               (R779, R780), R778 ac-spec: ac-value-list, R781
 ;                               ac-value: expr
@@ -182,6 +185,18 @@
 ;  :parts  (part ...) nonempty  each a :part, % name [( args )]
 ;  :part   (tok refp args)      % tok, then ( args ) when refp
 ;  :elist  (e ...)              ac-value-list, the "]" included; :elist* after a ","
+
+;  R719 real-part, R720 imag-part: [sign] int- or real-literal-constant
+;  (no named constant), read as the expression it spells: the :expr tree
+;  of one level-2-expr whose add-operand is the literal alone
+(defun cpart-p (e)
+  (declare (xargs :guard t))
+  (let* ((l2 (kar (kar (kadr (kar (kar (kar e)))))))
+         (sign (kar l2))
+         (tk (kadr (kar (kar (kadr l2))))))
+    (and (or (null sign) (member-equal sign *add-ops*))
+         (member-eq (kar tk) '(:int :real)) (lit-tok-p tk)
+         (equal e (list (list (list (list nil (list (list (list sign (list (list (list :lit tk) nil) nil) nil) nil) nil nil)) nil) nil) nil)))))
 
 (defun fg-measure (nt x)
   (declare (xargs :guard t))
@@ -216,6 +231,7 @@
                   (:dref (and (= (len x) 3) (member-eq (kar (cadr x)) '(:name :ref)) (fg :base (cadr x))
                               (fg :parts (caddr x))))
                   (:paren (and (= (len x) 2) (fg :expr (cadr x))))
+                  (:cplx (and (= (len x) 3) (fg :expr (cadr x)) (fg :expr (caddr x)) (cpart-p (cadr x)) (cpart-p (caddr x))))
                   (:acons (and (= (len x) 2) (consp (cadr x)) (fg :elist (cadr x))))
                   (otherwise nil))))
     (:base (and (true-listp x)
@@ -275,6 +291,7 @@
              ((:name :ref :sref) (fy :base x))
              (:dref (append (fy :base (kadr x)) (fy :parts (kaddr x))))
              (:paren (cons (op "(") (append (fy :expr (kadr x)) (list (op ")")))))
+             (:cplx (cons (op "(") (append (fy :expr (kadr x)) (cons (op ",") (append (fy :expr (kaddr x)) (list (op ")")))))))
              (otherwise (cons (op "[") (fy :elist (kadr x))))))
     (:base (case (kar x)
              (:name (list (kadr x)))

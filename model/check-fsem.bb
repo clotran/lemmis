@@ -369,16 +369,23 @@
                   (and (not (Double/isNaN x)) (not (Double/isInfinite x)) (not (neg-zero? x))
                        (zero? (.compareTo (BigDecimal. (double x)) q)))))))))
 (def pd-seen (atom []))
-(defn tok-match? [m c] (cond (str/starts-with? m "~R") (real-match? m c) (= m "~PD") true :else (= m c)))
+;; a complex, (re,im) (13.10.4p8): its parts as reals
+(defn parts-of [t] (rest (re-matches #"\((.*),(.*)\)" t)))
+(defn tok-match? [m c]
+  (cond (str/starts-with? m "~R") (real-match? m c) (= m "~PD") true
+        (str/starts-with? m "(~R") (let [[a b] (parts-of m) [x y] (parts-of c)] (boolean (and x (real-match? a x) (real-match? b y))))
+        :else (= m c)))
 (defn toks-of-line [l] (vec (remove str/blank? (str/split (str/trim l) #"\s+"))))
 (defn line-match? [m c]              ; m a model line: a formatted record (a string) or tokens
   (if (string? m) (= m (str/trimr c)) (let [ts (toks-of-line c)] (and (= (count m) (count ts)) (every? true? (map tok-match? m ts))))))
 (defn lines-match? [ms cs] (and (= (count ms) (count cs)) (every? true? (map line-match? ms cs))))
 (defn value-eq? [m a b]              ; two compilers' tokens, as the model's kind reads them
+  (if (str/starts-with? m "(~R")
+    (let [[m1 m2] (parts-of m) [a1 a2] (parts-of a) [b1 b2] (parts-of b)] (boolean (and a1 b1 (value-eq? m1 a1 b1) (value-eq? m2 a2 b2))))
   (if (or (str/starts-with? m "~R") (= m "~PD"))
     (let [k (if (str/starts-with? m "~R4") 4 8) x (real-of k a) y (real-of k b)]
       (and x y (= (Double/doubleToLongBits x) (Double/doubleToLongBits y))))
-    (= a b)))
+    (= a b))))
 (defn lines-of [out] (if (str/blank? out) [] (vec (str/split-lines (str/trimr out)))))
 
 (def prog-results (atom {:progs 0 :agree-both 0 :runs 0 :agree 0 :disagree-compilers []}))

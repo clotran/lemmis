@@ -28,7 +28,7 @@
                 (mv a st))))
        (:l2 (with-v (a st) (me-ev :add (kadr x) env st cx (1- fuel))
               (let ((a (cond ((equal (kar x) (op "-")) (val-op :neg a nil))
-                             ((and (kar x) (not (or (num-p a) (pd-p a) (and (aval-p a) (member-eq (a-ty a) '(:i :r)))))) (err :type))
+                             ((and (kar x) (not (or (num-p a) (zval-p a) (pd-p a) (and (aval-p a) (member-eq (a-ty a) '(:i :r :z)))))) (err :type))
                              (t a))))
                 (if (errp a) (mv a st) (me-fold :l2* (kaddr x) a env st cx (1- fuel))))))
        (:mult (with-v (a st) (me-ev :prim (kar x) env st cx (1- fuel))
@@ -40,6 +40,7 @@
         (case (kar x)
           (:lit (mv (lit-val (kadr x) env) st))
           (:paren (me-ev :expr (kadr x) env st cx (1- fuel)))
+          (:cplx (mv (cplx-lit (kadr x) (kaddr x) env) st))
           (:acons (with-v (vs st) (me-list (kadr x) env st cx (1- fuel))
                     (mv (acons-val vs) st)))
           (:name (mv-let (b suf d) (env-lookup (tok-name (kadr x)) env)
@@ -344,7 +345,7 @@
       ((null (kadr ts)) (mv 4 st))
       (t
        (with-v (v st) (me-ev :expr (kadr (kadr ts)) env st cx (1- fuel))
-         (if (and (ival-scalar v) (if (equal (kar ts) "real") (rkind-p (v-num v)) (ikind-p (v-num v))))
+         (if (and (ival-scalar v) (if (member-equal (kar ts) '("real" "complex")) (rkind-p (v-num v)) (ikind-p (v-num v))))
              (mv (v-num v) st) (mv (err :type) st)))))))
 
  ; explicit bounds (R815): (mv lbs-or-err ubs st)

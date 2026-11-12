@@ -12,7 +12,7 @@
 (defconst *unit-ends* '("program" "module" "function" "subroutine" "type"))
 (defconst *simple-kinds* '("cycle" "exit" "return" "continue" "stop"))
 (defconst *prefix-kws* '("pure" "elemental" "impure" "recursive" "non_recursive"))
-(defconst *type-kws* '("integer" "logical" "real" "character" "double"))
+(defconst *type-kws* '("integer" "logical" "real" "character" "double" "complex"))
 ; R723 char-length's int-literal-constant, CHARACTER * n (no kind-param: C730)
 (defun len-tok-p (x)
   (declare (xargs :guard t))

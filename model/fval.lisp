@@ -13,6 +13,8 @@
 ;              (for :c, the length), its
 ;              bounds, its elements in array element order (9.5.3.2), each
 ;              an integer, t or nil, or :u (undefined)
+;   (:z k (x . y))  complex of kind k (7.4.3.3): x, y its real and imaginary
+;              parts, values of real kind k (freal.lisp); arrays of it hold (x . y)
 ;   (:u ty k)  an undefined scalar (19.6)
 ;
 ; What the standard prohibits or leaves undefined is an error that stops
@@ -168,6 +170,55 @@
                 (t (err :type))))))))
 (in-theory (disable real-op))
 
+ ; ---- complex (7.4.3.3, 10.1.5.2): + - and the relations == /= exact,
+; part by part; * / ** and ABS are the processor's approximations
+; (10.1.5.2.4), answered here only where every step of the textbook
+; formula (and, for /, of Smith's) is exact, so that every method gives
+; the value: else :pd. ponytail: a zero part's sign is the textbook's,
+; not checked against Smith's.
+(defun zval-p (v) (declare (xargs :guard t)) (and (consp v) (eq (car v) :z)))
+(defun vz (k x y) (declare (xargs :guard t)) (list :z k (cons x y)))
+(defun z-re (v) (declare (xargs :guard t)) (kar (kaddr v)))
+(defun z-im (v) (declare (xargs :guard t)) (kdr (kaddr v)))
+(defun to-z (k v)                    ; a numeric value as complex of kind k (10.1.5.2.1, Table 10.2)
+  (declare (xargs :guard t))
+  (if (zval-p v) (vz k (fl-conv k (z-re v)) (fl-conv k (z-im v))) (vz k (to-fl k v) 0)))
+(defun fl-exact (k q) (declare (xargs :guard t)) (and (rationalp q) (equal (fl-round k q) q)))
+(defun z-fin (x y) (declare (xargs :guard t)) (and (fl-fin-p (z-re x)) (fl-fin-p (z-im x)) (fl-fin-p (z-re y)) (fl-fin-p (z-im y))))
+(defun z-mul (k x y)
+  (declare (xargs :guard t))
+  (let ((a (fl-val (z-re x))) (b (fl-val (z-im x))) (c (fl-val (z-re y))) (d (fl-val (z-im y))))
+    (if (and (z-fin x y) (fl-exact k (* a c)) (fl-exact k (* b d)) (fl-exact k (* a d)) (fl-exact k (* b c))
+             (fl-exact k (- (* a c) (* b d))) (fl-exact k (+ (* a d) (* b c))))
+        (vz k (fl-sub k (fl-mul k (z-re x) (z-re y)) (fl-mul k (z-im x) (z-im y)))
+            (fl-add k (fl-mul k (z-re x) (z-im y)) (fl-mul k (z-im x) (z-re y))))
+      (list :pd :z k))))
+(defun z-div (k x y)                 ; a divisor (c, 0): each part over c, one rounding
+  (declare (xargs :guard t))
+  (let ((a (fl-val (z-re x))) (b (fl-val (z-im x))) (c (fl-val (z-re y))))
+    (if (and (z-fin x y) (fl-zero-p (z-im y)) (not (= c 0))
+             (fl-exact k (* c c)) (fl-exact k (* a c)) (fl-exact k (* b c)))
+        (vz k (fl-div k (z-re x) (z-re y)) (fl-div k (z-im x) (z-re y)))
+      (list :pd :z k))))
+(defun z-op (op a b)                 ; an operand complex, the other numeric
+  (declare (xargs :guard t))
+  (let ((k (kmax (if (ival-p a) (v-kind b) (v-kind a)) (if (ival-p b) (v-kind a) (v-kind b)))))
+    (if (not (rkind-p k)) (err :type)
+      (let ((x (to-z k a)) (y (to-z k b)))
+        (cond ((equal op "**")       ; an integer power 1 or 2, of a complex base
+               (cond ((not (and (zval-p a) (ival-p b))) (list :pd :z k))
+                     ((equal (v-num b) 1) x)
+                     ((equal (v-num b) 2) (z-mul k x x))
+                     (t (list :pd :z k))))
+              ((equal op "+") (vz k (fl-add k (z-re x) (z-re y)) (fl-add k (z-im x) (z-im y))))
+              ((equal op "-") (vz k (fl-sub k (z-re x) (z-re y)) (fl-sub k (z-im x) (z-im y))))
+              ((equal op "*") (z-mul k x y))
+              ((equal op "/") (z-div k x y))
+              ((member-equal op '("==" ".eq.")) (vl 4 (and (fl-eql (z-re x) (z-re y)) (fl-eql (z-im x) (z-im y)))))
+              ((member-equal op '("/=" ".ne.")) (vl 4 (not (and (fl-eql (z-re x) (z-re y)) (fl-eql (z-im x) (z-im y))))))
+              (t (err :type)))))))   ; complex is unordered (10.1.5.5.1)
+(in-theory (disable z-mul z-div z-op))
+
 (defun pd-result (op a b)            ; an operation on a processor-dependent value
   (declare (xargs :guard t))
   (cond ((rel-op-p op) (list :pd :l 4))
@@ -180,6 +231,7 @@
   (cond
    ((or (pd-p a) (pd-p b)) (pd-result op a b))
    ((and (num-p a) (num-p b) (or (rval-p a) (rval-p b))) (real-op op a b))
+   ((and (or (zval-p a) (zval-p b)) (or (num-p a) (zval-p a)) (or (num-p b) (zval-p b))) (z-op op a b))
    ((and (ival-p a) (ival-p b) (integerp (v-num a)) (integerp (v-num b)))
     (let ((x (v-num a)) (y (v-num b)) (k (kmax (v-kind a) (v-kind b))))
       (cond ((equal op "+") (mk-int k (+ x y)))
@@ -220,6 +272,7 @@
   (declare (xargs :guard t))
   (cond ((and (ival-p a) (integerp (v-num a))) (mk-int (v-kind a) (- (v-num a))))
         ((rval-p a) (vr (v-kind a) (fl-neg (v-num a))))
+        ((zval-p a) (vz (v-kind a) (fl-neg (z-re a)) (fl-neg (z-im a))))
         ((pd-p a) a)
         (t (err :type))))
 (defun scalar-not (a)
@@ -254,9 +307,9 @@
 
 (defun wrap (ty k e)                 ; an element as a scalar value
   (declare (xargs :guard t))
-  (cond ((eq e :u) (list :u ty k)) ((eq e :pd) (list :pd ty k)) ((eq ty :i) (vi k e)) ((eq ty :r) (vr k e)) ((eq ty :c) (list :c k e)) (t (vl k e))))
+  (cond ((eq e :u) (list :u ty k)) ((eq e :pd) (list :pd ty k)) ((eq ty :i) (vi k e)) ((eq ty :r) (vr k e)) ((eq ty :z) (list :z k e)) ((eq ty :c) (list :c k e)) (t (vl k e))))
 (defun raw (v) (declare (xargs :guard t)) (cond ((and (consp v) (eq (car v) :u)) :u) ((pd-p v) :pd) (t (kaddr v))))
-(defun scal-ty (v) (declare (xargs :guard t)) (case (kar v) (:i :i) (:l :l) (:r :r) (:c :c) ((:u :pd) (kadr v)) (otherwise nil)))
+(defun scal-ty (v) (declare (xargs :guard t)) (case (kar v) (:i :i) (:l :l) (:r :r) (:z :z) (:c :c) ((:u :pd) (kadr v)) (otherwise nil)))
 (defun scal-k (v) (declare (xargs :guard t)) (if (member-eq (kar v) '(:u :pd)) (kaddr v) (kadr v)))
 
 (defun nth-safe (n xs) (declare (xargs :guard t)) (if (atom xs) nil (if (not (posp n)) (car xs) (nth-safe (1- n) (cdr xs)))))
@@ -323,7 +376,11 @@
         ((and (eq ty :i) (rval-p v))       ; INT (expr, KIND (variable)), Table 10.8
          (let ((n (fl-to-int :trunc (v-num v)))) (if (integerp n) (mk-int k n) (err :overflow))))
         ((and (eq ty :r) (num-p v)) (vr k (to-fl k v)))   ; REAL (expr, KIND (variable))
-        ((and (pd-p v) (member-eq ty '(:i :r)) (member-eq (kadr v) '(:i :r))) (list :pd ty k))
+        ((and (eq ty :z) (or (num-p v) (zval-p v))) (to-z k v))   ; CMPLX (expr, KIND = KIND (variable))
+        ((and (eq ty :r) (zval-p v)) (vr k (fl-conv k (z-re v))))
+        ((and (eq ty :i) (zval-p v))
+         (let ((n (fl-to-int :trunc (z-re v)))) (if (integerp n) (mk-int k n) (err :overflow))))
+        ((and (pd-p v) (member-eq ty '(:i :r :z)) (member-eq (kadr v) '(:i :r :z))) (list :pd ty k))
         ((and (pd-p v) (eq ty :l) (eq (kadr v) :l)) (list :pd ty k))
         ((and (eq ty :l) (lval-p v)) (vl k (v-num v)))
         ((and (eq ty :c) (cval-p v)) (if (eq k :star) v (c-fit k v)))   ; :star, an assumed length (8.5.13)
@@ -435,6 +492,7 @@
   (declare (xargs :guard t))
   (case (kar v) (:i (int-str (kaddr v))) (:l (if (kaddr v) "T" "F")) (:c (if (stringp (kaddr v)) (kaddr v) ""))
     (:r (real-str (kadr v) (kaddr v))) (:pd "~PD")
+    (:z (concatenate 'string "(" (real-str (kadr v) (z-re v)) "," (real-str (kadr v) (z-im v)) ")"))
     (otherwise "?")))
 (defun wrap-all (ty k es)
   (declare (xargs :guard t))
@@ -463,6 +521,7 @@
   (declare (xargs :guard t))
   (cond ((member-equal name '("real" "dble")) (mv :r (if (equal name "dble") 8 k)))
         ((member-equal name '("int" "nint" "floor" "ceiling")) (mv :i k))
+        ((and (member-equal name '("abs" "aimag")) (eq ty :z)) (mv :r kk))
         (t (mv ty kk))))
 
 (defconst *pd-real-fns*              ; processor-dependent approximations (16.9)
@@ -475,6 +534,15 @@
         ((equal name "abs")                                                  ; 16.9.2
          (cond ((ival-scalar a) (mk-int (v-kind a) (abs (v-num a))))
                ((rval-p a) (vr (v-kind a) (fl-abs (v-num a))))
+               ((zval-p a)          ; 16.9.2: the processor's approximation of the modulus
+                (let* ((k (v-kind a)) (x (fl-val (z-re a))) (y (fl-val (z-im a))) (r (fl-sqrt k (+ (* x x) (* y y)))))
+                  (if (and (z-fin a a) (fl-exact k (+ (* x x) (* y y))) (rationalp r) (= (* r r) (+ (* x x) (* y y))))
+                      (vr k r) (list :pd :r k))))
+               (t (err :type))))
+        ((zval-p a)
+         (cond ((equal name "aimag") (vr (v-kind a) (z-im a)))                ; 16.9.6
+               ((equal name "conjg") (vz (v-kind a) (z-re a) (fl-neg (z-im a))))   ; 16.9.59
+               ((equal name "real") (if (rkind-p k) (vr k (fl-conv k (z-re a))) (err :type)))   ; 16.9.170
                (t (err :type))))
         ((not (num-p a)) (err :type))
         ((member-equal name '("real" "dble"))                                ; 16.9.170, 16.9.68
@@ -604,7 +672,15 @@
   (declare (xargs :guard t))
   (let ((a (kar vs)) (n (len vs)))
     (cond
-     ((member-equal name '("abs"))
+     ((and (equal name "real") (zval-p a) (= n 1) (null kw)) (vr (v-kind a) (z-re a)))   ; 16.9.170: A's kind
+     ((equal name "cmplx")                                    ; 16.9.56: default real's kind unless KIND
+      (let ((k (if (= n 3) (and (null kw) (ival-scalar (kaddr vs)) (v-num (kaddr vs))) (kind-arg kw))) (y (kadr vs)))
+        (cond ((not (and (rkind-p k) (<= 1 n) (<= n 3))) (err :type))
+              ((or (pd-p a) (pd-p y)) (list :pd :z k))
+              ((zval-p a) (if (= n 1) (to-z k a) (err :type)))
+              ((not (and (num-p a) (or (< n 2) (num-p y)))) (err :type))
+              (t (vz k (to-fl k a) (if (< n 2) 0 (to-fl k y)))))))
+     ((member-equal name '("abs" "aimag" "conjg"))
       (if (and (= n 1) (null kw)) (ew1 name nil a) (err :arity)))
      ((or (member-equal name '("sqrt" "real" "dble" "int" "nint" "floor" "ceiling")) (member-equal name *pd-real-fns*))
       ; KIND positional (REAL (A, KIND)) or by keyword
@@ -626,7 +702,7 @@
       (let ((k (cond ((rval-p a) (v-kind a)) ((and (aval-p a) (eq (a-ty a) :r)) (a-k a)) (t nil))))
         (if (rkind-p k) (vr k (if (equal name "tiny") (fl-tiny k) (fl-epsilon k))) (err :type))))
      ((equal name "kind")                                     ; 16.9.118
-      (cond ((or (ival-p a) (lval-p a) (rval-p a)) (vi 4 (v-kind a))) ((cval-p a) (vi 4 1))
+      (cond ((or (ival-p a) (lval-p a) (rval-p a) (zval-p a)) (vi 4 (v-kind a))) ((cval-p a) (vi 4 1))
             ((aval-p a) (vi 4 (if (eq (a-ty a) :c) 1 (a-k a)))) (t (err :type))))
      ((member-equal name '("len" "len_trim" "trim"))          ; 16.9.120, 16.9.121, 16.9.212, scalars
       (let ((k (kind-arg kw)))

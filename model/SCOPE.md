@@ -11,7 +11,7 @@ proved to accept exactly that grammar (`fp-`, `fps-`, `fpu-sound` and
 `-complete`), for every alternative the Scope uses; **part** when only
 some alternatives are in; **no** otherwise.
 
-Score: **130 of 163** Scope rules proved (80%); 33 more in part; none not yet in.
+Score: **132 of 166** Scope rules proved (80%); 34 more in part; none not yet in.
 
 ## The books
 
@@ -76,6 +76,14 @@ Score: **130 of 163** Scope rules proved (80%); 33 more in part; none not yet in
   no dummy arguments of a derived type, no type-bound procedures or
   parameters; a structure is printed and read by its components, and a
   component is not an actual argument that the procedure defines.
+- Complex: a part of a complex literal is a signed literal, not a named
+  constant; a complex is printed by list-directed output only (not
+  read, nor under a format), and is not an argument of the reductions
+  (SUM, MAXVAL, ...). Complex * / ** and ABS are processor
+  approximations (10.1.5.2.4): the model answers a value only where
+  every step of the textbook formula (and, for /, Smith's) is exact,
+  else a processor-dependent value; a zero part's sign is the textbook
+  formula's.
 - `::` is lexed as two `:` tokens (it is two colons in a triplet
   `a(::2)` too); a token is not split across lines, and a character
   context is not continued (6.3.2.4p3, p4).
@@ -100,7 +108,7 @@ Score: **130 of 163** Scope rules proved (80%); 33 more in part; none not yet in
 | R603 | name | proved | lower case (flex); not a statement keyword |
 | R611 | label | proved | one to five digits, not all zero (C613) |
 | R604 | constant | part | literal-constant; named-constant as a designator |
-| R605 | literal-constant | part | int, real, logical, char; no complex, boz |
+| R605 | literal-constant | part | int, real, complex, logical, char; no boz |
 | R708 | int-literal-constant | proved | |
 | R709 | kind-param | proved | |
 | R711 | digit-string | proved | |
@@ -108,11 +116,14 @@ Score: **130 of 163** Scope rules proved (80%); 33 more in part; none not yet in
 | R715 | significand | proved |  |
 | R716 | exponent-letter | proved |  |
 | R717 | exponent | proved |  |
+| R718 | complex-literal-constant | proved | ( real-part , imag-part ), told from ( expr ) by its "," |
+| R719 | real-part | part | signed-int-literal-constant, signed-real-literal-constant (an :expr tree, cpart-p); no named-constant |
+| R720 | imag-part | part | as R719 |
 | R724 | char-literal-constant | part | no kind-param prefix |
 | R725 | logical-literal-constant | proved | |
 | R701 | type-param-value | part | scalar-int-expr, `*` (a dummy's or a named constant's length); no `:` |
 | R703 | declaration-type-spec | proved | intrinsic-type-spec, TYPE ( derived-type-spec ) |
-| R704 | intrinsic-type-spec | part | INTEGER, REAL, DOUBLE PRECISION (`doubleprecision` split by flex), CHARACTER, LOGICAL; no COMPLEX |
+| R704 | intrinsic-type-spec | proved | INTEGER, REAL, DOUBLE PRECISION (`doubleprecision` split by flex), COMPLEX, CHARACTER, LOGICAL |
 | R705 | integer-type-spec | proved |  |
 | R706 | kind-selector | proved |  |
 | R721 | char-selector | part | length-selector; no KIND= |
