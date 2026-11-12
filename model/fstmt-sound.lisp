@@ -245,7 +245,8 @@
                 (mv-nth 0 (fps nt toks)))
            (and (fgs :stmt (mv-nth 1 (fps nt toks)))
                 (equal (append (fys :stmt (mv-nth 1 (fps nt toks))) (mv-nth 2 (fps nt toks))) toks)))
-  :hints (("Goal" :in-theory (enable member-equal))))
+  ; each kind is its own lemma above, a rewrite rule once nt is a constant
+  :hints (("Goal" :in-theory (union-theories '(member-equal fps-sound-s-head fps-sound-s-end fps-sound-s-other fps-sound-s-use fps-sound-s-else fps-sound-s-do fps-sound-s-call fps-sound-s-print fps-sound-s-type fps-sound-s-assign fps-sound-s-unit fps-sound-s-select fps-sound-s-case fps-sound-s-label fps-sound-s-goto fps-sound-s-format fps-sound-s-write fps-sound-s-read) (theory 'minimal-theory)))))
 
 ; IF's recursion, for the induction: the action statement after IF ( e )
 (defun stmt-ind (nt toks)          ; the statement inside is a :stmt, whatever nt was
@@ -276,7 +277,7 @@
 (defthm fps-s-if-kind
   (implies (mv-nth 0 (fps :s-if toks))
            (member-equal (car (mv-nth 1 (fps :s-if toks))) '(:if-then :if :aif)))
-  :hints (("Goal" :expand ((fps :s-if toks)) :in-theory (e/d (member-equal label-int-p-rules) (label-int-p lab-int label-digits-p)))))
+  :hints (("Goal" :expand ((fps :s-if toks)) :in-theory (union-theories '(member-equal car-cons) (theory 'minimal-theory)))))
 (defthm fps-stmt-if-kind
   (implies (and (equal (stmt-nt (kar toks)) :s-if) (mv-nth 0 (fps :stmt toks)))
            (not (action-kind-p (car (mv-nth 1 (fps :stmt toks))))))
@@ -288,7 +289,8 @@
   (implies (and (mv-nth 0 (fps :stmt toks)) (action-kind-p (car (mv-nth 1 (fps :stmt toks)))))
            (and (fgs :stmt (mv-nth 1 (fps :stmt toks)))
                 (equal (append (fys :stmt (mv-nth 1 (fps :stmt toks))) (mv-nth 2 (fps :stmt toks))) toks)))
-  :hints (("Goal" :cases ((equal (stmt-nt (kar toks)) :s-if)) :in-theory (disable stmt-nt action-kind-p))))
+  :hints (("Goal" :cases ((equal (stmt-nt (kar toks)) :s-if))
+           :in-theory (union-theories '(fps-stmt-if-kind fps-sound-stmt-flat) (theory 'minimal-theory)))))
 
 ; an IF statement: its condition, then its action statement, of a flat kind
 (defthm fps-sound-s-if
