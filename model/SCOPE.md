@@ -11,7 +11,7 @@ proved to accept exactly that grammar (`fp-`, `fps-`, `fpu-sound` and
 `-complete`), for every alternative the Scope uses; **part** when only
 some alternatives are in; **no** otherwise.
 
-Score: **159 of 197** Scope rules proved (81%); 38 more in part; none not yet in.
+Score: **161 of 199** Scope rules proved (81%); 38 more in part; none not yet in.
 
 ## Theorem 3: checked against the compilers (status)
 
@@ -49,12 +49,12 @@ Not a theorem: a test, run by `make check` (exit 1 on any difference).
   another for MOD): the model's value is processor dependent there
   (`cases/modzero.f90`).
 - **FCVS**: scored, not failed, and only when `fcvs/` is fetched
-  (`bb fetch-fcvs.bb`; not committed): 62 of 180 programs print their
+  (`bb fetch-fcvs.bb`; not committed): 63 of 180 programs print their
   reference output exactly (FM002-010, 012, 016-021, 026, 030-045,
   060, 061, 097, 098, 109, 201-205, 251, 254, 256, 301, 306, 352-355,
-  359-362, 368, 801, 805-807, 812). Of the rest, 77 stop at a statement outside the
-  subset (first: fixed form's blank-free COMPLEX 16, COMMON 13, OPEN 11,
-  PARAMETER ( ... ) 5, ...); 36 at a processor-dependent value (most an
+  359-362, 368, 718, 801, 805-807, 812). Of the rest, 75 stop at a statement outside the
+  subset (first: fixed form's blank-free COMPLEX 16, COMMON 14, OPEN 11,
+  ...); 37 at a processor-dependent value (most an
   approximated SIN, EXP, LOG, ATAN2, ... the program compares within a
   tolerance); 5 at an I/O end or unit. (The score read 0 until the
   harness dropped the "exit 0" line LLVM's reference outputs end with.)
@@ -237,6 +237,8 @@ Not a theorem: a test, run by `make check` (exit 1 on any difference).
 | R847 | data-stmt-repeat | proved | an int-literal-constant or a named constant; in the meaning nonnegative (C882) |
 | R848 | data-stmt-constant | part | a literal, a named constant, a complex literal, [sign] an int or real literal; no structure-constructor or NULL() |
 | R851 | dimension-stmt | proved | DIMENSION [::] entity-decl-list, each an array-name ( array-spec ), no initialization; in the meaning the array-spec joins the entity's declaration, or an implicitly typed one (8.7) |
+| R855 | parameter-stmt | proved | PARAMETER ( named-constant-def-list ) (:parstmt), "parameter" now among *fkeywords*; in the meaning each named constant takes its earlier type declaration (moved to the statement, with the PARAMETER attribute) or its implicit type (8.7), its value converted as by assignment (fdecl's par-decls) |
+| R856 | named-constant-def | proved | named-constant = constant-expr, read as an entity-decl (:ent) with an initialization only |
 | R859 | save-stmt | proved | SAVE [[::] saved-entity-list], each an object-name (no common block); in the meaning, each saved entity's SAVE attribute (8.5.16) |
 | R866 | implicit-stmt | proved | IMPLICIT NONE, IMPLICIT implicit-spec-list (read by imp-specs, proved with its own lemmas in fstmt-base.lisp); in the meaning a main program's or subprogram's undeclared names (a main program's DIMENSION'd names too) are typed by their first letter (8.7) |
 | R867 | implicit-spec | proved | declaration-type-spec ( letter-spec-list ): INTEGER, REAL, LOGICAL, COMPLEX, DOUBLE PRECISION, CHARACTER [* char-length]; no kind-selector |

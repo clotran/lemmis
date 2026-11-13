@@ -100,7 +100,7 @@
      (+ 1)))
    (:decls
     (if
-     (member-eq (kar s) ' (:decl :tdecl :type :save :dimstmt :implicit :data))
+     (member-eq (kar s) ' (:decl :tdecl :type :save :dimstmt :parstmt :implicit :data))
      (mv-let
       (ok d r)
       (fpu :decl toks)
@@ -127,7 +127,7 @@
        (let
         ((c12 (fpu-steps :comps (cdr toks))))
         (if (and ok (consp r) (tend-ok (car r) s)) (+ 1 c12) (+ 1 c12)))))
-     ((member-eq (kar s) ' (:decl :tdecl :save :dimstmt :implicit :data)) (+ 1))
+     ((member-eq (kar s) ' (:decl :tdecl :save :dimstmt :parstmt :implicit :data)) (+ 1))
      (t (+ 1))))
    (:exec
     (if

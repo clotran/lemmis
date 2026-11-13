@@ -72,6 +72,9 @@
 ;         (:dimstmt dc es)          R851 dimension-stmt: DIMENSION [::] es,
 ;                                   each entity-decl (:ent) an array-name (
 ;                                   array-spec ), no initialization
+;         (:parstmt es)             R855 parameter-stmt: PARAMETER ( es ), each
+;                                   entity-decl (:ent) a named-constant-def:
+;                                   a name = constant-expr (R856)
 ;         (:data ss)                R840 data-stmt: DATA data-stmt-set [[,] data-stmt-set]...
 ;                                   (ss a :dsets)
 ;         (:stop e)                 R1162 stop-stmt: STOP stop-code (R1163,
@@ -188,6 +191,9 @@
 
 (include-book "fstmt-base")
 
+(defun par-ents-p (es)               ; PARAMETER's entities: a name and its initialization only
+  (declare (xargs :guard t))
+  (if (atom es) t (and (= (len (car es)) 3) (null (kadr (car es))) (kaddr (car es)) (par-ents-p (cdr es)))))
 (defun dim-ents-p (es)               ; DIMENSION's entities: each with its array-spec, none initialized
   (declare (xargs :guard t))
   (if (atom es) t (and (consp (kadr (car es))) (null (kaddr (car es))) (dim-ents-p (cdr es)))))
@@ -256,6 +262,7 @@
             (:stop (and (= (len x) 2) (fg :expr (cadr x))))
             ((:allocate :deallocate) (and (= (len x) 2) (fg :args (cadr x)) (consp (cadr x)) (alloc-objs-p (cadr x) (eq (car x) :deallocate))))
             (:dimstmt (and (= (len x) 3) (booleanp (cadr x)) (consp (caddr x)) (fgs :ents (caddr x)) (dim-ents-p (caddr x))))
+            (:parstmt (and (= (len x) 2) (consp (cadr x)) (fgs :ents (cadr x)) (par-ents-p (cadr x))))
             (:implicit (and (= (len x) 2) (imps-p (cadr x))))
             (:data (and (= (len x) 2) (fgs :dsets (cadr x))))
             (:save (and (= (len x) 3) (booleanp (cadr x)) (names-p (caddr x)) (or (null (cadr x)) (consp (caddr x)))))
@@ -415,6 +422,7 @@
          (:allocate (list* (kw "allocate") (op "(") (fy :args (kadr x))))
          (:deallocate (list* (kw "deallocate") (op "(") (fy :args (kadr x))))
          (:dimstmt (cons (kw "dimension") (append (if (kadr x) (dcolon) nil) (fys :ents (kaddr x)))))
+         (:parstmt (list* (kw "parameter") (op "(") (append (fys :ents (kadr x)) (list (op ")")))))
          (:implicit (cons (kw "implicit") (imps-y (kadr x))))
          (:data (cons (kw "data") (fys :dsets (kadr x))))
          (:save (cons (kw "save") (append (if (kadr x) (dcolon) nil) (onames-y (kaddr x)))))

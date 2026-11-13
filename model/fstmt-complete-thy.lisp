@@ -589,4 +589,11 @@
   (:definition synp) (:definition true-listp) (:executable-counterpart binary-+) (:executable-counterpart cons) (:executable-counterpart eql) (:executable-counterpart equal) (:executable-counterpart fys)
   (:executable-counterpart kw) (:executable-counterpart len) (:executable-counterpart member-equal) (:executable-counterpart stmt-nt) (:executable-counterpart tau-system) (:forward-chaining fgs-dsets-consp) (:rewrite append-cons-fs)
   (:rewrite append-nil-left) (:rewrite car-cons) (:rewrite cdr-cons) (:rewrite equal-list3) (:rewrite equal-pair) (:rewrite fgs-var-open) (:rewrite fps-complete-dsets)
-  (:rewrite fps-open) (:rewrite fys-var-open) (:rewrite kadr-etc) (:rewrite kar-kdr-consp) (:rewrite sfollow-facts) (:type-prescription fgs))))
+  (:rewrite fps-open) (:rewrite fys-var-open) (:rewrite kadr-etc) (:rewrite kar-kdr-consp) (:rewrite sfollow-facts) (:type-prescription fgs))
+ (fps-complete-stmt-parstmt
+  (:type-prescription len) (:definition =) (:definition atom) (:definition kar) (:definition len) (:definition mv-nth) (:definition not)
+  (:definition synp) (:definition true-listp) (:executable-counterpart binary-+) (:executable-counterpart binary-append) (:executable-counterpart cons) (:executable-counterpart eql) (:executable-counterpart equal)
+  (:executable-counterpart fys) (:executable-counterpart kw) (:executable-counterpart len) (:executable-counterpart member-equal) (:executable-counterpart not) (:executable-counterpart op) (:executable-counterpart scont-tok-p)
+  (:executable-counterpart stmt-nt) (:executable-counterpart tau-system) (:rewrite append-assoc-fp) (:rewrite append-cons-fs) (:rewrite append-nil-left) (:rewrite car-cons) (:rewrite cdr-cons)
+  (:rewrite equal-list3) (:rewrite equal-pair) (:rewrite fgs-var-open) (:rewrite fps-complete-ents) (:rewrite fps-open) (:rewrite fys-var-open) (:rewrite kadr-etc)
+  (:rewrite kar-kdr-consp) (:rewrite nonempty-parts) (:rewrite sfollow-facts) (:type-prescription fgs) (:type-prescription par-ents-p))))

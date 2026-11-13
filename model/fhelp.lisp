@@ -227,6 +227,29 @@
         ((eq (kar (car ds)) :implicit) (clen-decls (cdr ds)))
         ((eq (kar (car ds)) :decl) (append (clen-ents (car ds) (kar (kdr (kdr (kdr (kdr (car ds))))))) (clen-decls (cdr ds))))
         (t (cons (car ds) (clen-decls (cdr ds))))))
+;; R855 PARAMETER statements (8.6.11): in its place, each named constant's
+;; declaration, the PARAMETER attribute (8.5.13) and its initialization joined
+;; to its earlier type declaration's (then dropped), or by its implicit type
+(defun decl-ent1 (d) (declare (xargs :guard t)) (kar (kar (kdr (kdr (kdr (kdr d)))))))   ; a split declaration's entity
+(defun par-find (tk ds)
+  (declare (xargs :guard t))
+  (cond ((atom ds) nil) ((and (eq (kar (car ds)) :decl) (equal (kar (decl-ent1 (car ds))) tk)) (car ds)) (t (par-find tk (cdr ds)))))
+(defun par-named (tk ds)             ; tk named by a PARAMETER statement of ds
+  (declare (xargs :guard t))
+  (and (consp ds) (or (and (eq (kar (car ds)) :parstmt) (member-equal tk (strip-cars (true-list-fix (kadr (car ds)))))) (par-named tk (cdr ds)))))
+(defun par-new (es pre imp rules)
+  (declare (xargs :guard t))
+  (if (atom es) nil
+    (let* ((e (car es)) (d (par-find (kar e) pre)) (o (decl-ent1 d)) (rest (par-new (cdr es) pre imp rules)))
+      (cond (d (cons (list :decl (kadr d) (cons (list :parameter) (true-list-fix (kaddr d))) t (list (list* (kar o) (kadr o) (kaddr e) (kdr (kdr (kdr o)))))) rest))
+            (imp rest)               ; under IMPLICIT NONE, undeclared
+            (t (cons (list :decl (imp-rule (kadr (kar e)) rules) (list (list :parameter)) t (list e)) rest))))))
+(defun par-decls (ds pre imp rules)  ; pre: the declarations before ds
+  (declare (xargs :guard t))
+  (cond ((atom ds) nil)
+        ((eq (kar (car ds)) :parstmt) (append (par-new (kadr (car ds)) pre imp rules) (par-decls (cdr ds) (cons (car ds) pre) imp rules)))
+        ((and (eq (kar (car ds)) :decl) (par-named (kar (decl-ent1 (car ds))) (cdr ds))) (par-decls (cdr ds) (cons (car ds) pre) imp rules))
+        (t (cons (car ds) (par-decls (cdr ds) (cons (car ds) pre) imp rules)))))
 (defun dim-specs (ds)
   (declare (xargs :guard t))
   (if (atom ds) nil (append (if (eq (kar (car ds)) :dimstmt) (true-list-fix (kaddr (car ds))) nil) (dim-specs (cdr ds)))))
@@ -257,7 +280,7 @@
                  (dim-implicit (cdr dims) declared rules)))))
 (defun unit-spec (u)                        ; (uses imp decls), DIMENSION and SAVE statements applied
   (declare (xargs :guard t))
-  (let* ((s (kaddr u)) (ds0 (clen-decls (kaddr s))) (dims (dim-specs ds0))
+  (let* ((s (kaddr u)) (ds0 (par-decls (clen-decls (kaddr s)) nil (kadr s) (unit-rules u))) (dims (dim-specs ds0))
          (ds (if dims (append (dim-decls ds0 dims) (if (kadr s) nil (dim-implicit dims (decl-names ds0) (unit-rules u)))) ds0)))
     (list (kar s) (kadr s) (if (or (save-all-p ds) (save-names ds)) (save-decls ds (save-all-p ds) (save-names ds)) ds))))
 (defun unit-exec (u) (declare (xargs :guard t)) (if (eq (kar u) :module) nil (kadddr u)))

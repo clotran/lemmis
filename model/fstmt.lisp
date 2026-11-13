@@ -76,6 +76,9 @@
                        (let ((dc (and (equal (kadr toks) (op ":")) (equal (kaddr toks) (op ":")))))
                          (mv-let (ok es r) (fps :ents (if dc (kdr (kdr (kdr toks))) (kdr toks)))
                            (if (and ok (consp es) (dim-ents-p es)) (mv t (list :dimstmt dc es) r) (fail)))))
+                      ((and (equal tk (kw "parameter")) (equal (kadr toks) (op "(")))   ; R855 parameter-stmt
+                       (mv-let (ok es r) (fps :ents (kdr (kdr toks)))
+                         (if (and ok (consp es) (par-ents-p es) (equal (kar r) (op ")"))) (mv t (list :parstmt es) (kdr r)) (fail))))
                       ((equal tk (kw "data"))                               ; R840 data-stmt
                        (mv-let (ok ss r) (fps :dsets (kdr toks)) (if ok (mv t (list :data ss) r) (fail))))
                       ((equal tk (kw "save"))                               ; R859 save-stmt
