@@ -67,6 +67,9 @@
 ;                                   allocate-object-list ), each a name
 ;         (:save dc ns)             R859 save-stmt: SAVE [[::] ns], ns saved
 ;                                   entity names (not a common block's)
+;         (:dimstmt dc es)          R851 dimension-stmt: DIMENSION [::] es,
+;                                   each entity-decl (:ent) an array-name (
+;                                   array-spec ), no initialization
 ;         (:stop e)                 R1162 stop-stmt: STOP stop-code (R1163,
 ;                                   e an expr; its type is the meaning's)
 ;         (:call n parens args)     R1521 call-stmt: CALL procedure-designator
@@ -179,6 +182,10 @@
 
 (include-book "fstmt-base")
 
+(defun dim-ents-p (es)               ; DIMENSION's entities: each with its array-spec, none initialized
+  (declare (xargs :guard t))
+  (if (atom es) t (and (consp (kadr (car es))) (null (kaddr (car es))) (dim-ents-p (cdr es)))))
+
 (defun kw-list (ss)
   (declare (xargs :guard t))
   (if (atom ss) nil (cons (kw (car ss)) (kw-list (cdr ss)))))
@@ -233,6 +240,7 @@
             (:simple (and (= (len x) 2) (member-equal (cadr x) *simple-kinds*) t))
             (:stop (and (= (len x) 2) (fg :expr (cadr x))))
             ((:allocate :deallocate) (and (= (len x) 2) (fg :args (cadr x)) (consp (cadr x)) (alloc-objs-p (cadr x) (eq (car x) :deallocate))))
+            (:dimstmt (and (= (len x) 3) (booleanp (cadr x)) (consp (caddr x)) (fgs :ents (caddr x)) (dim-ents-p (caddr x))))
             (:save (and (= (len x) 3) (booleanp (cadr x)) (names-p (caddr x)) (or (null (cadr x)) (consp (caddr x)))))
             (:call (and (= (len x) 4) (name-tok-p (cadr x)) (booleanp (caddr x))
                         (if (caddr x) (fg :args (cadddr x)) (null (cadddr x)))))
@@ -379,6 +387,7 @@
          (:stop (cons (kw "stop") (fy :expr (kadr x))))
          (:allocate (list* (kw "allocate") (op "(") (fy :args (kadr x))))
          (:deallocate (list* (kw "deallocate") (op "(") (fy :args (kadr x))))
+         (:dimstmt (cons (kw "dimension") (append (if (kadr x) (dcolon) nil) (fys :ents (kaddr x)))))
          (:save (cons (kw "save") (append (if (kadr x) (dcolon) nil) (onames-y (kaddr x)))))
          (:call (list* (kw "call") (kadr x) (if (kaddr x) (cons (op "(") (fy :args (kadddr x))) nil)))
          (:print (list* (kw "print") (fmt-tok (kadr x)) (fys :items (kaddr x))))

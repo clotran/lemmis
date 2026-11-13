@@ -301,10 +301,6 @@
           ((or stop (atom vs)) (mv nil rec recs))
           ((or (zp k) (not (fd-has-data rev))) (mv (err :format) rec recs))   ; items left, and no data edit descriptor to take them
           (t (fo-run rev rev vs (new-rec) (cons (rec-line rec) recs) md (1- k))))))
-(defun flat-vals (vs)                ; the output list's scalars, arrays in element order (9.5.3.2)
-  (if (atom vs) nil
-    (append (if (aval-p (car vs)) (wrap-all (a-ty (car vs)) (a-k (car vs)) (a-es (car vs))) (list (car vs)))
-            (flat-vals (cdr vs)))))
 
 (defun words (cs acc)                ; the blank-separated words of cs, as strings
   (cond ((atom cs) (if acc (list (lx-str (reverse acc))) nil))

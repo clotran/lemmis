@@ -35,7 +35,7 @@
     "double" "character" "complex" "type" "if" "else" "elseif" "endif" "do" "enddo"
     "select" "case" "cycle" "exit" "return" "stop" "continue" "call" "print"
     "function" "subroutine" "pure" "elemental" "impure" "recursive" "non_recursive"
-    "endprogram" "endmodule" "endfunction" "endsubroutine" "endselect" "selectcase" "go" "goto" "write" "format" "read" "doubleprecision" "save" "allocate" "deallocate" "block" "endblock"))
+    "endprogram" "endmodule" "endfunction" "endsubroutine" "endselect" "selectcase" "go" "goto" "write" "format" "read" "doubleprecision" "save" "allocate" "deallocate" "block" "endblock" "dimension" "data"))
 
 (defconst *fops*
   '("+" "-" "*" "/" "**" "==" "/=" "<" "<=" ">" ">=" "(" ")" "," "=" ":" "::" "[" "]" "%" "//"

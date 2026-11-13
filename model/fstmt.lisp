@@ -70,6 +70,10 @@
                       ((equal tk (kw "block")) (mv t (list :block) (kdr toks)))
                       ((and (equal tk (kw "implicit")) (equal (kadr toks) (kw "none")))
                        (mv t (list :implicit-none) (kdr (kdr toks))))
+                      ((equal tk (kw "dimension"))                          ; R851 dimension-stmt
+                       (let ((dc (and (equal (kadr toks) (op ":")) (equal (kaddr toks) (op ":")))))
+                         (mv-let (ok es r) (fps :ents (if dc (kdr (kdr (kdr toks))) (kdr toks)))
+                           (if (and ok (consp es) (dim-ents-p es)) (mv t (list :dimstmt dc es) r) (fail)))))
                       ((equal tk (kw "save"))                               ; R859 save-stmt
                        (cond ((atom (kdr toks)) (mv t (list :save nil nil) (kdr toks)))
                              ((and (equal (kadr toks) (op ":")) (equal (kaddr toks) (op ":")))

@@ -11,34 +11,51 @@ proved to accept exactly that grammar (`fp-`, `fps-`, `fpu-sound` and
 `-complete`), for every alternative the Scope uses; **part** when only
 some alternatives are in; **no** otherwise.
 
-Score: **151 of 186** Scope rules proved (81%); 35 more in part; none not yet in.
+Score: **152 of 187** Scope rules proved (81%); 35 more in part; none not yet in.
 
 ## Theorem 3: checked against the compilers (status)
 
 Not a theorem: a test, run by `make check` (exit 1 on any difference).
 
 - **Oracle programs**: check-fsem.bb's 7 fsyn cases (the subset clotran's
-  generator emits) and the 31 whole programs of `cases/`, each run by the
+  generator emits) and the 34 whole programs of `cases/`, each run by the
   model and by gfortran (-std=f2018) and flang; all agree, and the two
-  compilers agree with each other on all of them. One, `acdotyped.f90`,
+  compilers agree with each other on all of them but `modzero.f90`, whose
+  values the standard leaves open (below). One, `acdotyped.f90`,
   runs under flang only: gfortran 16 rejects R783's integer-type-spec
   (a case's first line `! not gfortran: why` says so).
 - **The fuzzer**: `fuzz.bb` (`make fuzz`, run by `make check` with seed
-  1, 40 programs; `make fuzz FUZZ_SEED=7 FUZZ_N=100` for more). It
-  generates programs of a slice of the subset only: integer and logical
-  scalars and one integer array; assignment, DO (with a step, EXIT,
-  CYCLE), IF constructs, PRINT *; + - * /, MOD, MODULO, MIN, MAX, ABS,
-  SIGN; the relations and the logical operators. No reals, characters,
-  procedures, modules, derived types, I/O under a format: those are
-  checked by the oracle programs only. A disagreement is kept in
-  `build/fuzz/` as a regression case. Seeds 1 (40) and 7 (100): all agree.
-  It found DIM missing from the model's intrinsics (not in the Scope).
+  1, 40 programs, about 35 s; `make fuzz FUZZ_SEED=7 FUZZ_N=100` for more).
+  Each program is a module (a derived type; an integer and a real(8)
+  function; a subroutine with INTENT IN, INOUT and OUT) and a main program
+  with an internal subroutine (host association); integer, real(8),
+  real(4), logical, character(6) and structure-component scalars and one
+  integer array; assignment (to a substring too), DO (a step, EXIT,
+  CYCLE), DO WHILE, IF constructs, SELECT CASE (ranges, lists, DEFAULT),
+  CALL, PRINT * (a whole structure too); + - * /, //, MOD, MODULO, MIN,
+  MAX, ABS, SIGN, SQRT, REAL/DBLE, INT, NINT, FLOOR, LEN_TRIM, TRIM,
+  substrings, structure constructors, the relations and the logical
+  operators. A real is compared by its value, as check-fsem does
+  (`fmatch.clj`). Not generated: allocatables, array sections and
+  constructors, complex, I/O under a format, recursion -- checked by the
+  oracle programs only. A program whose run turns on a processor-dependent
+  value (the model stops with :pd) is counted, not compared; a
+  disagreement is kept in `build/fuzz/` as a regression case. Seeds 1-5
+  (40 to 120 programs each): all agree. It found DIM missing (not in the
+  Scope); a whole structure printed as `?` (now its components, 12.6.3p7:
+  `cases/dtprint.f90`); and the sign of a real MOD or MODULO's zero
+  result, which the standard leaves open (16.9.145, 16.9.146 give the
+  value; gfortran answers A's sign for MOD and P's for MODULO, flang
+  another for MOD): the model's value is processor dependent there
+  (`cases/modzero.f90`).
 - **FCVS**: scored, not failed, and only when `fcvs/` is fetched
-  (`bb fetch-fcvs.bb`; not committed): 29 of 180 programs print their
-  reference output exactly (FM002-006, 008-010, 012, 019, 030-045, 060,
-  061, 109). Of the rest, 146 stop at a statement outside the subset
-  (DATA, DIMENSION, ASSIGN, computed GO TO, ...), 3 at an undeclared
-  name, 2 at a processor-dependent value. (The score read 0 until the
+  (`bb fetch-fcvs.bb`; not committed): 31 of 180 programs print their
+  reference output exactly (FM002-006, 008-010, 012, 017-019, 030-045,
+  060, 061, 109). Of the rest, 143 stop at a statement outside the
+  subset (first: CHARACTER name*len 65, IMPLICIT type-spec 35, fixed
+  form's blank-free COMPLEX 17, DATA 9, COMMON 9, ...), 4 at an
+  undeclared name (statement functions among them), 2 at a
+  processor-dependent value. (The score read 0 until the
   harness dropped the "exit 0" line LLVM's reference outputs end with.)
 - **flang's parse tree** (PLAN.md's parsing oracle) is not compared yet.
 
@@ -113,7 +130,7 @@ Not a theorem: a test, run by `make check` (exit 1 on any difference).
 - Derived types: a part-ref of an array of structures followed by
   another part-ref is an element (no `a(1:2)%x`); a dummy argument's
   type is its actual's by the type's name; no type-bound procedures or
-  parameters; a structure is printed and read by its components, and a
+  parameters; a structure is read by its components (printed whole, by its components in order: 12.6.3p7), and a
   component is not an actual argument that the procedure defines.
 - Complex: a part of a complex literal is a signed literal, not a named
   constant; a complex is printed by list-directed output only (not
@@ -205,6 +222,7 @@ Not a theorem: a test, run by `make check` (exit 1 on any difference).
 | R820 | assumed-shape-spec | proved |  |
 | R822 | deferred-shape-spec | proved | `:`, read as an assumed-shape-spec without a lower bound; an ALLOCATABLE entity's in the meaning |
 | R828 | intent-spec | proved | IN, OUT, INOUT, IN OUT |
+| R851 | dimension-stmt | proved | DIMENSION [::] entity-decl-list, each an array-name ( array-spec ), no initialization; in the meaning the array-spec joins the entity's declaration, or an implicitly typed one (8.7) |
 | R859 | save-stmt | proved | SAVE [[::] saved-entity-list], each an object-name (no common block); in the meaning, each saved entity's SAVE attribute (8.5.16) |
 | R866 | implicit-stmt | proved | IMPLICIT NONE |
 | R901 | designator | proved | object-name, array-element, array-section |

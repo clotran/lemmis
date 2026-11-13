@@ -498,11 +498,27 @@
 (defun wrap-all (ty k es)
   (declare (xargs :guard t))
   (if (atom es) nil (cons (wrap ty k (car es)) (wrap-all ty k (cdr es)))))
-(defun flat-vals (vs)                ; the scalars, an array's in array element order
+(defun wrap-onto (ty k es acc)       ; (append (wrap-all ty k es) acc)
   (declare (xargs :guard t))
-  (if (atom vs) nil
-    (append (if (aval-p (car vs)) (wrap-all (a-ty (car vs)) (a-k (car vs)) (a-es (car vs))) (list (car vs)))
-            (flat-vals (cdr vs)))))
+  (if (atom es) acc (cons (wrap ty k (car es)) (wrap-onto ty k (cdr es) acc))))
+; the scalars of an output list, then acc: an array's in array element
+; order (9.5.3.2), a structure's its components in component order (12.6.3p7)
+(mutual-recursion
+ (defun flat-val (v acc)
+   (declare (xargs :guard t :measure (acl2-count v)))
+   (cond ((and (aval-p v) (eq (a-ty v) :s)) (flat-ses (a-es v) acc))
+         ((aval-p v) (wrap-onto (a-ty v) (a-k v) (a-es v) acc))
+         ((eq (kar v) :s) (flat-cs (kaddr v) acc))
+         (t (cons v acc))))
+ (defun flat-cs (cs acc)
+   (declare (xargs :guard t :measure (acl2-count cs)))
+   (if (atom cs) acc (flat-cs (cdr cs) (flat-val (kdr (car cs)) acc))))   ; cs latest component first
+ (defun flat-ses (es acc)
+   (declare (xargs :guard t :measure (acl2-count es)))
+   (if (atom es) acc (flat-cs (car es) (flat-ses (cdr es) acc)))))
+(defun flat-vals (vs)
+  (declare (xargs :guard t))
+  (if (atom vs) nil (flat-val (car vs) (flat-vals (cdr vs)))))
 ; adjacent character items are written with no value separator between
 ; them (13.10.4, under the delimiter mode NONE, PRINT's)
 (defun render-flat (xs)
@@ -577,11 +593,13 @@
            (if (eq y :nan) (list :pd :r k)
              (vr k (if (fl-neg-p y) (fl-neg (fl-abs x)) (fl-abs x)))))
           ((fl-zero-p y) (err :divide))                            ; P shall not be zero
-          ((equal name "mod") (vr k (fl-mod k x y)))               ; A - INT (A/P) * P
+          ; a zero result's sign the standard leaves open (16.9.145, 16.9.146 give the value):
+          ; gfortran answers A's for MOD and P's for MODULO, flang other signs for MOD
+          ((equal name "mod") (let ((r (fl-mod k x y))) (if (fl-zero-p r) (list :pd :r k) (vr k r))))   ; A - INT (A/P) * P
           ((equal name "modulo")                                   ; A - FLOOR (A/P) * P
            (if (not (and (fl-fin-p x) (fl-fin-p y))) (vr k :nan)
              (let ((r (- (fl-val x) (* (floor (/ (fl-val x) (fl-val y)) 1) (fl-val y)))))
-               (vr k (if (= r 0) (fl-signed-zero (fl-neg-p x)) (fl-round k r))))))
+               (if (= r 0) (list :pd :r k) (vr k (fl-round k r))))))
           (t (err :type)))))
 (in-theory (disable real-el2))
 

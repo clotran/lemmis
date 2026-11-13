@@ -26,7 +26,7 @@
 ;                                    nothing)
 ;  :decls (d ...)                    R507 declaration-construct, each d a :decl
 ;  :decl  s                          a type-declaration-stmt (R801), a :decl
-;                                    or :tdecl statement, or a :save
+;                                    or :tdecl statement, or a :save or :dimstmt
 ;                                    statement (R859, a specification-stmt)
 ;         (:dtype ts comps end)      R726 derived-type-def: derived-type-stmt
 ;                                    [component-part] end-type-stmt; ts a
@@ -126,7 +126,7 @@
     (:decl (if (eq (kar x) :dtype)
                (and (true-listp x) (= (len x) 4) (equal (kar (cadr x)) :type) (fgs :stmt (cadr x))
                     (fgu :comps (caddr x)) (tend-ok (cadddr x) (cadr x)))
-             (and (member-eq (kar x) '(:decl :tdecl :save)) (fgs :stmt x))))
+             (and (member-eq (kar x) '(:decl :tdecl :save :dimstmt)) (fgs :stmt x))))
     (:comps (if (atom x) (null x)
               (and (member-eq (kar (car x)) '(:decl :tdecl)) (fgs :stmt (car x)) (fgu :comps (cdr x)))))
     (:exec (if (atom x) (null x) (and (fgu :c (car x)) (fgu :exec (cdr x)))))
@@ -232,7 +232,7 @@
        (if (and (consp toks) (if (eq nt :uses) (eq (kar s) :use) (member-eq (kar s) '(:decl :tdecl))))
            (mv-let (ok xs r) (fpu nt (cdr toks)) (if ok (mv t (cons s xs) r) (fail)))
          (mv t nil toks)))
-      (:decls (if (member-eq (kar s) '(:decl :tdecl :type :save))
+      (:decls (if (member-eq (kar s) '(:decl :tdecl :type :save :dimstmt))
                   (mv-let (ok d r) (fpu :decl toks)
                     (if (not (and ok (< (len r) (len toks)))) (fail)
                       (mv-let (ok2 ds r2) (fpu :decls r) (if ok2 (mv t (cons d ds) r2) (fail)))))
@@ -242,7 +242,7 @@
                    ((eq (kar s) :type)
                     (mv-let (ok cs r) (fpu :comps (cdr toks))
                       (if (and ok (consp r) (tend-ok (car r) s)) (mv t (list :dtype s cs (car r)) (cdr r)) (fail))))
-                   ((member-eq (kar s) '(:decl :tdecl :save)) (mv t s (cdr toks)))
+                   ((member-eq (kar s) '(:decl :tdecl :save :dimstmt)) (mv t s (cdr toks)))
                    (t (fail))))
       (:exec (if (c-start-p s)
                  (mv-let (ok c r) (fpu :c toks)
@@ -382,9 +382,9 @@
   (case nt
     (:exec (c-start-p s))
     (:uses (eq (kar s) :use))
-    (:decls (member-eq (kar s) '(:decl :tdecl :type :save)))
+    (:decls (member-eq (kar s) '(:decl :tdecl :type :save :dimstmt)))
     (:comps (member-eq (kar s) '(:decl :tdecl)))
-    (:spec (or (member-eq (kar s) '(:use :decl :tdecl :type :save)) (equal s '(:implicit-none))))
+    (:spec (or (member-eq (kar s) '(:use :decl :tdecl :type :save :dimstmt)) (equal s '(:implicit-none))))
     (:eifs (or (eq (kar s) :else-if) (c-start-p s)))   ; its last block's statements too
     (:arms (or (member-eq (kar s) '(:case :case-default)) (c-start-p s)))
     (:int (or (equal s '(:contains)) (member-eq (kar s) '(:function :subroutine))))
@@ -484,13 +484,13 @@
 (defthm fyu-decl-first
   (implies (fgu :decl x)
            (and (consp (fyu :decl x)) (consp (car (fyu :decl x)))
-                (member-equal (car (car (fyu :decl x))) '(:decl :tdecl :type :save))))
+                (member-equal (car (car (fyu :decl x))) '(:decl :tdecl :type :save :dimstmt))))
   :hints (("Goal" :expand ((fgu :decl x) (fyu :decl x)))))
 (defthm fyu-decls-first
   (implies (fgu :decls x)
            (and (equal (consp (fyu :decls x)) (consp x))
                 (implies (consp x) (and (consp (car (fyu :decls x)))
-                                        (member-equal (car (car (fyu :decls x))) '(:decl :tdecl :type :save))))))
+                                        (member-equal (car (car (fyu :decls x))) '(:decl :tdecl :type :save :dimstmt))))))
   :hints (("Goal" :expand ((fgu :decls x) (fyu :decls x)) :use ((:instance fyu-decl-first (x (car x))))
            :in-theory (disable fyu-decl-first))))
 (defthm fyu-comps-first
