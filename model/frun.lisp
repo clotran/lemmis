@@ -46,7 +46,7 @@
                    (declare (ignore copies))
                    (if e (mv e (close-lines (reverse (true-list-fix (st-out st)))))
                      (mv-let (fr st) (if (kadr spec) (mv fr st)          ; IMPLICIT NONE, or implicit typing (8.7)
-                                       (implicit-vars (used-names (unit-exec main)) fr env0 st))
+                                       (implicit-vars (used-names (unit-exec main)) fr env0 st (unit-rules main)))
                        (mv-let (s st) (me-blk (unit-exec main) (cons fr env0) st cx fuel)
                          (mv (cond ((equal s (err :stop)) :stop) ((eq s :normal) :normal)
                                    ((errp s) s) ((goto-p s) (err :label)) (t (err :syntax)))

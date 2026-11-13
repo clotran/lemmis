@@ -191,6 +191,42 @@
 (defun implicit-ty (n)
   (declare (xargs :guard t))
   (if (and (stringp n) (consp (coerce n 'list)) (member (car (coerce n 'list)) '(#\i #\j #\k #\l #\m #\n))) :i :r))
+;; R866 IMPLICIT statements (8.7): a name typed by the first spec whose
+;; letters hold its first letter, else by 8.7p3 (I to N integer, else real)
+(defun fchar (s) (declare (xargs :guard t)) (if (and (stringp s) (consp (coerce s (quote list)))) (char-code (car (coerce s (quote list)))) 0))
+(defun let-in (c ls)
+  (declare (xargs :guard t))
+  (if (atom ls) nil
+    (let* ((a (fchar (kadr (kar (car ls))))) (b (if (kadr (car ls)) (fchar (kadr (kadr (car ls)))) a)))
+      (or (and (<= a (nfix c)) (<= (nfix c) b)) (let-in c (cdr ls))))))
+(defun imp-rule (n rules)            ; the type-spec of an implicitly typed n
+  (declare (xargs :guard t))
+  (cond ((atom rules) (list (if (eq (implicit-ty n) :i) "integer" "real") nil))
+        ((let-in (fchar n) (kadr (car rules))) (kar (car rules)))
+        (t (imp-rule n (cdr rules)))))
+(defun imp-rules (ds)
+  (declare (xargs :guard t))
+  (if (atom ds) nil (append (if (eq (kar (car ds)) :implicit) (true-list-fix (kadr (car ds))) nil) (imp-rules (cdr ds)))))
+(defun unit-rules (u) (declare (xargs :guard t)) (imp-rules (kaddr (kaddr u))))
+;; R803 entity-decl * char-length (7.4.4.2): each declaration split an entity
+;; at a time, an entity with its own length declared CHARACTER * length; a
+;; length on another type (8.2 allows it on CHARACTER only) a kind that is no
+;; value (me-kind fails)
+(defun clen-ts (ts e)
+  (declare (xargs :guard t))
+  (cond ((not (consp (kdr (kdr (kdr e))))) ts)
+        ((equal (kar ts) "character") (list "character" (list :len (kadddr e))))
+        (t (list (kar ts) (list nil :bad)))))
+(defun clen-ents (d ents)
+  (declare (xargs :guard t))
+  (if (atom ents) nil
+    (cons (list :decl (clen-ts (kadr d) (car ents)) (kaddr d) (kadddr d) (list (car ents))) (clen-ents d (cdr ents)))))
+(defun clen-decls (ds)               ; IMPLICIT statements dropped (unit-rules reads them)
+  (declare (xargs :guard t))
+  (cond ((atom ds) nil)
+        ((eq (kar (car ds)) :implicit) (clen-decls (cdr ds)))
+        ((eq (kar (car ds)) :decl) (append (clen-ents (car ds) (kar (kdr (kdr (kdr (kdr (car ds))))))) (clen-decls (cdr ds))))
+        (t (cons (car ds) (clen-decls (cdr ds))))))
 (defun dim-specs (ds)
   (declare (xargs :guard t))
   (if (atom ds) nil (append (if (eq (kar (car ds)) :dimstmt) (true-list-fix (kaddr (car ds))) nil) (dim-specs (cdr ds)))))
@@ -213,16 +249,16 @@
   (declare (xargs :guard t))
   (if (atom ds) nil
     (append (if (member-eq (kar (car ds)) (quote (:decl :tdecl))) (ent-names (kar (kdr (kdr (kdr (kdr (car ds))))))) nil) (decl-names (cdr ds)))))
-(defun dim-implicit (dims declared)
+(defun dim-implicit (dims declared rules)
   (declare (xargs :guard t))
   (cond ((atom dims) nil)
-        ((member-equal (kar (car dims)) declared) (dim-implicit (cdr dims) declared))
-        (t (cons (list :decl (list (if (eq (implicit-ty (kadr (kar (car dims)))) :i) "integer" "real") nil) nil t (list (car dims)))
-                 (dim-implicit (cdr dims) declared)))))
+        ((member-equal (kar (car dims)) declared) (dim-implicit (cdr dims) declared rules))
+        (t (cons (list :decl (imp-rule (kadr (kar (car dims))) rules) nil t (list (car dims)))
+                 (dim-implicit (cdr dims) declared rules)))))
 (defun unit-spec (u)                        ; (uses imp decls), DIMENSION and SAVE statements applied
   (declare (xargs :guard t))
-  (let* ((s (kaddr u)) (ds0 (kaddr s)) (dims (dim-specs ds0))
-         (ds (if dims (append (dim-decls ds0 dims) (if (kadr s) nil (dim-implicit dims (decl-names ds0)))) ds0)))
+  (let* ((s (kaddr u)) (ds0 (clen-decls (kaddr s))) (dims (dim-specs ds0))
+         (ds (if dims (append (dim-decls ds0 dims) (if (kadr s) nil (dim-implicit dims (decl-names ds0) (unit-rules u)))) ds0)))
     (list (kar s) (kadr s) (if (or (save-all-p ds) (save-names ds)) (save-decls ds (save-all-p ds) (save-names ds)) ds))))
 (defun unit-exec (u) (declare (xargs :guard t)) (if (eq (kar u) :module) nil (kadddr u)))
 (defun unit-int (u) (declare (xargs :guard t)) (if (eq (kar u) :module) (kadddr u) (kar (kdr (kdr (kdr (kdr u)))))))
@@ -604,13 +640,17 @@
                   ((and (eq (car x) :range) (consp (cdr x)) (consp (cddr x))) (list (kadr (caddr x))))
                   (t nil))
             (used-names (car x)) (used-names (cdr x)))))
-(defun implicit-vars (ns fr env st)  ; (mv fr st): the undeclared names given variables
+(defun ts-undef (ts)                 ; an implicitly typed scalar, undefined: its type and kind or length
+  (declare (xargs :guard t))
+  (let ((ty (ts-ty (kar ts))))
+    (list :u ty (cond ((equal (kar ts) "double") 8) ((eq ty :c) (if (kadr ts) (digits-val (kadr (kadr (kadr ts)))) 1)) (t 4)))))
+(defun implicit-vars (ns fr env st rules)  ; (mv fr st): the undeclared names given variables
   (declare (xargs :guard t))
   (cond ((atom ns) (mv fr st))
         ((or (not (stringp (car ns))) (alk (car ns) fr) (mv-let (b suf d) (env-lookup (car ns) env) (declare (ignore suf d)) b))
-         (implicit-vars (cdr ns) fr env st))
-        (t (mv-let (loc st) (st-new (list :u (implicit-ty (car ns)) 4) st)
-             (implicit-vars (cdr ns) (cons (cons (car ns) (list :var loc :rw)) fr) env st)))))
+         (implicit-vars (cdr ns) fr env st rules))
+        (t (mv-let (loc st) (st-new (ts-undef (imp-rule (car ns) rules)) st)
+             (implicit-vars (cdr ns) (cons (cons (car ns) (list :var loc :rw)) fr) env st rules)))))
 
 ; ---- fmean's non-recursive steps, kept out of its mutual recursion
 

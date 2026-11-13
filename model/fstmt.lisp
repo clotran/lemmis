@@ -70,6 +70,8 @@
                       ((equal tk (kw "block")) (mv t (list :block) (kdr toks)))
                       ((and (equal tk (kw "implicit")) (equal (kadr toks) (kw "none")))
                        (mv t (list :implicit-none) (kdr (kdr toks))))
+                      ((equal tk (kw "implicit"))                           ; R866 implicit-stmt
+                       (mv-let (ok ss r) (imp-specs (kdr toks)) (if ok (mv t (list :implicit ss) r) (fail))))
                       ((equal tk (kw "dimension"))                          ; R851 dimension-stmt
                        (let ((dc (and (equal (kadr toks) (op ":")) (equal (kaddr toks) (op ":")))))
                          (mv-let (ok es r) (fps :ents (if dc (kdr (kdr (kdr toks))) (kdr toks)))
@@ -367,8 +369,12 @@
       (:ent (cond ((not (name-tok-p tk)) (fail))
                   ((equal (kadr toks) (op "("))
                    (mv-let (ok ss r) (fps :shapes (kdr (kdr toks)))
-                     (if (not (and ok (<= (len r) (len toks)))) (fail)
-                       (mv-let (ok2 i r2) (fps :init r) (if ok2 (mv t (list tk ss i) r2) (fail))))))
+                     (cond ((not (and ok (<= (len r) (len toks)))) (fail))
+                           ((and (equal (kar r) (op "*")) (len-tok-p (kadr r)))     ; R803 * char-length
+                            (mv-let (ok2 i r2) (fps :init (kdr (kdr r))) (if ok2 (mv t (list tk ss i (kadr r)) r2) (fail))))
+                           (t (mv-let (ok2 i r2) (fps :init r) (if ok2 (mv t (list tk ss i) r2) (fail)))))))
+                  ((and (equal (kadr toks) (op "*")) (len-tok-p (kaddr toks)))
+                   (mv-let (ok2 i r2) (fps :init (kdr (kdr (kdr toks)))) (if ok2 (mv t (list tk nil i (kaddr toks)) r2) (fail))))
                   (t (mv-let (ok2 i r2) (fps :init (kdr toks)) (if ok2 (mv t (list tk nil i) r2) (fail))))))
       (:init (if (equal tk (op "="))
                  (mv-let (ok e r) (fp :expr (kdr toks)) (if ok (mv t e r) (fail)))

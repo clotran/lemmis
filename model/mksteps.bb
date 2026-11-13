@@ -27,7 +27,7 @@
                         cexp (cond (call? bound) (cnt-of bound)
                                    (and (seq? bound) (= 'if (first bound)))
                                    (let [[_ tst a b] bound] (list 'if tst (br a) (br b)))
-                                   :else (throw (ex-info "mv-let bound" {:b bound})))]
+                                   :else 0)]                              ; a helper of its own (imp-specs), not counted
                     (list 'mv-let vars bound (list 'declare (cons 'ignorable vars))
                           (list 'let (list (list c cexp)) (tr (last body) (cons c acc)))))
                   (and (seq? x) (= 'cond (first x))) (cons 'cond (map (fn [cl] (list (first cl) (tr (second cl) acc))) (rest x)))

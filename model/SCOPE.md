@@ -11,14 +11,14 @@ proved to accept exactly that grammar (`fp-`, `fps-`, `fpu-sound` and
 `-complete`), for every alternative the Scope uses; **part** when only
 some alternatives are in; **no** otherwise.
 
-Score: **152 of 187** Scope rules proved (81%); 35 more in part; none not yet in.
+Score: **154 of 189** Scope rules proved (81%); 35 more in part; none not yet in.
 
 ## Theorem 3: checked against the compilers (status)
 
 Not a theorem: a test, run by `make check` (exit 1 on any difference).
 
 - **Oracle programs**: check-fsem.bb's 7 fsyn cases (the subset clotran's
-  generator emits) and the 34 whole programs of `cases/`, each run by the
+  generator emits) and the 36 whole programs of `cases/`, each run by the
   model and by gfortran (-std=f2018) and flang; all agree, and the two
   compilers agree with each other on all of them but `modzero.f90`, whose
   values the standard leaves open (below). One, `acdotyped.f90`,
@@ -49,13 +49,13 @@ Not a theorem: a test, run by `make check` (exit 1 on any difference).
   another for MOD): the model's value is processor dependent there
   (`cases/modzero.f90`).
 - **FCVS**: scored, not failed, and only when `fcvs/` is fetched
-  (`bb fetch-fcvs.bb`; not committed): 31 of 180 programs print their
+  (`bb fetch-fcvs.bb`; not committed): 38 of 180 programs print their
   reference output exactly (FM002-006, 008-010, 012, 017-019, 030-045,
-  060, 061, 109). Of the rest, 143 stop at a statement outside the
-  subset (first: CHARACTER name*len 65, IMPLICIT type-spec 35, fixed
-  form's blank-free COMPLEX 17, DATA 9, COMMON 9, ...), 4 at an
-  undeclared name (statement functions among them), 2 at a
-  processor-dependent value. (The score read 0 until the
+  060, 061, 109, 201-203, 205, 251, 256, 306). Of the rest, 133 stop at a
+  statement outside the subset (first: DATA 78, fixed form's blank-free
+  COMPLEX 20, COMMON 9, PARAMETER ( ... ) 5, ...), 7 at an undeclared or
+  undefined name (statement functions, implicit typing in a subprogram
+  among them), 2 at a processor-dependent value. (The score read 0 until the
   harness dropped the "exit 0" line LLVM's reference outputs end with.)
 - **flang's parse tree** (PLAN.md's parsing oracle) is not compared yet.
 
@@ -159,8 +159,8 @@ Not a theorem: a test, run by `make check` (exit 1 on any difference).
 | R502 | program-unit | proved | main-program, external-subprogram, module |
 | R503 | external-subprogram | proved |  |
 | R504 | specification-part | proved | use-stmts, IMPLICIT NONE, type-declaration-stmts |
-| R505 | implicit-part | proved | IMPLICIT NONE only |
-| R507 | declaration-construct | part | type-declaration-stmt, derived-type-def, save-stmt; no interface-block |
+| R505 | implicit-part | proved | IMPLICIT NONE first; IMPLICIT statements among the declaration-constructs (R507) |
+| R507 | declaration-construct | part | type-declaration-stmt, derived-type-def, save-stmt, dimension-stmt, implicit-stmt; no interface-block |
 | R509 | execution-part | proved |  |
 | R511 | internal-subprogram-part | proved |  |
 | R512 | internal-subprogram | proved |  |
@@ -212,7 +212,7 @@ Not a theorem: a test, run by `make check` (exit 1 on any difference).
 | R784 | ac-do-variable | proved | a construct entity (19.4) of the type of the variable of its name, which is integer (the meaning) |
 | R801 | type-declaration-stmt | proved |  |
 | R802 | attr-spec | proved | ALLOCATABLE, DIMENSION, INTENT, PARAMETER, SAVE, VALUE |
-| R803 | entity-decl | proved |  |
+| R803 | entity-decl | proved | object-name [( array-spec )] [* char-length] [initialization], the char-length an int-literal-constant; in the meaning the entity is CHARACTER of that length (7.4.4.2), and a length on another type an error (8.2's constraint on * char-length) |
 | R804 | object-name | proved |  |
 | R805 | initialization | proved | = constant-expr |
 | R814 | array-spec | proved | explicit-shape-spec-list, assumed-shape-spec-list, deferred-shape-spec-list |
@@ -224,7 +224,9 @@ Not a theorem: a test, run by `make check` (exit 1 on any difference).
 | R828 | intent-spec | proved | IN, OUT, INOUT, IN OUT |
 | R851 | dimension-stmt | proved | DIMENSION [::] entity-decl-list, each an array-name ( array-spec ), no initialization; in the meaning the array-spec joins the entity's declaration, or an implicitly typed one (8.7) |
 | R859 | save-stmt | proved | SAVE [[::] saved-entity-list], each an object-name (no common block); in the meaning, each saved entity's SAVE attribute (8.5.16) |
-| R866 | implicit-stmt | proved | IMPLICIT NONE |
+| R866 | implicit-stmt | proved | IMPLICIT NONE, IMPLICIT implicit-spec-list (read by imp-specs, proved with its own lemmas in fstmt-base.lisp); in the meaning a main program's undeclared names and DIMENSION'd names are typed by their first letter (8.7) |
+| R867 | implicit-spec | proved | declaration-type-spec ( letter-spec-list ): INTEGER, REAL, LOGICAL, COMPLEX, DOUBLE PRECISION, CHARACTER [* char-length]; no kind-selector |
+| R868 | letter-spec | proved | letter [- letter] |
 | R901 | designator | proved | object-name, array-element, array-section |
 | R902 | variable | proved | in assignment-stmt |
 | R908 | substring | proved | parent-string ( substring-range ); a scalar name's is a part-ref of one triplet, told apart by its type |

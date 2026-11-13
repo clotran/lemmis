@@ -85,6 +85,7 @@
   (:rewrite len-append-fp) (:rewrite name-tok-not-punct) (:rewrite nonempty-parts) (:rewrite parts-shape) (:rewrite parts-shape-comma) (:rewrite sfollow-facts) (:type-prescription binary-append)
   (:type-prescription ents-init-p) (:type-prescription fgs) (:type-prescription fys) (:type-prescription sfollow-ok) (:type-prescription true-listp-append))
  (fps-complete-ent
+  (:rewrite equal-list4) (:definition len-tok-p)
   (:type-prescription len) (:definition =) (:definition atom) (:definition binary-append) (:definition eq) (:definition eql) (:definition kar)
   (:definition kdr) (:definition kw) (:definition len) (:definition mv-nth) (:definition not) (:definition null) (:definition synp)
   (:definition true-listp) (:elim car-cdr-elim) (:executable-counterpart binary-+) (:executable-counterpart binary-append) (:executable-counterpart car) (:executable-counterpart consp) (:executable-counterpart eql)

@@ -23,6 +23,8 @@
 ;                                   bare ::, or "intrinsic" "non_intrinsic");
 ;                                   R1412/R1413 only: only-use-name (names)
 ;         (:implicit-none)          R866 implicit-stmt: IMPLICIT NONE
+;         (:implicit ss)            R866 implicit-stmt: IMPLICIT implicit-spec-list,
+;                                   ss its specs (imps-p, fstmt-base.lisp)
 ;         (:decl ts attrs dc ents)  R801 type-declaration-stmt:
 ;                                   declaration-type-spec [[, attr-spec]...
 ;                                   ::] entity-decl-list; dc whether "::"
@@ -153,8 +155,10 @@
 ;                                   upper-bound (R816, R817)
 ;         (:as lo)                  R820 assumed-shape-spec: [lower-bound] :
 ;  :ents  (ent ...) nonempty        entity-decl-list
-;  :ent   (n shapes init)           R803 entity-decl: object-name (R804)
-;                                   [( array-spec )] [initialization]; R805
+;  :ent   (n shapes init [l])       R803 entity-decl: object-name (R804)
+;                                   [( array-spec )] [* char-length]
+;                                   [initialization]; l the char-length, an
+;                                   int-literal-constant (R723); R805
 ;                                   initialization: = constant-expr
 ;  :names (n ...), ")" included     ( [dummy-arg-name-list] )
 ;  :onames (n ...)                  only-list, to the statement's end
@@ -241,6 +245,7 @@
             (:stop (and (= (len x) 2) (fg :expr (cadr x))))
             ((:allocate :deallocate) (and (= (len x) 2) (fg :args (cadr x)) (consp (cadr x)) (alloc-objs-p (cadr x) (eq (car x) :deallocate))))
             (:dimstmt (and (= (len x) 3) (booleanp (cadr x)) (consp (caddr x)) (fgs :ents (caddr x)) (dim-ents-p (caddr x))))
+            (:implicit (and (= (len x) 2) (imps-p (cadr x))))
             (:save (and (= (len x) 3) (booleanp (cadr x)) (names-p (caddr x)) (or (null (cadr x)) (consp (caddr x)))))
             (:call (and (= (len x) 4) (name-tok-p (cadr x)) (booleanp (caddr x))
                         (if (caddr x) (fg :args (cadddr x)) (null (cadddr x)))))
@@ -303,7 +308,7 @@
                    (:rng (and (= (len x) 3) (fg :expr (cadr x)) (fg :expr (caddr x))))
                    (otherwise nil))))
     (:ents (and (consp x) (fgs :ent (car x)) (or (null (cdr x)) (fgs :ents (cdr x)))))
-    (:ent (and (true-listp x) (= (len x) 3) (name-tok-p (car x))
+    (:ent (and (true-listp x) (or (= (len x) 3) (and (= (len x) 4) (len-tok-p (cadddr x)))) (name-tok-p (car x))
                (or (null (cadr x)) (fgs :shapes (cadr x)))
                (fgs :init (caddr x))))
     (:init (or (null x) (fg :expr x)))
@@ -388,6 +393,7 @@
          (:allocate (list* (kw "allocate") (op "(") (fy :args (kadr x))))
          (:deallocate (list* (kw "deallocate") (op "(") (fy :args (kadr x))))
          (:dimstmt (cons (kw "dimension") (append (if (kadr x) (dcolon) nil) (fys :ents (kaddr x)))))
+         (:implicit (cons (kw "implicit") (imps-y (kadr x))))
          (:save (cons (kw "save") (append (if (kadr x) (dcolon) nil) (onames-y (kaddr x)))))
          (:call (list* (kw "call") (kadr x) (if (kaddr x) (cons (op "(") (fy :args (kadddr x))) nil)))
          (:print (list* (kw "print") (fmt-tok (kadr x)) (fys :items (kaddr x))))
@@ -444,7 +450,8 @@
                 (:to (cons (op ":") (fy :expr (kadr x))))
                 (otherwise (append (fy :expr (kadr x)) (cons (op ":") (fy :expr (kaddr x)))))))
       (:ents (append (fys :ent (car x)) (if (consp (cdr x)) (cons (op ",") (fys :ents (cdr x))) nil)))
-      (:ent (append (list (car x)) (if (kadr x) (cons (op "(") (fys :shapes (kadr x))) nil) (fys :init (kaddr x))))
+      (:ent (append (list (car x)) (if (kadr x) (cons (op "(") (fys :shapes (kadr x))) nil)
+                    (if (kadddr x) (list (op "*") (kadddr x)) nil) (fys :init (kaddr x))))
       (:init (cons (op "=") (fy :expr x)))
       (:items (cons (op ",") (append (fy :expr (car x)) (fys :items (cdr x)))))
       (:oitems (append (fy :expr (car x)) (if (consp (cdr x)) (cons (op ",") (fys :oitems (cdr x))) nil)))

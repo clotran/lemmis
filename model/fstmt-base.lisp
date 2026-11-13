@@ -111,3 +111,114 @@
 (defun ents-init-p (ents)
   (declare (xargs :guard t))
   (if (atom ents) nil (or (and (consp (car ents)) (kaddr (car ents)) t) (ents-init-p (cdr ents)))))
+
+; R866 implicit-stmt IMPLICIT implicit-spec-list (R867 implicit-spec:
+; declaration-type-spec ( letter-spec-list ), R868 letter-spec: letter [-
+; letter]), read by a parser of its own: a spec (ts ls), ts a type-spec
+; without a kind-selector (INTEGER, REAL, LOGICAL, COMPLEX, DOUBLE PRECISION,
+; CHARACTER [* char-length]), ls the letter-specs, each (a b), b nil or the
+; range's last letter
+(defun let-tok-p (tk) (declare (xargs :guard t)) (and (name-tok-p tk) (stringp (kadr tk)) (equal (length (kadr tk)) 1)))
+(defthm let-tok-p-name (implies (let-tok-p tk) (and (consp tk) (equal (car tk) :name))) :rule-classes :forward-chaining)
+(in-theory (disable let-tok-p))
+(defun imp-ts-p (ts)
+  (declare (xargs :guard t))
+  (or (equal ts '("double" nil))
+      (and (true-listp ts) (= (len ts) 2) (member-equal (car ts) '("integer" "real" "logical" "complex" "character"))
+           (or (null (cadr ts))
+               (and (equal (car ts) "character") (true-listp (cadr ts)) (= (len (cadr ts)) 2)
+                    (eq (car (cadr ts)) :len) (len-tok-p (cadr (cadr ts))))))))
+(defun imp-ts-y (ts)
+  (declare (xargs :guard t))
+  (cons (kw (kar ts)) (cond ((equal (kar ts) "double") (list (kw "precision"))) ((kadr ts) (list (op "*") (kadr (kadr ts)))) (t nil))))
+(defun lets-p (ls)
+  (declare (xargs :guard t))
+  (and (consp ls) (true-listp (car ls)) (= (len (car ls)) 2) (let-tok-p (car (car ls)))
+       (or (null (cadr (car ls))) (let-tok-p (cadr (car ls))))
+       (if (consp (cdr ls)) (lets-p (cdr ls)) (null (cdr ls)))))
+(defun lets-y (ls)
+  (declare (xargs :guard t))
+  (if (atom ls) nil
+    (append (cons (kar (car ls)) (if (kadr (car ls)) (list (op "-") (kadr (car ls))) nil))
+            (if (consp (cdr ls)) (cons (op ",") (lets-y (cdr ls))) (list (op ")"))))))
+(defun imps-p (ss)
+  (declare (xargs :guard t))
+  (and (consp ss) (true-listp (car ss)) (= (len (car ss)) 2) (imp-ts-p (car (car ss))) (lets-p (cadr (car ss)))
+       (if (consp (cdr ss)) (imps-p (cdr ss)) (null (cdr ss)))))
+(defun imps-y (ss)
+  (declare (xargs :guard t))
+  (if (atom ss) nil
+    (append (imp-ts-y (kar (car ss))) (cons (op "(") (lets-y (kadr (car ss))))
+            (if (consp (cdr ss)) (cons (op ",") (imps-y (cdr ss))) nil))))
+
+(defun imp-ts (toks)                 ; (mv ts rest), ts nil when none
+  (declare (xargs :guard t))
+  (cond ((equal (kar toks) (kw "double"))
+         (if (equal (kadr toks) (kw "precision")) (mv (list "double" nil) (kdr (kdr toks))) (mv nil nil)))
+        ((and (equal (kar toks) (kw "character")) (equal (kadr toks) (op "*")) (len-tok-p (kaddr toks)))
+         (mv (list "character" (list :len (kaddr toks))) (kdr (kdr (kdr toks)))))
+        ((member-equal (kar toks) (list (kw "integer") (kw "real") (kw "logical") (kw "complex") (kw "character")))
+         (mv (list (kadr (kar toks)) nil) (kdr toks)))
+        (t (mv nil nil))))
+(defun imp-lets (toks)               ; (mv ok ls rest): letter-spec-list )
+  (declare (xargs :guard t :measure (len toks)))
+  (if (not (and (consp toks) (let-tok-p (car toks)))) (mv nil nil nil)
+    (let* ((rng (and (equal (kadr toks) (op "-")) (let-tok-p (kaddr toks))))
+           (l (list (car toks) (if rng (kaddr toks) nil)))
+           (r (if rng (kdr (kdr (kdr toks))) (cdr toks))))
+      (cond ((equal (kar r) (op ")")) (mv t (list l) (kdr r)))
+            ((equal (kar r) (op ","))
+             (mv-let (ok ls r2) (imp-lets (kdr r)) (if ok (mv t (cons l ls) r2) (mv nil nil nil))))
+            (t (mv nil nil nil))))))
+(defthm imp-lets-len
+  (and (<= (len (mv-nth 2 (imp-lets toks))) (len toks))
+       (implies (mv-nth 0 (imp-lets toks)) (< (len (mv-nth 2 (imp-lets toks))) (len toks))))
+  :rule-classes :linear)
+(defthm len-cdr-lt (implies (consp x) (< (len (cdr x)) (len x))) :rule-classes :linear)
+(defthm imp-ts-len
+  (implies (car (imp-ts toks)) (< (len (mv-nth 1 (imp-ts toks))) (len toks)))
+  :rule-classes :linear)
+(defthm imp-ts-sound
+  (implies (car (imp-ts toks))
+           (and (imp-ts-p (car (imp-ts toks))) (equal (append (imp-ts-y (car (imp-ts toks))) (mv-nth 1 (imp-ts toks))) toks)))
+  :hints (("Goal" :in-theory (enable len-tok-p member-equal))))
+(defthm imp-ts-complete
+  (implies (and (imp-ts-p ts) (not (equal (car r) (quote (:op "*"))))) (equal (imp-ts (append (imp-ts-y ts) r)) (mv ts r)))
+  :hints (("Goal" :in-theory (enable len-tok-p member-equal))))
+(defthm imp-ts-y-consp (and (consp (imp-ts-y ts)) (implies (imp-ts-p ts) (not (equal (car (imp-ts-y ts)) (quote (:name "none"))))))
+  :hints (("Goal" :in-theory (enable imp-ts-p))))
+(in-theory (disable imp-ts imp-ts-p imp-ts-y))
+(defun imp-specs (toks)              ; (mv ok ss rest)
+  (declare (xargs :guard t :measure (len toks)))
+  (mv-let (ts r) (imp-ts toks)
+    (if (not (and ts (equal (kar r) (op "(")))) (mv nil nil nil)
+      (mv-let (ok ls r2) (imp-lets (kdr r))
+        (cond ((not ok) (mv nil nil nil))
+              ((equal (kar r2) (op ","))
+               (mv-let (ok2 ss r3) (imp-specs (kdr r2)) (if ok2 (mv t (cons (list ts ls) ss) r3) (mv nil nil nil))))
+              (t (mv t (list (list ts ls)) r2)))))))
+
+(defthm imp-specs-len
+  (<= (len (mv-nth 2 (imp-specs toks))) (len toks))
+  :rule-classes :linear :hints (("Goal" :induct (imp-specs toks))))
+(defthm imp-lets-sound
+  (implies (mv-nth 0 (imp-lets toks))
+           (and (lets-p (mv-nth 1 (imp-lets toks)))
+                (equal (append (lets-y (mv-nth 1 (imp-lets toks))) (mv-nth 2 (imp-lets toks))) toks))))
+(defthm imp-lets-complete
+  (implies (lets-p x) (equal (imp-lets (append (lets-y x) r)) (mv t x r)))
+  :hints (("Goal" :induct (lets-p x))))
+(in-theory (disable imp-lets lets-p lets-y))
+(defthm imp-specs-sound
+  (implies (mv-nth 0 (imp-specs toks))
+           (and (imps-p (mv-nth 1 (imp-specs toks)))
+                (equal (append (imps-y (mv-nth 1 (imp-specs toks))) (mv-nth 2 (imp-specs toks))) toks)))
+  :hints (("Goal" :induct (imp-specs toks))))
+(defthm imp-specs-complete
+  (implies (and (imps-p x) (not (equal (kar r) (op ","))))
+           (equal (imp-specs (append (imps-y x) r)) (mv t x r)))
+  :hints (("Goal" :induct (imps-p x))))
+(defthm imps-y-first                  ; never IMPLICIT NONE
+  (implies (imps-p x) (and (consp (imps-y x)) (not (equal (car (imps-y x)) (quote (:name "none"))))))
+  :hints (("Goal" :expand ((imps-y x) (imps-p x)))))
+(in-theory (disable imp-specs imps-y imps-p))
