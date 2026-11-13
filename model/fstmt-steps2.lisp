@@ -1,5 +1,5 @@
 ; fstmt-steps2: fps-steps, the calls fstmt.lisp's parser makes, generated
-; from fps (bb regen-steps.bb fstmt.lisp fps fps-steps fp): the second half
+; from fps (bb regen-steps.bb fstmt.lisp fps fps-steps fp imp-specs): the second half
 ; of its case clauses here, the first in fstmt-steps.lisp; each fp call
 ; counted by fp-steps. fstmt-cost.lisp bounds it.
 
@@ -9,6 +9,34 @@
 (include-book "fstmt-steps")
 
 (set-ignore-ok t)
+
+; imp-specs, fps's IMPLICIT parser, counted: one step per letter-spec and
+; per implicit-spec, each consuming at least one token
+(defun imp-lets-steps (toks)
+  (declare (xargs :guard t :measure (len toks) :verify-guards nil))
+  (if (not (and (consp toks) (let-tok-p (car toks)))) 1
+    (let* ((rng (and (equal (kadr toks) (op "-")) (let-tok-p (kaddr toks))))
+           (r (if rng (kdr (kdr (kdr toks))) (cdr toks))))
+      (if (equal (kar r) (op ",")) (+ 1 (imp-lets-steps (kdr r))) 1))))
+(defun imp-specs-steps (toks)
+  (declare (xargs :guard t :measure (len toks) :verify-guards nil))
+  (mv-let (ts r) (imp-ts toks)
+    (if (not (and ts (equal (kar r) (op "(")))) 1
+      (mv-let (ok ls r2) (imp-lets (kdr r)) (declare (ignore ls))
+        (if (and ok (equal (kar r2) (op ",")))
+            (+ 1 (imp-lets-steps (kdr r)) (imp-specs-steps (kdr r2)))
+          (+ 1 (imp-lets-steps (kdr r))))))))
+(defthm imp-lets-cost
+  (implies (mv-nth 0 (imp-lets toks))
+           (<= (+ (imp-lets-steps toks) (len (mv-nth 2 (imp-lets toks)))) (len toks)))
+  :rule-classes :linear :hints (("Goal" :induct (imp-lets-steps toks) :in-theory (enable imp-lets))))
+(local (defthm len-cdr-imp (implies (consp x) (equal (len (cdr x)) (+ -1 (len x))))))
+(defthm imp-specs-cost
+  (implies (mv-nth 0 (imp-specs toks))
+           (<= (+ (imp-specs-steps toks) (len (mv-nth 2 (imp-specs toks)))) (len toks)))
+  :rule-classes :linear :hints (("Goal" :induct (imp-specs-steps toks) :expand ((imp-specs toks)))
+                                  ("Subgoal *1/3"
+                                   :use ((:instance imp-lets-cost (toks (cdr (mv-nth 1 (imp-ts toks))))) imp-ts-len))))
 
 (defconst *fps-steps-2*
  '((:ix

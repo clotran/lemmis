@@ -1,5 +1,5 @@
 ; fstmt-steps: the first half of fps-steps's case clauses (generated:
-; bb regen-steps.bb fstmt.lisp fps fps-steps fp); fstmt-steps2.lisp holds
+; bb regen-steps.bb fstmt.lisp fps fps-steps fp imp-specs); fstmt-steps2.lisp holds
 ; the rest and the defun, fstmt-cost.lisp bounds it.
 
 (in-package "ACL2")
@@ -26,7 +26,7 @@
         (ok ss r)
         (imp-specs (kdr toks))
         (declare (ignorable ok ss r))
-        (let ((c2 0)) (if ok (+ 1 c2) (+ 1 c2)))))
+        (let ((c2 (imp-specs-steps (kdr toks)))) (if ok (+ 1 c2) (+ 1 c2)))))
       ((equal tk (kw "dimension"))
        (let
         ((dc (and (equal (kadr toks) (op ":")) (equal (kaddr toks) (op ":")))))
