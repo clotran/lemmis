@@ -11,7 +11,7 @@ proved to accept exactly that grammar (`fp-`, `fps-`, `fpu-sound` and
 `-complete`), for every alternative the Scope uses; **part** when only
 some alternatives are in; **no** otherwise.
 
-Score: **159 of 196** Scope rules proved (81%); 37 more in part; none not yet in.
+Score: **159 of 197** Scope rules proved (81%); 38 more in part; none not yet in.
 
 ## Theorem 3: checked against the compilers (status)
 
@@ -49,15 +49,14 @@ Not a theorem: a test, run by `make check` (exit 1 on any difference).
   another for MOD): the model's value is processor dependent there
   (`cases/modzero.f90`).
 - **FCVS**: scored, not failed, and only when `fcvs/` is fetched
-  (`bb fetch-fcvs.bb`; not committed): 57 of 180 programs print their
-  reference output exactly (FM002-010, 012, 016-019, 021, 026, 030-045,
-  060, 061, 097, 098, 109, 201-203, 205, 251, 256, 306, 353-355, 359-362,
-  368, 801, 805-807, 812). Of the rest, 77 stop at a statement outside the
+  (`bb fetch-fcvs.bb`; not committed): 62 of 180 programs print their
+  reference output exactly (FM002-010, 012, 016-021, 026, 030-045,
+  060, 061, 097, 098, 109, 201-205, 251, 254, 256, 301, 306, 352-355,
+  359-362, 368, 801, 805-807, 812). Of the rest, 77 stop at a statement outside the
   subset (first: fixed form's blank-free COMPLEX 16, COMMON 13, OPEN 11,
-  PARAMETER ( ... ) 5, ...); 35 at a processor-dependent value (most an
+  PARAMETER ( ... ) 5, ...); 36 at a processor-dependent value (most an
   approximated SIN, EXP, LOG, ATAN2, ... the program compares within a
-  tolerance); 2 at an undeclared name (statement functions); 4 at an
-  undefined one, 5 at an I/O end or unit. (The score read 0 until the
+  tolerance); 5 at an I/O end or unit. (The score read 0 until the
   harness dropped the "exit 0" line LLVM's reference outputs end with.)
 - **flang's parse tree** (PLAN.md's parsing oracle) is not compared yet.
 
@@ -98,7 +97,7 @@ Not a theorem: a test, run by `make check` (exit 1 on any difference).
 - `fspec.lisp`: FORTRAN 77's specific intrinsic names (16.8, Tables 16.2,
   16.3: IABS, AMOD, IFIX, FLOAT, SNGL, IDINT, DSQRT, AMAX0, MAX1, ...), each
   its generic on arguments of the one type and kind its row gives (others
-  an error), and DPROD; DIM, AINT, ANINT, ATAN2 are fval's
+  an error), DPROD, ICHAR and IACHAR (ASCII codes); DIM, AINT, ANINT, ATAN2 are fval's
   (`cases/specific.f90`). A specific name as an actual argument is not in
   the subset.
 - `freal.lisp`: the binary32 and binary64 formats of ISO/IEC 60559 for
@@ -357,5 +356,6 @@ Not a theorem: a test, run by `make check` (exit 1 on any difference).
 | R1538 | subroutine-stmt | proved |  |
 | R1539 | dummy-arg | proved | dummy-arg-name |
 | R1540 | end-subroutine-stmt | proved |  |
+| R1544 | stmt-function-stmt | part | read as R1033 assignment-stmt (the same tokens): in the meaning a main program's leading assignments name ( dummy-arg-name-list ) = expr, name not an array, are statement functions (15.6.4), typed by declaration or implicitly; each actual a scalar of its dummy's type and kind (a character's length too); a subprogram's are not in the meaning |
 | R1545 | return-stmt | proved | no alternate return |
 | R1546 | contains-stmt | proved |  |

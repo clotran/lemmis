@@ -1,5 +1,6 @@
 ; Lemmis: the specific names of intrinsic functions (16.8, Tables 16.2, 16.3),
-; FORTRAN 77's, and DPROD (16.9.71).
+; FORTRAN 77's, and DPROD (16.9.71), ICHAR, IACHAR (16.9.104, 16.9.98); and
+; a statement function's arguments (15.6.4).
 ;
 ; A specific name is the generic intrinsic of its row on arguments of the
 ; one type and kind the row gives (default integer :i 4, default real :r 4,
@@ -47,8 +48,25 @@
                  ((or (eq (kar x) :u) (eq (kar y) :u)) (err :undefined))
                  ((or (pd-p x) (pd-p y)) (list :pd :r 8))
                  (t (vr 8 (fl-mul 8 (v-num x) (v-num y))))))   ; exact: 24 + 24 bits fit in 53
+          ((member-equal name '("ichar" "iachar"))   ; the code in ASCII, the model's collating sequence
+           (let ((cs (and (cval-p x) (stringp (kaddr x)) (coerce (kaddr x) 'list))))
+             (cond ((not (and (= (len vs) 1) (null kw))) (err :arity)) ((eq (kar x) :u) (err :undefined))
+                   ((and (= (len cs) 1) (characterp (car cs))) (vi 4 (char-code (car cs)))) (t (err :type)))))
           ((not (consp s)) (intrinsic name vs kw))
           ((not (and (null kw) (spec-args-ok (cadr s) (caddr s) vs))) (err :type))
           (t (let ((r (intrinsic (car s) vs nil)))
                (if (and (cadddr s) (not (errp r))) (intrinsic (cadddr s) (list r) nil) r))))))
 (in-theory (disable intrinsic-spec))
+
+; a statement function's reference (15.6.4): its dummies dts ((name :u ty k)
+; ...) bound to the actuals' values vs, each a scalar of the dummy's type and
+; kind (for a character, its length: shorter or longer actuals are not in the subset)
+(defun sfun-bind (dts vs kw)
+  (declare (xargs :guard t))
+  (cond ((errp vs) vs) (kw (err :type))
+        ((atom dts) (if (atom vs) nil (err :arity)))
+        ((atom vs) (err :arity))
+        (t (let ((v (car vs)) (u (cdr (kar dts))))
+             (if (or (aval-p v) (not (equal (scal-ty v) (kadr u))) (not (equal (scal-k v) (kaddr u)))) (err :type)
+               (let ((r (sfun-bind (cdr dts) (cdr vs) nil)))
+                 (if (errp r) r (cons (cons (kar (kar dts)) (list :const v)) r))))))))

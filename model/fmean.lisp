@@ -248,6 +248,13 @@
                                    (t (with-v (rs st) (me-elem u (proc-host (kaddr b) suf cx) vs 0 (prod sh) env st cx (1- fuel))
                                         (mv (elem-result rs sh) st)))))))
                         (t (me-call u (proc-host (kaddr b) suf cx) args env st cx (1- fuel))))))
+         ; a statement function (15.6.4): its expression, the dummies the actuals'
+         ; values, in its own scoping unit (suf), the value as by assignment to its type
+         (:sfun (mv-let (vs kw st) (me-iargs args nil env st cx (1- fuel))
+                  (let ((fr (sfun-bind (kadr b) vs kw)))
+                    (if (errp fr) (mv fr st)
+                      (with-v (r st) (me-ev :expr (kaddr b) (cons fr suf) st cx (1- fuel))
+                        (mv (assign-val (kadddr b) r) st))))))
          (:type (with-v (vs st) (mv-let (vs kw st) (me-iargs args nil env st cx (1- fuel))   ; R756
                                   (mv (if (errp vs) vs (list :ok vs kw)) st))
                   (mv (s-cons (tok-name tk) (kadr b) (kadr vs) (kaddr vs)) st)))
