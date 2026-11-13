@@ -7,6 +7,7 @@
 (in-package "ACL2")
 
 (include-book "fio")
+(include-book "fspec")
 
 (set-verify-guards-eagerness 0)
 
@@ -252,7 +253,7 @@
                   (mv (s-cons (tok-name tk) (kadr b) (kadr vs) (kaddr vs)) st)))
          ((nil) (with-v (vs st) (mv-let (vs kw st) (me-iargs args (member-equal (tok-name tk) '("size" "lbound" "ubound" "kind" "huge" "len" "allocated")) env st cx (1- fuel))
                                   (mv (if (errp vs) vs (list :ok vs kw)) st))
-                  (mv (intrinsic (tok-name tk) (kadr vs) (kaddr vs)) st)))
+                  (mv (intrinsic-spec (tok-name tk) (kadr vs) (kaddr vs)) st)))
          (otherwise (mv (err :type) st))))))
 
  (defun me-elem (u host vs i n env st cx fuel)   ; the results at elements i .. n-1

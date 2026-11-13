@@ -49,14 +49,15 @@ Not a theorem: a test, run by `make check` (exit 1 on any difference).
   another for MOD): the model's value is processor dependent there
   (`cases/modzero.f90`).
 - **FCVS**: scored, not failed, and only when `fcvs/` is fetched
-  (`bb fetch-fcvs.bb`; not committed): 43 of 180 programs print their
+  (`bb fetch-fcvs.bb`; not committed): 57 of 180 programs print their
   reference output exactly (FM002-010, 012, 016-019, 021, 026, 030-045,
-  060, 061, 109, 201-203, 205, 251, 256, 306, 368). Of the rest, 77 stop at a
-  statement outside the subset (first: fixed form's blank-free COMPLEX 17,
-  COMMON 13, OPEN 11, PARAMETER ( ... ) 5, ...); 38 at an undeclared name
-  (most a FORTRAN 77 specific intrinsic: IFIX, AINT, AMOD, DIM, IDINT, ...;
-  statement functions), 4 at an undefined one, 13 at a processor-dependent
-  value, 5 at an I/O end or unit. (The score read 0 until the
+  060, 061, 097, 098, 109, 201-203, 205, 251, 256, 306, 353-355, 359-362,
+  368, 801, 805-807, 812). Of the rest, 77 stop at a statement outside the
+  subset (first: fixed form's blank-free COMPLEX 16, COMMON 13, OPEN 11,
+  PARAMETER ( ... ) 5, ...); 35 at a processor-dependent value (most an
+  approximated SIN, EXP, LOG, ATAN2, ... the program compares within a
+  tolerance); 2 at an undeclared name (statement functions); 4 at an
+  undefined one, 5 at an I/O end or unit. (The score read 0 until the
   harness dropped the "exit 0" line LLVM's reference outputs end with.)
 - **flang's parse tree** (PLAN.md's parsing oracle) is not compared yet.
 
@@ -94,6 +95,12 @@ Not a theorem: a test, run by `make check` (exit 1 on any difference).
   program from its text (`fmean-cost.lisp`: its data operations' cost, and tests). `fortran-parse` is flex, then fps
   on each statement, then fpu; `fortran-parse-sound`: what it accepts is
   a program of the grammar.
+- `fspec.lisp`: FORTRAN 77's specific intrinsic names (16.8, Tables 16.2,
+  16.3: IABS, AMOD, IFIX, FLOAT, SNGL, IDINT, DSQRT, AMAX0, MAX1, ...), each
+  its generic on arguments of the one type and kind its row gives (others
+  an error), and DPROD; DIM, AINT, ANINT, ATAN2 are fval's
+  (`cases/specific.f90`). A specific name as an actual argument is not in
+  the subset.
 - `freal.lisp`: the binary32 and binary64 formats of ISO/IEC 60559 for
   real kinds 4 and 8: rounding to nearest even, signed zeros, infinities,
   NaN, subnormals, a correctly rounded SQRT; `assert-event` tests against

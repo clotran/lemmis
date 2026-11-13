@@ -536,7 +536,7 @@
 
 (defun conv-kind-ty (name k ty kk)   ; the result type and kind of an elemental intrinsic
   (declare (xargs :guard t))
-  (cond ((member-equal name '("real" "dble")) (mv :r (if (equal name "dble") 8 k)))
+  (cond ((member-equal name '("real" "dble" "aint" "anint")) (mv :r (if (equal name "dble") 8 k)))
         ((member-equal name '("int" "nint" "floor" "ceiling")) (mv :i k))
         ((and (member-equal name '("abs" "aimag")) (eq ty :z)) (mv :r kk))
         (t (mv ty kk))))
@@ -560,11 +560,16 @@
          (cond ((equal name "aimag") (vr (v-kind a) (z-im a)))                ; 16.9.6
                ((equal name "conjg") (vz (v-kind a) (z-re a) (fl-neg (z-im a))))   ; 16.9.59
                ((equal name "real") (if (rkind-p k) (vr k (fl-conv k (z-re a))) (err :type)))   ; 16.9.170
+               ((member-equal name (cons "sqrt" *pd-real-fns*)) (list :pd :z (v-kind a)))
                (t (err :type))))
         ((not (num-p a)) (err :type))
         ((member-equal name '("real" "dble"))                                ; 16.9.170, 16.9.68
          (let ((kk (if (equal name "dble") 8 k))) (if (rkind-p kk) (vr kk (to-fl kk a)) (err :type))))
         ((and (equal name "int") (ival-scalar a)) (mk-int k (v-num a)))      ; 16.9.110
+        ((member-equal name '("aint" "anint"))   ; 16.9.9, 16.9.14: a whole number, a zero A's sign
+         (let ((x (v-num a)) (n (fl-to-int (if (equal name "aint") :trunc :nint) (v-num a))))
+           (cond ((not (and (rval-p a) (rkind-p k))) (err :type)) ((not (integerp n)) (vr k (fl-conv k x)))
+                 (t (vr k (fl-conv k (if (and (= n 0) (fl-neg-p x)) :nzero n)))))))
         ((member-equal name '("int" "nint" "floor" "ceiling"))               ; 16.9.110, .153, .80, .39
          (if (not (rval-p a)) (err :type)
            (let ((n (fl-to-int (cond ((equal name "nint") :nint) ((equal name "floor") :floor)
@@ -592,6 +597,9 @@
           ((equal name "sign")                                     ; 16.9.189: case (iv) for zeros
            (if (eq y :nan) (list :pd :r k)
              (vr k (if (fl-neg-p y) (fl-neg (fl-abs x)) (fl-abs x)))))
+          ((equal name "dim")                                      ; 16.9.69: X - Y if X > Y, else zero
+           (cond ((or (eq x :nan) (eq y :nan)) (list :pd :r k)) ((fl-less y x) (vr k (fl-sub k x y))) (t (vr k 0))))
+          ((equal name "atan2") (if (and (fl-zero-p x) (fl-zero-p y)) (err :domain) (list :pd :r k)))   ; 16.9.20
           ((fl-zero-p y) (err :divide))                            ; P shall not be zero
           ; a zero result's sign the standard leaves open (16.9.145, 16.9.146 give the value):
           ; gfortran answers A's for MOD and P's for MODULO, flang other signs for MOD
@@ -609,11 +617,12 @@
         ((or (pd-p a) (pd-p p)) (if (pd-p a) a (list :pd (scal-ty a) (scal-k a))))
         ((and (rval-p a) (rval-p p))
          (if (equal (v-kind a) (v-kind p)) (real-el2 name a p) (err :type)))
-        ((not (and (ival-scalar a) (ival-scalar p))) (err :type))
+        ((not (and (ival-scalar a) (ival-scalar p) (not (equal name "atan2")))) (err :type))
         ((not (equal (v-kind a) (v-kind p))) (err :type))   ; same kind (16.9.135, 16.9.145)
         ((equal name "max") (vi (v-kind a) (max (v-num a) (v-num p))))
         ((equal name "min") (vi (v-kind a) (min (v-num a) (v-num p))))
         ((equal name "sign") (mk-int (v-kind a) (if (< (v-num p) 0) (- (abs (v-num a))) (abs (v-num a)))))
+        ((equal name "dim") (mk-int (v-kind a) (max 0 (- (v-num a) (v-num p)))))
         ((= (v-num p) 0) (err :divide))                      ; P shall not be zero
         ((equal name "mod") (mk-int (v-kind a) (- (v-num a) (* (idiv (v-num a) (v-num p)) (v-num p)))))
         ((equal name "modulo") (mk-int (v-kind a) (mod (v-num a) (v-num p))))
@@ -708,7 +717,9 @@
                (err :arity))
               ((not k) (err :type))
               (t (ew1 name k a)))))
-     ((member-equal name '("mod" "modulo" "sign"))
+     ((member-equal name '("aint" "anint"))                 ; A's kind (KIND= not in the subset)
+      (if (and (= n 1) (null kw)) (ew1 name (if (aval-p a) (a-k a) (scal-k a)) a) (err :arity)))
+     ((member-equal name '("mod" "modulo" "sign" "dim" "atan2"))
       (if (and (= n 2) (null kw)) (ew2 name a (kadr vs)) (err :arity)))
      ((member-equal name '("max" "min"))
       (if (and (<= 2 n) (null kw)) (fold-max-min name a (cdr vs)) (err :arity)))
