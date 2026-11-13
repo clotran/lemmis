@@ -41,7 +41,9 @@
     (:prefix (or (tok-in tk *prefix-kws*) (tok-in tk *type-kws*) (equal tk (op "(")) (equal tk (op "*"))))
     (:fn-rest (equal tk (kw "result")))
     (:sub-rest (equal tk (op "(")))
-    ((:shapes :shapes* :names :names1 :ranges :ixs :ios :kios) nil)
+    (:dobj (cont-tok-p :prim tk))
+    (:dval (or (equal tk (op "*")) (cont-tok-p :prim tk)))
+    ((:shapes :shapes* :names :names1 :ranges :ixs :ios :kios :dobjs :dvals) nil)
     (otherwise t)))                       ; a statement is whole; DO's control ends it
 
 (defun sfollow-ok (nt r)
@@ -52,7 +54,7 @@
   (and (implies (and (atom r) (not (member-eq nt '(:shape :range :ix :io)))) (sfollow-ok nt r))
        (equal (sfollow-ok nt (cons a b)) (not (scont-tok-p nt a)))
        (equal (sfollow-ok nt (append a b)) (if (consp a) (not (scont-tok-p nt (car a))) (sfollow-ok nt b)))
-       (implies (member-eq nt '(:shapes :shapes* :names :names1 :ranges :ixs :ios :kios)) (sfollow-ok nt r))
+       (implies (member-eq nt '(:shapes :shapes* :names :names1 :ranges :ixs :ios :kios :dobjs :dvals)) (sfollow-ok nt r))
        (implies (sfollow-ok :io r) (and (follow-ok :expr r) (consp r)))
        (implies (and (sfollow-ok :io r) (not (equal (car r) (op ",")))) (equal (car r) (op ")")))
        ; what follows an initialization or a shape follows its expression
@@ -258,7 +260,7 @@
     `(defthm ,(packn (list 'fps-complete- nt))
        (implies (and ,(complete-hyp nt 'x) (sfollow-ok ,nt r))
                 (equal ,top (mv t x r)))
-       :hints (("Goal" ,@(if (member-eq nt '(:shapes* :names1 :onames :attrs :ents :items :prefix :ranges :ixs :oitems :kios))
+       :hints (("Goal" ,@(if (member-eq nt '(:shapes* :names1 :onames :attrs :ents :items :prefix :ranges :ixs :oitems :kios :dobjs :dvals :dsets))
                               '(:induct (len x)) nil)
                 :expand (,top) :in-theory (thy-or ,(packn (list 'fps-complete- nt)) (enable member-equal)))
                (top-expand-hint id ',top)))))
@@ -312,6 +314,136 @@
 (fps-complete-at :attr)
 (fps-complete-at :attrs)
 (fps-complete-at :ent)
+(defthm prim-start-not-op           ; a primary begins with no sign, comma, slash or star
+  (implies (prim-start-p tk) (not (member-equal tk (list (op "+") (op "-") (op ",") (op "/") (op "*")))))
+  :hints (("Goal" :in-theory (union-theories (quote ((:definition member-equal) (:executable-counterpart prim-start-p) (:executable-counterpart op))) (theory (quote minimal-theory))))))
+(defthm xname-not-paren (implies (xname-tok-p tk) (not (equal tk (quote (:op "(")))))
+  :hints (("Goal" :in-theory (enable xname-tok-p name-tok-p))))
+(defthm fy-prim-first                ; a primary begins with a name, a literal, ( or [; a designator with a name
+  (implies (fg :prim x)
+           (and (consp (fy :prim x))
+                (not (member-equal (car (fy :prim x)) (list (op "+") (op "-") (op ",") (op "/") (op "*"))))
+                (implies (dobj-p x) (not (equal (car (fy :prim x)) (op "("))))))
+  :hints (("Goal" :use (fy-first-prim (:instance prim-start-not-op (tk (car (fy :prim x)))) fy-first-base (:instance fy-first-base (x (cadr x))))
+           :expand ((fy :prim x) (fg :prim x))
+           :in-theory (thy-or fy-prim-first (e/d (dobj-p) (fy-first-prim prim-start-not-op fy-first-base))))))
+(defthm fys-dobj-first
+  (implies (fgs :dobj x) (and (consp (fys :dobj x)) (not (member-equal (car (fys :dobj x)) (list (op ",") (op "/"))))))
+  :hints (("Goal" :expand ((fys :dobj x) (fgs :dobj x)) :use fy-prim-first :in-theory (thy-or fys-dobj-first (e/d (member-equal) (fy-prim-first))))))
+(defthm dobj-dval-follow              ; what follows a DATA object or value follows its primary
+  (and (implies (sfollow-ok :dobj r) (follow-ok :prim r))
+       (implies (sfollow-ok :dval r) (and (follow-ok :prim r) (not (equal (car r) '(:op "*"))))))
+  :hints (("Goal" :in-theory (union-theories (quote (  (:type-prescription len) (:definition follow-ok) (:definition scont-tok-p) (:definition sfollow-ok) (:executable-counterpart equal) (:executable-counterpart member-equal) (:executable-counterpart not)   (:executable-counterpart op) (:rewrite default-car) (:rewrite follow-atom) (:type-prescription cont-tok-p) (:type-prescription follow-ok))) (theory (quote minimal-theory))))))
+; a DATA object's and value's cases, each read back by fps over its own
+; spelling, the primaries kept whole (fp-complete reads them back)
+(defmacro prim-case (nt name tokens tree hyps uses)
+  `(defthm ,name
+     (implies (and ,@hyps) (equal (fps ,nt ,tokens) (mv t ,tree r)))
+     :hints (("Goal" :expand ((:free (s) (fps ,nt ,tokens))) :use ,uses
+              :in-theory (union-theories '((:definition kar) (:definition kdr) (:definition mv-nth) (:definition not) (:definition member-equal)
+                                           (:rewrite car-append-fp) (:rewrite consp-append-fp) (:rewrite car-cons) (:rewrite cdr-cons)
+                                           (:executable-counterpart op) (:executable-counterpart equal) (:executable-counterpart member-equal)
+                                           (:executable-counterpart consp) (:executable-counterpart car) (:executable-counterpart cdr)
+                                           (:executable-counterpart dconst-p) (:executable-counterpart kar) (:executable-counterpart kdr)
+                                           (:executable-counterpart not) (:definition follow-ok) (:definition atom) (:rewrite kadr-etc)
+                                           (:rewrite kar-kdr-consp) (:executable-counterpart cont-tok-p))
+                              (theory 'minimal-theory))))))
+(prim-case :dobj dobj-p-case (append (fy :prim x) r) x
+  ((fg :prim x) (dobj-p x) (follow-ok :prim r))
+  ((:instance fp-complete (nt :prim)) fy-prim-first))
+(defthm follow-ok-ilist (follow-ok :ilist r) :hints (("Goal" :in-theory (union-theories (quote ((:definition follow-ok) (:definition cont-tok-p) (:definition atom) (:definition not) (:executable-counterpart member-equal) (:executable-counterpart op) (:executable-counterpart equal))) (theory (quote minimal-theory))))))
+(prim-case :dobj dobj-ido-case (cons '(:op "(") (append (fy :ilist y) r)) (cons :ido y)
+  ((fg :ilist y))
+  ((:instance fp-complete (nt :ilist) (x y)) follow-ok-ilist))
+(defthm fps-complete-dobj
+  (implies (and (fgs :dobj x) (sfollow-ok :dobj r)) (equal (fps :dobj (append (fys :dobj x) r)) (mv t x r)))
+  :hints (("Goal" :expand ((fgs :dobj x) (fys :dobj x)) :use dobj-dval-follow
+           :in-theory (union-theories '((:rewrite dobj-p-case) (:rewrite dobj-ido-case) (:rewrite cons-car-cdr-fp) (:definition binary-append)
+                                        (:rewrite car-cons) (:rewrite cdr-cons) (:executable-counterpart equal) (:definition eq) (:definition not) (:executable-counterpart op) (:definition kar) (:executable-counterpart member-equal) (:definition dobj-p) (:definition member-equal))
+                              (theory 'minimal-theory)))))
+(defthm len-fys-dobj (implies (fgs :dobj x) (< 0 (len (fys :dobj x)))) :rule-classes :linear
+  :hints (("Goal" :use fys-dobj-first :expand ((len (fys :dobj x))) :in-theory (union-theories (quote ((:definition len) (:type-prescription len))) (theory (quote minimal-theory))))))
+; a DATA list's theory: :ents's, without its element's lemmas
+(defconst *dlist-runes*
+  '((:type-prescription len) (:definition atom) (:definition binary-append) (:definition fix) (:definition kar) (:definition kdr) (:definition len)
+    (:definition mv-nth) (:definition not) (:definition null) (:definition synp) (:executable-counterpart binary-+) (:executable-counterpart consp)
+    (:executable-counterpart eql) (:executable-counterpart equal) (:executable-counterpart fgs) (:executable-counterpart fys) (:executable-counterpart len)
+    (:executable-counterpart member-equal) (:executable-counterpart name-tok-p) (:executable-counterpart not) (:executable-counterpart null)
+    (:executable-counterpart op) (:executable-counterpart scont-tok-p) (:executable-counterpart tau-system) (:executable-counterpart true-listp)
+    (:executable-counterpart zp) (:induction len) (:rewrite append-assoc-fp) (:rewrite append-to-nil) (:rewrite associativity-of-+)
+    (:rewrite car-append-fp) (:rewrite car-cons) (:rewrite cdr-cons) (:rewrite commutativity-2-of-+) (:rewrite commutativity-of-+)
+    (:rewrite cons-car-cdr-fp) (:rewrite consp-append-fp) (:rewrite equal-list3) (:rewrite fgs-var-open) (:rewrite fps-open)
+    (:definition member-equal) (:rewrite fys-var-open) (:rewrite kar-kdr-consp) (:rewrite len-append-fp) (:rewrite nonempty-parts)
+    (:rewrite sfollow-facts) (:rewrite unicity-of-0) (:type-prescription binary-append) (:type-prescription fgs) (:type-prescription fps)
+    (:type-prescription fys) (:type-prescription sfollow-ok)))
+(defmacro fps-complete-with (nt runes)
+  (let ((top `(fps ,nt (binary-append (fys ,nt x) r))))
+    `(defthm ,(packn (list 'fps-complete- nt))
+       (implies (and (fgs ,nt x) (sfollow-ok ,nt r)) (equal ,top (mv t x r)))
+       :hints (("Goal" :induct (len x) :expand (,top) :in-theory (union-theories (append ',runes *dlist-runes*) (theory 'minimal-theory)))
+               (top-expand-hint id ',top)))))
+(fps-complete-with :dobjs ((:rewrite fps-complete-dobj) (:linear len-fys-dobj) (:rewrite fys-dobj-first)))
+(defmacro dval-case (name tokens tree hyps uses)
+  `(defthm ,name
+     (implies (and ,@hyps) (equal (fps :dval ,tokens) (mv t ,tree r)))
+     :hints (("Goal" :expand ((:free (s) (fps :dval ,tokens))) :use ,uses
+              :in-theory (union-theories '((:definition kar) (:definition kdr) (:definition mv-nth) (:definition not) (:definition member-equal)
+                                           (:rewrite car-append-fp) (:rewrite consp-append-fp) (:rewrite car-cons) (:rewrite cdr-cons)
+                                           (:executable-counterpart op) (:executable-counterpart equal) (:executable-counterpart member-equal)
+                                           (:executable-counterpart consp) (:executable-counterpart car) (:executable-counterpart cdr)
+                                           (:executable-counterpart dconst-p) (:executable-counterpart kar) (:executable-counterpart kdr) (:executable-counterpart not) (:definition follow-ok) (:definition atom) (:rewrite kadr-etc) (:rewrite kar-kdr-consp) (:executable-counterpart cont-tok-p))
+                              (theory 'minimal-theory))))))
+(dval-case dval-c (append (fy :prim c) r) (list nil nil c)
+  ((fg :prim c) (dconst-p nil c) (follow-ok :prim r) (not (equal (car r) '(:op "*"))))
+  ((:instance fp-complete (nt :prim) (x c)) (:instance fy-prim-first (x c))))
+(dval-case dval-sc (cons s (append (fy :prim c) r)) (list nil s c)
+  ((fg :prim c) (dconst-p s c) (member-equal s '((:op "+") (:op "-"))) (follow-ok :prim r))
+  ((:instance fp-complete (nt :prim) (x c))))
+(dval-case dval-pc (append (fy :prim p) (cons '(:op "*") (append (fy :prim c) r))) (list p nil c)
+  ((fg :prim p) (drep-p p) (fg :prim c) (dconst-p nil c) (follow-ok :prim r))
+  ((:instance fp-complete (nt :prim) (x p) (r (cons '(:op "*") (append (fy :prim c) r)))) (:instance fp-complete (nt :prim) (x c))
+   (:instance fy-prim-first (x p)) (:instance fy-prim-first (x c))))
+(dval-case dval-psc (append (fy :prim p) (cons '(:op "*") (cons s (append (fy :prim c) r)))) (list p s c)
+  ((fg :prim p) (drep-p p) (fg :prim c) (dconst-p s c) (member-equal s '((:op "+") (:op "-"))) (follow-ok :prim r))
+  ((:instance fp-complete (nt :prim) (x p) (r (cons '(:op "*") (cons s (append (fy :prim c) r))))) (:instance fp-complete (nt :prim) (x c))
+   (:instance fy-prim-first (x p))))
+(defthm fps-complete-dval            ; [r *] [sign] c, each primary kept whole: fp-complete answers it
+  (implies (and (fgs :dval x) (sfollow-ok :dval r)) (equal (fps :dval (append (fys :dval x) r)) (mv t x r)))
+  :hints (("Goal" :expand ((fgs :dval x) (fys :dval x)) :use dobj-dval-follow
+           :in-theory (union-theories '((:rewrite dval-c) (:rewrite dval-sc) (:rewrite dval-pc) (:rewrite dval-psc) (:rewrite equal-list3)
+                                        (:rewrite append-assoc-fp) (:rewrite car-cons) (:rewrite cdr-cons) (:definition binary-append)
+                                        (:definition member-equal) (:definition kar) (:definition kdr) (:rewrite kadr-etc) (:rewrite kar-kdr-consp)
+                                        (:executable-counterpart op) (:executable-counterpart equal) (:executable-counterpart consp)
+                                        (:executable-counterpart car) (:executable-counterpart cdr) (:executable-counterpart binary-append) (:executable-counterpart len) (:executable-counterpart fg) (:executable-counterpart dconst-p) (:definition not) (:definition atom) (:rewrite cons-equal))
+                              (theory 'minimal-theory)))))
+(defthm len-fy-prim (implies (fg :prim x) (< 0 (len (fy :prim x)))) :rule-classes :linear
+  :hints (("Goal" :use fy-prim-first :expand ((len (fy :prim x))) :in-theory (union-theories (quote ((:definition len) (:type-prescription len))) (theory (quote minimal-theory))))))
+(defthm len-fys-dval (implies (fgs :dval x) (< 0 (len (fys :dval x)))) :rule-classes :linear
+  :hints (("Goal" :expand ((fgs :dval x) (fys :dval x)) :in-theory (disable fy-prim-first prim-as-base prim-as-dref fps-complete-dval))))
+(defthm consp-fys-dval (implies (fgs :dval x) (consp (fys :dval x)))
+  :hints (("Goal" :use len-fys-dval :in-theory (union-theories (quote ((:definition len))) (theory (quote minimal-theory))))))
+(fps-complete-with :dvals ((:rewrite consp-fys-dval) (:rewrite fps-complete-dval) (:linear len-fys-dval)))
+(defthm dset-open
+  (and (equal (fys :dset x) (append (fys :dobjs (kar x)) (fys :dvals (kadr x))))
+       (equal (fgs :dset x) (and (consp x) (consp (cdr x)) (consp (cddr x)) (null (cdddr x)) (fgs :dobjs (car x)) (fgs :dvals (cadr x)) (booleanp (caddr x)))))
+  :hints (("Goal" :expand ((fys :dset x) (fgs :dset x) (len x) (len (cdr x)) (len (cddr x)) (len (cdddr x))) :in-theory (disable fgs-var-open fys-var-open))))
+(defthm len-fys-dobjs (implies (fgs :dobjs x) (< 0 (len (fys :dobjs x)))) :rule-classes :linear
+  :hints (("Goal" :expand ((fgs :dobjs x) (fys :dobjs x)) :in-theory (disable fgs-var-open fys-var-open))))
+(defthm len-fys-dvals (implies (fgs :dvals x) (< 0 (len (fys :dvals x)))) :rule-classes :linear
+  :hints (("Goal" :expand ((fgs :dvals x) (fys :dvals x)) :in-theory (disable fgs-var-open fys-var-open))))
+(defthm consp-fys-dobjs-dvals (and (implies (fgs :dobjs x) (consp (fys :dobjs x))) (implies (fgs :dvals x) (consp (fys :dvals x))))
+  :hints (("Goal" :use (len-fys-dobjs len-fys-dvals) :in-theory (union-theories (quote ((:definition len))) (theory (quote minimal-theory))))))
+(defthm dsets-first                   ; a set begins with an object
+  (implies (fgs :dsets x) (and (consp (fys :dsets x)) (not (equal (car (fys :dsets x)) '(:op ",")))))
+  :hints (("Goal" :expand ((fgs :dsets x) (fys :dsets x) (fys :dobjs (car (car x))) (fgs :dobjs (car (car x))))
+           :use (:instance fys-dobj-first (x (car (car (car x)))))
+           :in-theory (disable fgs-var-open fys-var-open fys-dobj-first))))
+(defthm cons-equal-consp (implies (consp x) (equal (equal (cons a b) x) (and (equal a (car x)) (equal b (cdr x))))) :hints (("Goal" :in-theory (union-theories (quote ((:rewrite car-cons) (:rewrite cdr-cons) (:rewrite cons-car-cdr))) (theory (quote minimal-theory))))))
+(defthm equal-nil1 (implies (consp y) (equal (equal (quote (nil)) y) (and (null (car y)) (null (cdr y))))) :hints (("Goal" :in-theory (theory (quote minimal-theory)))))
+(defthm dsets-follow (implies (sfollow-ok :dsets r) (atom r)) :rule-classes :forward-chaining
+  :hints (("Goal" :in-theory (enable sfollow-ok scont-tok-p))))
+(fps-complete-with :dsets ((:rewrite fps-complete-dobjs) (:rewrite fps-complete-dvals) (:linear len-fys-dobjs) (:linear len-fys-dvals) (:rewrite dset-open) (:rewrite cons-equal-consp) (:rewrite consp-fys-dobjs-dvals) (:rewrite equal-nil1) (:definition kadr) (:definition kaddr) (:rewrite dsets-first) (:forward-chaining dsets-follow)))
+(in-theory (disable cons-equal-consp equal-nil1 dset-open))   ; the DATA lists' own
 (fps-complete-at :ents)
 (fps-complete-at :decl-rest)
 (fps-complete-at :prefix)
@@ -442,6 +574,7 @@
 (fps-complete-kind :deallocate)
 (fps-complete-kind :save)
 (fps-complete-kind :dimstmt)
+(fps-complete-kind :data)
 (fps-complete-kind :implicit)
 (fps-complete-kind :call)
 (fps-complete-kind :print)
@@ -465,7 +598,7 @@
   (if (endp ks) nil (cons `(equal (car x) ,(car ks)) (kind-cases (cdr ks)))))
 
 (defconst *stmt-kinds*
-  '(:program :module :end :contains :block :implicit-none :else :use :decl :assign :cassign :type :tdecl :if-then :else-if :do :simple :stop :allocate :deallocate :save :dimstmt :implicit :call :print
+  '(:program :module :end :contains :block :implicit-none :else :use :decl :assign :cassign :type :tdecl :if-then :else-if :do :simple :stop :allocate :deallocate :save :dimstmt :implicit :data :call :print
     :function :subroutine :if :select :case :case-default :label :goto :aif :ldo :format :write :read :readf))
 (defthm fgs-stmt-kinds                ; a statement is of one of the kinds above
   (implies (fgs :stmt x) (member-equal (car x) *stmt-kinds*))

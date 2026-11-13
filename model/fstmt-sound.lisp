@@ -108,7 +108,7 @@
   (let ((g (gnt nt)))
    (append
     ; the trees never nil
-    (if (member-eq g '(:stmt :shapes :shapes* :ents :ent :names1 :ts :attr :shape :decl-rest :fn-rest :sub-rest :ranges :range :ixs :ix :io :ios))
+    (if (member-eq g '(:stmt :dsets :dobjs :dobj :dvals :dval :shapes :shapes* :ents :ent :names1 :ts :attr :shape :decl-rest :fn-rest :sub-rest :ranges :range :ixs :ix :io :ios))
         `(and ,x) '(and))
     (list
     (case g
@@ -138,6 +138,14 @@
         (:attrs (if (equal (kar toks) (op ","))
                     (mv-let (ok a r) (fps :attr (kdr toks)) (declare (ignore a)) (if ok (mv t r) (mv nil nil)))
                   (mv nil nil)))
+        (:dobjs (mv-let (ok o r) (fps :dobj toks) (declare (ignore o))
+                  (if (and ok (equal (kar r) (op ","))) (mv t (kdr r)) (mv nil nil))))
+        (:dvals (mv-let (ok o r) (fps :dval toks) (declare (ignore o))
+                  (if (and ok (equal (kar r) (op ","))) (mv t (kdr r)) (mv nil nil))))
+        (:dsets (mv-let (ok os r) (fps :dobjs toks) (declare (ignore os))
+                  (if (not ok) (mv nil nil)
+                    (mv-let (ok2 vs r2) (fps :dvals r) (declare (ignore vs))
+                      (if ok2 (mv t (if (equal (kar r2) (op ",")) (kdr r2) r2)) (mv nil nil))))))
         (:ents (mv-let (ok e r) (fps :ent toks) (declare (ignore e))
                  (if (and ok (equal (kar r) (op ","))) (mv t (kdr r)) (mv nil nil))))
         (:kios (if (equal (kar toks) (op ","))
@@ -155,7 +163,7 @@
 ; a list nt inducts on list-ind; thy, if given, is the runes the proof uses
 ; (so it is as fast writing useless-runes as reading them)
 (defmacro fps-sound-at (nt &optional use thy)
-  (if (member-eq nt '(:shapes* :names1 :onames :attrs :ents :items :prefix :ranges :ixs :oitems :kios))
+  (if (member-eq nt '(:shapes* :names1 :onames :attrs :ents :items :prefix :ranges :ixs :oitems :kios :dobjs :dvals :dsets))
       `(defthm ,(packn (list 'fps-sound- nt))
          (implies (mv-nth 0 (fps ,nt toks))
                   ,(sound-concl nt `(mv-nth 1 (fps ,nt toks)) `(mv-nth 2 (fps ,nt toks)) 'toks))
@@ -208,6 +216,26 @@
 (fps-sound-at :attrs)
 (fps-sound-at :ent)
 (fps-sound-at :ents)
+(defthm dobj-prim                    ; a DATA object other than an implied-do is its primary
+  (implies (not (equal (car x) :ido))
+           (and (equal (fys :dobj x) (fy :prim x)) (equal (fgs :dobj x) (and (fg :prim x) (dobj-p x)))))
+  :hints (("Goal" :expand ((fys :dobj x) (fgs :dobj x)))))
+(defthm fgs-dobjs-consp (implies (fgs :dobjs x) (consp x)) :rule-classes :forward-chaining :hints (("Goal" :expand ((fgs :dobjs x)))))
+(defthm fgs-dvals-consp (implies (fgs :dvals x) (consp x)) :rule-classes :forward-chaining :hints (("Goal" :expand ((fgs :dvals x)))))
+(defthm fgs-dsets-consp (implies (fgs :dsets x) (consp x)) :rule-classes :forward-chaining :hints (("Goal" :expand ((fgs :dsets x)))))
+(fps-sound-at :dobj ((:instance fp-sound (nt :prim)) (:instance fp-sound (nt :ilist) (toks (kdr toks))))   ; the primary kept whole
+  (quote ((:definition dobj-p) (:definition kar) (:definition kdr) (:definition mv-nth) (:definition not) (:definition eq)
+          (:definition member-equal) (:definition binary-append) (:executable-counterpart op) (:executable-counterpart equal)
+          (:executable-counterpart car) (:executable-counterpart cdr) (:executable-counterpart consp) (:executable-counterpart zp)
+          (:executable-counterpart binary-+) (:executable-counterpart not) (:executable-counterpart if) (:executable-counterpart dobj-p)
+          (:rewrite car-cons) (:rewrite cdr-cons) (:rewrite fgs-cons-open) (:rewrite fys-cons-open) (:rewrite dobj-prim)
+          (:rewrite kar-kdr-consp) (:rewrite kadr-etc) (:rewrite cons-car-cdr-fp) (:type-prescription fp) (:type-prescription fps))))
+(fps-sound-at :dobjs)
+(in-theory (disable prim-as-base))  ; a value's primary kept whole: fp-sound answers it
+(fps-sound-at :dval)
+(in-theory (enable prim-as-base))
+(fps-sound-at :dvals)
+(fps-sound-at :dsets)
 (fps-sound-at :decl-rest)
 (fps-sound-at :prefix)
 (fps-sound-at :fn-rest)
@@ -373,6 +401,7 @@
   '(:stmt :s-head :s-end :s-other :s-use :s-else :s-if :s-do :s-call :s-print :s-type :s-assign :s-unit :s-select :s-case
     :s-label :s-goto :s-format :s-write :s-read :oitems :ios :kios :io
     :fn-rest :sub-rest :decl-rest :ts :attrs :attr :shapes :shapes* :shape :ranges :range :ixs :ix :ents :ent :init
+    :dsets :dobjs :dobj :dvals :dval
     :names :names1 :onames :items :ctl :prefix))
 
 (defthm fps-other

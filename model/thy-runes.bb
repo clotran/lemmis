@@ -15,7 +15,7 @@
                     j (str/index-of s "Rules: " i)
                     blk (subs s (+ j 7) (apply min (keep #(str/index-of s % j) ["Splitter rules" "Warnings:" "Time:"])))
                     rs (->> (re-seq #"\((:[A-Z-]+) ([^()]+?)\)" blk)
-                            (remove #(str/starts-with? (second %) ":FAKE-RUNE"))
+                            (remove #(or (str/starts-with? (second %) ":FAKE-RUNE") (= (nth % 1) ":USE")))
                             (map #(str "(" (str/lower-case (nth % 1)) " " (str/lower-case (nth % 2)) ")")))
                     rs (distinct (cons "(:type-prescription len)" rs))]
                 (str " (" (str/lower-case ev) "\n  "

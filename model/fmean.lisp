@@ -292,11 +292,13 @@
                    (mv-let (e fr copies st) (me-decls (kaddr spec) (append ufr host) st cx2 (1- fuel) fr copies
                                                       (unit-key u) (dummy-names hd))
                      (if e (mv e st)
+                       (mv-let (fr st) (if (kadr spec) (mv fr st)     ; IMPLICIT NONE, or implicit typing (8.7)
+                                         (implicit-vars (used-names (unit-exec u)) fr (append ufr host) st (unit-rules u)))
                        (let ((env2 (cons fr (append ufr host))))
                          (mv-let (s st) (me-blk (unit-exec u) env2 st cx2 (1- fuel))
                            (cond ((errp s) (mv s st))
                                  ((not (member-eq s '(:normal :return))) (mv (err :syntax) st))
-                                 (t (call-result fn hd copies fr st)))))))))))))))))
+                                 (t (call-result fn hd copies fr st))))))))))))))))))
 
  ; each dummy dn bound to its actual: a whole variable by reference; an
  ; element or section to a temporary copied back; an expression to a
@@ -377,6 +379,7 @@
               (declare (ignore cps))
               (if e (mv e nil nil st)
                 (me-decls (cdr ds) env st cx (1- fuel) (cons (cons tn (list :type (frame-vals cfr st))) fr) copies key dns)))))
+         ((eq (kar (car ds)) :data) (mv (err :data) nil nil st))   ; DATA outside a main program: frun's me-data reads a main's
          ; TYPE ( type-name ): entities of a type defined in scope
          ((eq (kar (car ds)) :tdecl)
           (let* ((d (car ds)) (tn (tok-name (kadr d))) (attrs (kaddr d)) (ents (kar (kdr (kdr (kdr (kdr d)))))))

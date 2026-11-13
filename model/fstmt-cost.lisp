@@ -18,11 +18,12 @@
 (defthm len-cdr-consp (implies (consp x) (equal (len (cdr x)) (+ -1 (len x)))))
 
 ; the constant each nt adds; a type-spec always reads its keyword, so it
-; may owe less than nothing
+; may owe less than nothing, and so may a DATA object or value list (it
+; reads its / too)
 (defun fps-d (nt)
   (declare (xargs :guard t))
   (case nt (:stmt 48) (:s-unit 40) (:decl-rest 32) (:shapes 48) (:shapes* 40) (:shape 32) (:ents 16)
-    (:init 16) (:ent 8) (:attrs 8) (:names 8) (:ranges 40) (:range 32) (:ixs 40) (:ix 32) (:oitems 32) (:ts -63) (:io 20) (:ios 25) (otherwise 4)))
+    (:init 16) (:ent 8) (:attrs 8) (:names 8) (:ranges 40) (:range 32) (:ixs 40) (:ix 32) (:oitems 32) (:ts -63) (:dobjs -32) (:dvals -32) (:io 20) (:ios 25) (otherwise 4)))
 
 ; the I/O control list's nonterminals first, each on its own: the
 ; induction below then answers them from these

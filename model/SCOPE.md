@@ -11,14 +11,14 @@ proved to accept exactly that grammar (`fp-`, `fps-`, `fpu-sound` and
 `-complete`), for every alternative the Scope uses; **part** when only
 some alternatives are in; **no** otherwise.
 
-Score: **154 of 189** Scope rules proved (81%); 35 more in part; none not yet in.
+Score: **159 of 196** Scope rules proved (81%); 37 more in part; none not yet in.
 
 ## Theorem 3: checked against the compilers (status)
 
 Not a theorem: a test, run by `make check` (exit 1 on any difference).
 
 - **Oracle programs**: check-fsem.bb's 7 fsyn cases (the subset clotran's
-  generator emits) and the 36 whole programs of `cases/`, each run by the
+  generator emits) and the 37 whole programs of `cases/`, each run by the
   model and by gfortran (-std=f2018) and flang; all agree, and the two
   compilers agree with each other on all of them but `modzero.f90`, whose
   values the standard leaves open (below). One, `acdotyped.f90`,
@@ -49,13 +49,14 @@ Not a theorem: a test, run by `make check` (exit 1 on any difference).
   another for MOD): the model's value is processor dependent there
   (`cases/modzero.f90`).
 - **FCVS**: scored, not failed, and only when `fcvs/` is fetched
-  (`bb fetch-fcvs.bb`; not committed): 38 of 180 programs print their
-  reference output exactly (FM002-006, 008-010, 012, 017-019, 030-045,
-  060, 061, 109, 201-203, 205, 251, 256, 306). Of the rest, 133 stop at a
-  statement outside the subset (first: DATA 78, fixed form's blank-free
-  COMPLEX 20, COMMON 9, PARAMETER ( ... ) 5, ...), 7 at an undeclared or
-  undefined name (statement functions, implicit typing in a subprogram
-  among them), 2 at a processor-dependent value. (The score read 0 until the
+  (`bb fetch-fcvs.bb`; not committed): 43 of 180 programs print their
+  reference output exactly (FM002-010, 012, 016-019, 021, 026, 030-045,
+  060, 061, 109, 201-203, 205, 251, 256, 306, 368). Of the rest, 77 stop at a
+  statement outside the subset (first: fixed form's blank-free COMPLEX 17,
+  COMMON 13, OPEN 11, PARAMETER ( ... ) 5, ...); 38 at an undeclared name
+  (most a FORTRAN 77 specific intrinsic: IFIX, AINT, AMOD, DIM, IDINT, ...;
+  statement functions), 4 at an undefined one, 13 at a processor-dependent
+  value, 5 at an I/O end or unit. (The score read 0 until the
   harness dropped the "exit 0" line LLVM's reference outputs end with.)
 - **flang's parse tree** (PLAN.md's parsing oracle) is not compared yet.
 
@@ -222,9 +223,16 @@ Not a theorem: a test, run by `make check` (exit 1 on any difference).
 | R820 | assumed-shape-spec | proved |  |
 | R822 | deferred-shape-spec | proved | `:`, read as an assumed-shape-spec without a lower bound; an ALLOCATABLE entity's in the meaning |
 | R828 | intent-spec | proved | IN, OUT, INOUT, IN OUT |
+| R840 | data-stmt | proved | DATA data-stmt-set [[,] data-stmt-set]..., a declaration-construct (fps :dsets); in the meaning a main program's DATA statements initialize its variables before its first statement (8.6.7), each value as by intrinsic assignment; a subprogram's are not in the meaning yet |
+| R841 | data-stmt-set | proved | data-stmt-object-list / data-stmt-value-list / |
+| R842 | data-stmt-object | proved | a variable (a primary: name, array element, substring or structure component, kept whole) or a data-implied-do; in the meaning a scalar, a whole array in array element order, or an array element |
+| R843 | data-implied-do | part | read as an io-implied-do's list (fp :ilist), a superset; not in the meaning |
+| R846 | data-stmt-value | proved | [data-stmt-repeat *] data-stmt-constant |
+| R847 | data-stmt-repeat | proved | an int-literal-constant or a named constant; in the meaning nonnegative (C882) |
+| R848 | data-stmt-constant | part | a literal, a named constant, a complex literal, [sign] an int or real literal; no structure-constructor or NULL() |
 | R851 | dimension-stmt | proved | DIMENSION [::] entity-decl-list, each an array-name ( array-spec ), no initialization; in the meaning the array-spec joins the entity's declaration, or an implicitly typed one (8.7) |
 | R859 | save-stmt | proved | SAVE [[::] saved-entity-list], each an object-name (no common block); in the meaning, each saved entity's SAVE attribute (8.5.16) |
-| R866 | implicit-stmt | proved | IMPLICIT NONE, IMPLICIT implicit-spec-list (read by imp-specs, proved with its own lemmas in fstmt-base.lisp); in the meaning a main program's undeclared names and DIMENSION'd names are typed by their first letter (8.7) |
+| R866 | implicit-stmt | proved | IMPLICIT NONE, IMPLICIT implicit-spec-list (read by imp-specs, proved with its own lemmas in fstmt-base.lisp); in the meaning a main program's or subprogram's undeclared names (a main program's DIMENSION'd names too) are typed by their first letter (8.7) |
 | R867 | implicit-spec | proved | declaration-type-spec ( letter-spec-list ): INTEGER, REAL, LOGICAL, COMPLEX, DOUBLE PRECISION, CHARACTER [* char-length]; no kind-selector |
 | R868 | letter-spec | proved | letter [- letter] |
 | R901 | designator | proved | object-name, array-element, array-section |

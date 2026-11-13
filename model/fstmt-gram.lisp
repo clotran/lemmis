@@ -72,6 +72,8 @@
 ;         (:dimstmt dc es)          R851 dimension-stmt: DIMENSION [::] es,
 ;                                   each entity-decl (:ent) an array-name (
 ;                                   array-spec ), no initialization
+;         (:data ss)                R840 data-stmt: DATA data-stmt-set [[,] data-stmt-set]...
+;                                   (ss a :dsets)
 ;         (:stop e)                 R1162 stop-stmt: STOP stop-code (R1163,
 ;                                   e an expr; its type is the meaning's)
 ;         (:call n parens args)     R1521 call-stmt: CALL procedure-designator
@@ -190,6 +192,15 @@
   (declare (xargs :guard t))
   (if (atom es) t (and (consp (kadr (car es))) (null (kaddr (car es))) (dim-ents-p (cdr es)))))
 
+; DATA (R840-R848): an object (R842, R843) a designator or a data-implied-do;
+; a value's repeat (R847) an int literal or a named constant; its constant
+; (R848) a literal, a named constant or a complex literal, a literal after a sign
+(defun dobj-p (x) (declare (xargs :guard t)) (and (member-eq (kar x) '(:name :ref :sref :dref)) t))
+(defun drep-p (p) (declare (xargs :guard t)) (or (and (eq (kar p) :lit) (eq (kar (kadr p)) :int)) (eq (kar p) :name)))
+(defun dconst-p (sign c)
+  (declare (xargs :guard t))
+  (if sign (and (eq (kar c) :lit) (member-eq (kar (kadr c)) '(:int :real)) t) (and (member-eq (kar c) '(:lit :name :cplx)) t)))
+
 (defun kw-list (ss)
   (declare (xargs :guard t))
   (if (atom ss) nil (cons (kw (car ss)) (kw-list (cdr ss)))))
@@ -246,6 +257,7 @@
             ((:allocate :deallocate) (and (= (len x) 2) (fg :args (cadr x)) (consp (cadr x)) (alloc-objs-p (cadr x) (eq (car x) :deallocate))))
             (:dimstmt (and (= (len x) 3) (booleanp (cadr x)) (consp (caddr x)) (fgs :ents (caddr x)) (dim-ents-p (caddr x))))
             (:implicit (and (= (len x) 2) (imps-p (cadr x))))
+            (:data (and (= (len x) 2) (fgs :dsets (cadr x))))
             (:save (and (= (len x) 3) (booleanp (cadr x)) (names-p (caddr x)) (or (null (cadr x)) (consp (caddr x)))))
             (:call (and (= (len x) 4) (name-tok-p (cadr x)) (booleanp (caddr x))
                         (if (caddr x) (fg :args (cadddr x)) (null (cadddr x)))))
@@ -308,6 +320,16 @@
                    (:rng (and (= (len x) 3) (fg :expr (cadr x)) (fg :expr (caddr x))))
                    (otherwise nil))))
     (:ents (and (consp x) (fgs :ent (car x)) (or (null (cdr x)) (fgs :ents (cdr x)))))
+    (:dsets (and (consp x) (fgs :dset (car x))
+                 (if (consp (cdr x)) (fgs :dsets (cdr x)) (and (null (cdr x)) (null (kaddr (car x)))))))
+    (:dset (and (true-listp x) (= (len x) 3) (fgs :dobjs (car x)) (fgs :dvals (cadr x)) (booleanp (caddr x))))
+    (:dobjs (and (consp x) (fgs :dobj (car x)) (or (null (cdr x)) (fgs :dobjs (cdr x)))))
+    (:dobj (if (eq (kar x) :ido) (fg :ilist (cdr x)) (and (fg :prim x) (dobj-p x))))
+    (:dvals (and (consp x) (fgs :dval (car x)) (or (null (cdr x)) (fgs :dvals (cdr x)))))
+    (:dval (and (true-listp x) (= (len x) 3)
+                (or (null (car x)) (and (fg :prim (car x)) (drep-p (car x))))
+                (or (null (cadr x)) (and (member-equal (cadr x) *add-ops*) t))
+                (fg :prim (caddr x)) (dconst-p (cadr x) (caddr x))))
     (:ent (and (true-listp x) (or (= (len x) 3) (and (= (len x) 4) (len-tok-p (cadddr x)))) (name-tok-p (car x))
                (or (null (cadr x)) (fgs :shapes (cadr x)))
                (fgs :init (caddr x))))
@@ -394,6 +416,7 @@
          (:deallocate (list* (kw "deallocate") (op "(") (fy :args (kadr x))))
          (:dimstmt (cons (kw "dimension") (append (if (kadr x) (dcolon) nil) (fys :ents (kaddr x)))))
          (:implicit (cons (kw "implicit") (imps-y (kadr x))))
+         (:data (cons (kw "data") (fys :dsets (kadr x))))
          (:save (cons (kw "save") (append (if (kadr x) (dcolon) nil) (onames-y (kaddr x)))))
          (:call (list* (kw "call") (kadr x) (if (kaddr x) (cons (op "(") (fy :args (kadddr x))) nil)))
          (:print (list* (kw "print") (fmt-tok (kadr x)) (fys :items (kaddr x))))
@@ -450,6 +473,14 @@
                 (:to (cons (op ":") (fy :expr (kadr x))))
                 (otherwise (append (fy :expr (kadr x)) (cons (op ":") (fy :expr (kaddr x)))))))
       (:ents (append (fys :ent (car x)) (if (consp (cdr x)) (cons (op ",") (fys :ents (cdr x))) nil)))
+      (:dsets (append (fys :dset (car x))
+                      (if (consp (cdr x)) (append (if (kaddr (car x)) (list (op ",")) nil) (fys :dsets (cdr x))) nil)))
+      (:dset (append (fys :dobjs (kar x)) (fys :dvals (kadr x))))
+      (:dobjs (append (fys :dobj (car x)) (if (consp (cdr x)) (cons (op ",") (fys :dobjs (cdr x))) (list (op "/")))))
+      (:dobj (if (eq (car x) :ido) (cons (op "(") (fy :ilist (cdr x))) (fy :prim x)))
+      (:dvals (append (fys :dval (car x)) (if (consp (cdr x)) (cons (op ",") (fys :dvals (cdr x))) (list (op "/")))))
+      (:dval (append (if (car x) (append (fy :prim (car x)) (list (op "*"))) nil) (if (kadr x) (list (kadr x)) nil)
+                     (fy :prim (kaddr x))))
       (:ent (append (list (car x)) (if (kadr x) (cons (op "(") (fys :shapes (kadr x))) nil)
                     (if (kadddr x) (list (op "*") (kadddr x)) nil) (fys :init (kaddr x))))
       (:init (cons (op "=") (fy :expr x)))
