@@ -49,12 +49,12 @@ Not a theorem: a test, run by `make check` (exit 1 on any difference).
   another for MOD): the model's value is processor dependent there
   (`cases/modzero.f90`).
 - **FCVS**: scored, not failed, and only when `fcvs/` is fetched
-  (`bb fetch-fcvs.bb`; not committed): 64 of 180 programs print their
+  (`bb fetch-fcvs.bb`; not committed): 65 of 180 programs print their
   reference output exactly (FM002-010, 012, 016-021, 025, 026, 030-045,
   060, 061, 097, 098, 109, 201-205, 251, 254, 256, 301, 306, 352-355,
-  359-362, 368, 718, 801, 805-807, 812). Of the rest, most stop at a statement outside the
-  subset (first: fixed form's blank-free COMPLEX 22, OPEN 10 (its DIRECT, RECL=, FILE= variable forms), REWIND 7,
-  EQUIVALENCE 7, ...; table in STATUS.md); 37 at a processor-dependent value (most an
+  359-362, 368, 718, 801, 803, 805-807, 812). Of the rest, most stop at a statement outside the
+  subset (first: EQUIVALENCE 24, OPEN 11 (its DIRECT, RECL=, FILE= variable forms), REWIND 7,
+  ...; table in STATUS.md); 37 at a processor-dependent value (most an
   approximated SIN, EXP, LOG, ATAN2, ... the program compares within a
   tolerance); 5 at an I/O end or unit. (The score read 0 until the
   harness dropped the "exit 0" line LLVM's reference outputs end with.)
@@ -106,6 +106,11 @@ Not a theorem: a test, run by `make check` (exit 1 on any difference).
   values clj computes, and the cost of its integer square root.
 - `flex.lisp`: free source form (6.3.2) to statements of tokens, with
   `assert-event` tests. Not proved; it is checked by running programs.
+  Fixed source form (6.3.3) is read without its blanks and a statement's
+  first keyword split off (`ff-stmt`); proved: `ff-stmt-no-blanks` (it
+  only puts blanks in, so the free-form text means what the fixed-form
+  text did, 6.3.3.2) and `ff-stmt-complex` (a blank-free `COMPLEXAVC,BVC`
+  is read as `complex avc,bvc`); case `cases/fixedcx.f`.
 
 ## Subset restrictions (each keeps a program's meaning; a program outside them is outside the subset)
 
@@ -193,7 +198,7 @@ Not a theorem: a test, run by `make check` (exit 1 on any difference).
 | R725 | logical-literal-constant | proved | |
 | R701 | type-param-value | part | scalar-int-expr, `*` (a dummy's or a named constant's length); no `:` |
 | R703 | declaration-type-spec | proved | intrinsic-type-spec, TYPE ( derived-type-spec ) |
-| R704 | intrinsic-type-spec | proved | INTEGER, REAL, DOUBLE PRECISION (`doubleprecision` split by flex), COMPLEX, CHARACTER, LOGICAL |
+| R704 | intrinsic-type-spec | proved | INTEGER, REAL, DOUBLE PRECISION (`doubleprecision` split by flex), COMPLEX (`complexavc` split, `ff-stmt-complex`), CHARACTER, LOGICAL |
 | R705 | integer-type-spec | proved |  |
 | R706 | kind-selector | proved |  |
 | R721 | char-selector | part | length-selector; no KIND= |

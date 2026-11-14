@@ -356,7 +356,7 @@
 (defconst *ff-keywords*              ; a statement's first word, longest first where one begins another
   '("doubleprecision" "implicitnone" "endprogram" "endsubroutine" "endfunction" "endmodule" "subroutine" "dimension"
     "continue" "function" "implicit" "integer" "logical" "program" "contains" "elseif" "endif" "enddo" "return"
-    "format" "write" "print" "read" "character" "real" "call" "stop" "else" "then" "end" "data" "common"))
+    "format" "write" "print" "read" "character" "complex" "real" "call" "stop" "else" "then" "end" "data" "common"))
 (defun ff-kw (cs ks)                 ; the keyword cs begins with
   (declare (xargs :guard t))
   (cond ((atom ks) nil)
@@ -393,6 +393,51 @@
         (if (not k) cs
           (let ((sp (kdr (assoc-equal k *ff-spaced*))))
             (append (coerce (if sp sp k) 'list) (cons #\Space (ff-drop (len (coerce k 'list)) cs)))))))))
+
+; ff-stmt only puts blanks in (6.3.3.2: blanks mean nothing in fixed form):
+; without its blanks, the free-form text it gives is the statement it read
+(defthm ff-no-blanks-append (equal (ff-no-blanks (append a b)) (append (ff-no-blanks a) (ff-no-blanks b))))
+(defthm ff-no-blanks-take-drop (equal (append (ff-no-blanks (ff-take n cs)) (ff-no-blanks (ff-drop n cs))) (ff-no-blanks cs)))
+(defthm ff-no-blanks-digits
+  (equal (append (ff-no-blanks (car (lx-digits cs))) (ff-no-blanks (mv-nth 1 (lx-digits cs)))) (ff-no-blanks cs)))
+(defthm ff-no-blanks-prefix
+  (implies (ff-prefix-p p cs) (equal (ff-no-blanks cs) (append (ff-no-blanks p) (ff-no-blanks (ff-drop (len p) cs))))))
+(defthm ff-kw-prefix (implies (ff-kw cs ks) (ff-prefix-p (coerce (ff-kw cs ks) 'list) cs)))
+(defthm ff-no-blanks-kw
+  (implies (ff-kw cs ks)
+           (equal (append (ff-no-blanks (coerce (ff-kw cs ks) 'list)) (ff-no-blanks (ff-drop (len (coerce (ff-kw cs ks) 'list)) cs)))
+                  (ff-no-blanks cs)))
+  :hints (("Goal" :in-theory (disable ff-kw ff-no-blanks-prefix)
+                  :use (ff-kw-prefix (:instance ff-no-blanks-prefix (p (coerce (ff-kw cs ks) 'list)))))))
+(defthm ff-kw-atom (implies (and (syntaxp (variablep cs)) (not (consp cs))) (equal (ff-kw cs ks) (ff-kw nil ks))))
+(defthm ff-no-blanks-do
+  (implies (ff-prefix-p '(#\d #\o) cs) (equal (ff-no-blanks cs) (list* #\d #\o (ff-no-blanks (kdr (kdr cs)))))))
+(defthm ff-no-blanks-goto
+  (implies (ff-prefix-p '(#\g #\o #\t #\o) cs) (equal (ff-no-blanks cs) (list* #\g #\o #\t #\o (ff-no-blanks (ff-drop 4 cs)))))
+  :hints (("Goal" :use (:instance ff-no-blanks-prefix (p '(#\g #\o #\t #\o))) :in-theory (disable ff-no-blanks-prefix))))
+(defthm ff-no-blanks-atom (implies (atom x) (equal (ff-no-blanks x) nil)))
+(defthm ff-no-blanks-space (equal (ff-no-blanks (cons #\Space x)) (ff-no-blanks x)))
+(defthm ff-no-blanks-char (implies (not (lx-blank-p c)) (equal (ff-no-blanks (cons c x)) (cons c (ff-no-blanks x)))))
+(defthm ff-prefix-p-atom (implies (not (consp cs)) (equal (ff-prefix-p p cs) (atom p))))
+(defthm ff-no-blanks-take-all
+  (implies (not (consp (ff-drop n cs))) (equal (ff-no-blanks (ff-take n cs)) (ff-no-blanks cs)))
+  :hints (("Goal" :use ff-no-blanks-take-drop :in-theory (disable ff-no-blanks-take-drop))))
+(defun ff-spaced-ok (al)             ; each spaced keyword is its keyword with blanks
+  (declare (xargs :guard t))
+  (or (atom al)
+      (and (consp (car al)) (stringp (caar al)) (stringp (cdar al))
+           (equal (ff-no-blanks (coerce (cdar al) 'list)) (ff-no-blanks (coerce (caar al) 'list)))
+           (ff-spaced-ok (cdr al)))))
+(defthm ff-spaced-ok-assoc
+  (implies (and (ff-spaced-ok al) (cdr (assoc-equal k al)))
+           (equal (ff-no-blanks (coerce (cdr (assoc-equal k al)) 'list)) (ff-no-blanks (coerce k 'list)))))
+(defthm ff-stmt-no-blanks (equal (ff-no-blanks (ff-stmt cs)) (ff-no-blanks cs))
+  :hints (("Goal" :induct (ff-stmt cs) :in-theory (disable ff-kw ff-top-eq ff-top-comma-p ff-labels-p ff-close assoc-equal ff-spaced-ok ff-prefix-p ff-no-blanks-prefix ff-take ff-drop ff-no-blanks))))
+; and it reads a blank-free COMPLEX declaration (R704, 6.3.3.2) as one: the keyword, a blank, the rest
+(defthm ff-stmt-complex
+  (implies (and (ff-prefix-p (coerce "complex" 'list) cs) (not (ff-top-eq cs 0 nil nil)))
+           (equal (ff-stmt cs) (append (coerce "complex " 'list) (ff-drop 7 cs))))
+  :hints (("Goal" :in-theory (disable ff-top-eq))))
 (in-theory (disable ff-stmt))
 
 (defun ff-stmts (ss)                 ; each statement's tokens, its label's statement first
