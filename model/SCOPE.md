@@ -11,14 +11,14 @@ proved to accept exactly that grammar (`fp-`, `fps-`, `fpu-sound` and
 `-complete`), for every alternative the Scope uses; **part** when only
 some alternatives are in; **no** otherwise.
 
-Score: **163 of 201** Scope rules proved (81%); 38 more in part; none not yet in.
+Score: **165 of 205** Scope rules proved (80%); 40 more in part; none not yet in.
 
 ## Theorem 3: checked against the compilers (status)
 
 Not a theorem: a test, run by `make check` (exit 1 on any difference).
 
 - **Oracle programs**: check-fsem.bb's 7 fsyn cases (the subset clotran's
-  generator emits) and the 37 whole programs of `cases/`, each run by the
+  generator emits) and the 42 whole programs of `cases/`, each run by the
   model and by gfortran (-std=f2018) and flang; all agree, and the two
   compilers agree with each other on all of them but `modzero.f90`, whose
   values the standard leaves open (below). One, `acdotyped.f90`,
@@ -53,7 +53,7 @@ Not a theorem: a test, run by `make check` (exit 1 on any difference).
   reference output exactly (FM002-010, 012, 016-021, 025, 026, 030-045,
   060, 061, 097, 098, 109, 201-205, 251, 254, 256, 301, 306, 352-355,
   359-362, 368, 718, 801, 805-807, 812). Of the rest, most stop at a statement outside the
-  subset (first: fixed form's blank-free COMPLEX 22, OPEN 11, REWIND 7,
+  subset (first: fixed form's blank-free COMPLEX 22, OPEN 10 (its DIRECT, RECL=, FILE= variable forms), REWIND 7,
   EQUIVALENCE 7, ...; table in STATUS.md); 37 at a processor-dependent value (most an
   approximated SIN, EXP, LOG, ATAN2, ... the program compares within a
   tolerance); 5 at an I/O end or unit. (The score read 0 until the
@@ -325,6 +325,10 @@ Not a theorem: a test, run by `make check` (exit 1 on any difference).
 | R1162 | stop-stmt | proved | STOP [stop-code]: an integer or character scalar expr (R1163, the meaning) |
 | R1201 | io-unit | part | *, file-unit-number; no internal-file-variable (the unit * only, 5 or 6, in the meaning) |
 | R1202 | file-unit-number | proved | |
+| R1204 | open-stmt | proved | OPEN ( connect-spec-list ); the meaning connects a scratch unit only (below, R1205) |
+| R1205 | connect-spec | part | [UNIT=], FILE=, STATUS=, ACCESS=, FORM= with a char-literal-constant; no IOSTAT=, ERR=, RECL=, ACTION=, ... (outside the grammar). Meaning: STATUS='SCRATCH' with ACCESS='SEQUENTIAL' and FORM='FORMATTED' (or absent) opens a unit other than 5 and 6, not yet connected; FILE= or no STATUS= (a file the file system names or holds) is an `:error :pd`; any other spec or an unit already connected is an `:error :open`. READ and WRITE on a connected unit stay outside (`:error :unit`) |
+| R1208 | close-stmt | proved | CLOSE ( close-spec-list ); a unit not connected: no effect (12.5.7) |
+| R1209 | close-spec | part | [UNIT=] and STATUS= 'DELETE' (or absent); STATUS='KEEP' on a scratch file, FILE=, ACCESS= and FORM= are an `:error :close`; unit 5 or 6 an `:error :unit` |
 | R1210 | read-stmt | proved | both forms |
 | R1211 | write-stmt | proved | |
 | R1212 | print-stmt | proved |  |

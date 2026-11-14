@@ -5,14 +5,14 @@ whole; use the headings below and `grep -n` / `sed -n`.
 
 ## Where Stage A stands (update on every commit that moves a number)
 
-- SCOPE score: 163 of 201 rules proved, 38 in part, none missing (SCOPE.md, first
+- SCOPE score: 165 of 205 rules proved, 40 in part, none missing (SCOPE.md, first
   paragraphs).
 - FCVS: 64 of 180 programs print their reference output (SCOPE.md, "Theorem 3:
   checked against the compilers", the FCVS bullet; the passing names are in
   build/fcvs.txt after `make check`).
 - Fuzzer: `make fuzz` (seed 1, 40 programs) agrees under gfortran and flang; seeds 1-5
   clean (same SCOPE section, "The fuzzer").
-- Oracle cases: 7 fsyn cases + 38 whole programs in model/cases/, all agree.
+- Oracle cases: 7 fsyn cases + 42 whole programs in model/cases/, all agree.
 
 ## Next lanes, in order
 
@@ -21,7 +21,8 @@ each of the 116 failing programs; 64 pass). Script idea: run fortran-run-form on
 program, bucket (:ERROR :PARSE)'s AT tokens, else STATUS:
 1. Processor-dependent value (:ERROR :PD; approximated SIN/EXP/LOG/ATAN2): 37.
 2. Fixed-form blank-free COMPLEX declaration: 22 (the 16 earlier count missed 6).
-3. OPEN: 11.
+3. OPEN still outside the grammar: 10 (ACCESS='DIRECT', RECL=, FILE= a variable). OPEN/CLOSE itself
+   are in (scratch units only; SCOPE R1205).
 4. REWIND (blank-free `REWIND I08`): 7.
 5. EQUIVALENCE: 7.
 6. Whole program unit fails to parse, cause not isolated (:PROGRAM): 6.
@@ -29,9 +30,8 @@ program, bucket (:ERROR :PARSE)'s AT tokens, else STATUS:
 8. EXTERNAL (blank-free): 4.
 9. Run-time end of file or unit (:ERROR :END 4, :UNIT 1): 5.
 10. Computed GO TO 3; END FILE 2; CALL with `*` alternate returns 2; BLOCK DATA 2.
-Many OPEN programs also use REWIND/END FILE/DIRECT access behind it.
-Open lane: OPEN/CLOSE.
-5. fstmt-complete's runes write stalls on `decl-rest-comma-second`
+Next after these: READ/WRITE on a connected unit (needs a per-unit record store in st-units), REWIND, END FILE, INQUIRE.
+- fstmt-complete's runes write stalls on `decl-rest-comma-second`
    (`make runes` / write mode doesn't finish there; see the traps).
 
 Then the rest of Stage A (derived-type gap, COMPLEX and the other "part" rows):
