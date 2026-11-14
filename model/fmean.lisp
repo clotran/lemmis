@@ -429,16 +429,17 @@
                     (cond
                      ((errp ls) (mv ls nil nil st))
                      ((and ss (all-assumed ss)) (mv (err :syntax) nil nil st))   ; assumed shape only for a dummy (C836)
-                     ((and (or init (decl-has :save attrs)) (assoc-equal (list key n) (st-saves st)))   ; saved (8.5.16)
-                      (mv nil (cons (cons n (list :var (cdr (assoc-equal (list key n) (st-saves st))) :rw)) fr) copies st))
+                     ((and (or init (decl-has :save attrs)) (assoc-equal (ckey key n attrs) (st-saves st)))   ; saved (8.5.16), or common (8.10.2)
+                      (let ((loc (cdr (assoc-equal (ckey key n attrs) (st-saves st)))))
+                        (if (com-fits (fresh ty k ls us) (st-get loc st)) (mv nil (cons (cons n (list :var loc :rw)) fr) copies st) (mv (err :common) nil nil st))))
                      (init
                       (mv-let (v st) (me-ev :expr init envf st cx (1- fuel))
                         (let ((c (if (errp v) v (assign-val (fresh ty k ls us) v))))
                           (if (errp c) (mv c nil nil st)
                             (mv-let (loc st) (st-new c st)
-                              (mv nil (cons (cons n (list :var loc :rw)) fr) copies (st-save (list key n) loc st)))))))
+                              (mv nil (cons (cons n (list :var loc :rw)) fr) copies (st-save (ckey key n attrs) loc st)))))))
                      (t (mv-let (loc st) (st-new (fresh ty k ls us) st)
-                          (mv nil (cons (cons n (list :var loc :rw)) fr) copies (if (decl-has :save attrs) (st-save (list key n) loc st) st))))))))
+                          (mv nil (cons (cons n (list :var loc :rw)) fr) copies (if (decl-has :save attrs) (st-save (ckey key n attrs) loc st) st))))))))
                 (if e (mv e nil nil st) (me-ents (cdr ents) ty k attrs env st cx (1- fuel) fr copies key dns)))))))
 
  ; a dummy's declaration against its actual (15.5.2.4): type and kind agree;

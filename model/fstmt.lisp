@@ -21,7 +21,7 @@
 (defun fps-rank (nt)
   (declare (xargs :guard t))
   (case nt (:stmt 12) (:s-unit 11) (:prefix 10) (:decl-rest 9) (:attrs 8) (:ents 7) (:ent 6) (:shapes 6)
-    (:shapes* 5) (:shape 4) (:ranges 5) (:range 4) (:ixs 5) (:ix 4) (:names 3) (:names1 2) (:ios 2) (:dsets 4) (:dobjs 3) (:dvals 3) (otherwise 1)))
+    (:shapes* 5) (:shape 4) (:ranges 5) (:range 4) (:ixs 5) (:ix 4) (:names 3) (:names1 2) (:ios 2) (:dsets 4) (:dobjs 3) (:citems 3) (:citem 2) (:dvals 3) (otherwise 1)))
 
 (defun tok-in (tk ss)               ; tk is the keyword name of one of ss
   (declare (xargs :guard (true-listp ss)))
@@ -79,6 +79,8 @@
                       ((and (equal tk (kw "parameter")) (equal (kadr toks) (op "(")))   ; R855 parameter-stmt
                        (mv-let (ok es r) (fps :ents (kdr (kdr toks)))
                          (if (and ok (consp es) (par-ents-p es) (equal (kar r) (op ")"))) (mv t (list :parstmt es) (kdr r)) (fail))))
+                      ((equal tk (kw "common"))                             ; R873 common-stmt
+                       (mv-let (ok is r) (fps :citems (kdr toks)) (if (and ok (citems-ok is)) (mv t (list :common is) r) (fail))))
                       ((equal tk (kw "data"))                               ; R840 data-stmt
                        (mv-let (ok ss r) (fps :dsets (kdr toks)) (if ok (mv t (list :data ss) r) (fail))))
                       ((equal tk (kw "save"))                               ; R859 save-stmt
@@ -371,6 +373,20 @@
                      ((equal (kar r) (op ","))
                       (mv-let (ok2 es r2) (fps :ents (kdr r)) (if ok2 (mv t (cons e es) r2) (fail))))
                      (t (mv t (list e) r)))))
+      (:citems (mv-let (ok i r) (fps :citem toks)
+                 (cond ((not (and ok (< (len r) (len toks)))) (fail))
+                       ((or (eq (kar (kadr i)) :blk) (member-equal (kar r) (list (op ",") (op "/") (op "//"))))
+                        (mv-let (ok2 is r2) (fps :citems r) (if ok2 (mv t (cons i is) r2) (fail))))
+                       (t (mv t (list i) r)))))
+      (:citem (let* ((c (equal tk (op ","))) (ts (if c (kdr toks) toks)) (t1 (kar ts)))
+                (cond ((equal t1 (op "//")) (mv t (list c (list :blk :cat)) (kdr ts)))
+                      ((and (equal t1 (op "/")) (equal (kadr ts) (op "/"))) (mv t (list c (list :blk :sl)) (kdr (kdr ts))))
+                      ((and (equal t1 (op "/")) (name-tok-p (kadr ts)) (equal (kaddr ts) (op "/")))
+                       (mv t (list c (list :blk (kadr ts))) (kdr (kdr (kdr ts)))))
+                      ((not (name-tok-p t1)) (fail))
+                      ((equal (kadr ts) (op "("))
+                       (mv-let (ok ss r) (fps :shapes (kdr (kdr ts))) (if ok (mv t (list c (list t1 ss)) r) (fail))))
+                      (t (mv t (list c (list t1 nil)) (kdr ts))))))
       (:ent (cond ((not (name-tok-p tk)) (fail))
                   ((equal (kadr toks) (op "("))
                    (mv-let (ok ss r) (fps :shapes (kdr (kdr toks)))

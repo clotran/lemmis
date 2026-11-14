@@ -75,6 +75,14 @@
 ;         (:parstmt es)             R855 parameter-stmt: PARAMETER ( es ), each
 ;                                   entity-decl (:ent) a named-constant-def:
 ;                                   a name = constant-expr (R856)
+;         (:common is)              R873 common-stmt: COMMON is, a :citems:
+;                                   each item (c y), c whether a "," comes
+;                                   first, y a block's designator (:blk d), d
+;                                   :cat for //, :sl for / /, or the name in
+;                                   / name /, or a common-block-object (R874)
+;                                   (name shapes), shapes nil or its array-spec;
+;                                   citems-ok: no "," first, a designator
+;                                   followed by an object with no ","
 ;         (:data ss)                R840 data-stmt: DATA data-stmt-set [[,] data-stmt-set]...
 ;                                   (ss a :dsets)
 ;         (:stop e)                 R1162 stop-stmt: STOP stop-code (R1163,
@@ -194,6 +202,16 @@
 (defun par-ents-p (es)               ; PARAMETER's entities: a name and its initialization only
   (declare (xargs :guard t))
   (if (atom es) t (and (= (len (car es)) 3) (null (kadr (car es))) (kaddr (car es)) (par-ents-p (cdr es)))))
+(defun citems-adj (x)                ; a designator, then an object with no "," before it
+  (declare (xargs :guard t))
+  (if (atom (kdr x)) t
+    (and (or (not (eq (kar (kadr (kar x))) :blk)) (and (not (eq (kar (kadr (kadr x))) :blk)) (not (kar (kadr x)))))
+         (citems-adj (kdr x)))))
+(defun citems-sep (x)                ; an object followed by a "," or a designator (then fps reads on)
+  (declare (xargs :guard t))
+  (if (atom (kdr x)) t
+    (and (or (eq (kar (kadr (kar x))) :blk) (kar (kadr x)) (eq (kar (kadr (kadr x))) :blk)) (citems-sep (kdr x)))))
+(defun citems-ok (x) (declare (xargs :guard t)) (and (not (kar (kar x))) (citems-adj x) (citems-sep x)))
 (defun dim-ents-p (es)               ; DIMENSION's entities: each with its array-spec, none initialized
   (declare (xargs :guard t))
   (if (atom es) t (and (consp (kadr (car es))) (null (kaddr (car es))) (dim-ents-p (cdr es)))))
@@ -263,6 +281,7 @@
             ((:allocate :deallocate) (and (= (len x) 2) (fg :args (cadr x)) (consp (cadr x)) (alloc-objs-p (cadr x) (eq (car x) :deallocate))))
             (:dimstmt (and (= (len x) 3) (booleanp (cadr x)) (consp (caddr x)) (fgs :ents (caddr x)) (dim-ents-p (caddr x))))
             (:parstmt (and (= (len x) 2) (consp (cadr x)) (fgs :ents (cadr x)) (par-ents-p (cadr x))))
+            (:common (and (= (len x) 2) (fgs :citems (cadr x)) (citems-ok (cadr x))))
             (:implicit (and (= (len x) 2) (imps-p (cadr x))))
             (:data (and (= (len x) 2) (fgs :dsets (cadr x))))
             (:save (and (= (len x) 3) (booleanp (cadr x)) (names-p (caddr x)) (or (null (cadr x)) (consp (caddr x)))))
@@ -327,6 +346,12 @@
                    (:rng (and (= (len x) 3) (fg :expr (cadr x)) (fg :expr (caddr x))))
                    (otherwise nil))))
     (:ents (and (consp x) (fgs :ent (car x)) (or (null (cdr x)) (fgs :ents (cdr x)))))
+    (:citems (and (consp x) (fgs :citem (car x))
+                  (if (consp (cdr x)) (fgs :citems (cdr x)) (and (null (cdr x)) (not (eq (kar (kadr (car x))) :blk))))))
+    (:citem (and (true-listp x) (= (len x) 2) (booleanp (car x)) (true-listp (cadr x)) (= (len (cadr x)) 2)
+                 (if (eq (car (cadr x)) :blk)
+                     (or (eq (cadr (cadr x)) :cat) (eq (cadr (cadr x)) :sl) (name-tok-p (cadr (cadr x))))
+                   (and (name-tok-p (car (cadr x))) (or (null (cadr (cadr x))) (fgs :shapes (cadr (cadr x))))))))
     (:dsets (and (consp x) (fgs :dset (car x))
                  (if (consp (cdr x)) (fgs :dsets (cdr x)) (and (null (cdr x)) (null (kaddr (car x)))))))
     (:dset (and (true-listp x) (= (len x) 3) (fgs :dobjs (car x)) (fgs :dvals (cadr x)) (booleanp (caddr x))))
@@ -423,6 +448,7 @@
          (:deallocate (list* (kw "deallocate") (op "(") (fy :args (kadr x))))
          (:dimstmt (cons (kw "dimension") (append (if (kadr x) (dcolon) nil) (fys :ents (kaddr x)))))
          (:parstmt (list* (kw "parameter") (op "(") (append (fys :ents (kadr x)) (list (op ")")))))
+         (:common (cons (kw "common") (fys :citems (kadr x))))
          (:implicit (cons (kw "implicit") (imps-y (kadr x))))
          (:data (cons (kw "data") (fys :dsets (kadr x))))
          (:save (cons (kw "save") (append (if (kadr x) (dcolon) nil) (onames-y (kaddr x)))))
@@ -481,6 +507,13 @@
                 (:to (cons (op ":") (fy :expr (kadr x))))
                 (otherwise (append (fy :expr (kadr x)) (cons (op ":") (fy :expr (kaddr x)))))))
       (:ents (append (fys :ent (car x)) (if (consp (cdr x)) (cons (op ",") (fys :ents (cdr x))) nil)))
+      (:citems (append (fys :citem (car x)) (if (consp (cdr x)) (fys :citems (cdr x)) nil)))
+      (:citem (append (if (car x) (list (op ",")) nil)
+                      (cond ((not (eq (kar (kadr x)) :blk))
+                             (cons (kar (kadr x)) (if (kadr (kadr x)) (cons (op "(") (fys :shapes (kadr (kadr x)))) nil)))
+                            ((eq (kadr (kadr x)) :cat) (list (op "//")))
+                            ((eq (kadr (kadr x)) :sl) (list (op "/") (op "/")))
+                            (t (list (op "/") (kadr (kadr x)) (op "/"))))))
       (:dsets (append (fys :dset (car x))
                       (if (consp (cdr x)) (append (if (kaddr (car x)) (list (op ",")) nil) (fys :dsets (cdr x))) nil)))
       (:dset (append (fys :dobjs (kar x)) (fys :dvals (kadr x))))

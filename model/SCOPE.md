@@ -11,7 +11,7 @@ proved to accept exactly that grammar (`fp-`, `fps-`, `fpu-sound` and
 `-complete`), for every alternative the Scope uses; **part** when only
 some alternatives are in; **no** otherwise.
 
-Score: **161 of 199** Scope rules proved (81%); 38 more in part; none not yet in.
+Score: **163 of 201** Scope rules proved (81%); 38 more in part; none not yet in.
 
 ## Theorem 3: checked against the compilers (status)
 
@@ -49,11 +49,11 @@ Not a theorem: a test, run by `make check` (exit 1 on any difference).
   another for MOD): the model's value is processor dependent there
   (`cases/modzero.f90`).
 - **FCVS**: scored, not failed, and only when `fcvs/` is fetched
-  (`bb fetch-fcvs.bb`; not committed): 63 of 180 programs print their
-  reference output exactly (FM002-010, 012, 016-021, 026, 030-045,
+  (`bb fetch-fcvs.bb`; not committed): 64 of 180 programs print their
+  reference output exactly (FM002-010, 012, 016-021, 025, 026, 030-045,
   060, 061, 097, 098, 109, 201-205, 251, 254, 256, 301, 306, 352-355,
-  359-362, 368, 718, 801, 805-807, 812). Of the rest, 75 stop at a statement outside the
-  subset (first: fixed form's blank-free COMPLEX 16, COMMON 14, OPEN 11,
+  359-362, 368, 718, 801, 805-807, 812). Of the rest, most stop at a statement outside the
+  subset (first: fixed form's blank-free COMPLEX 16, OPEN 11, COMMON now in;
   ...); 37 at a processor-dependent value (most an
   approximated SIN, EXP, LOG, ATAN2, ... the program compares within a
   tolerance); 5 at an I/O end or unit. (The score read 0 until the
@@ -243,6 +243,8 @@ Not a theorem: a test, run by `make check` (exit 1 on any difference).
 | R866 | implicit-stmt | proved | IMPLICIT NONE, IMPLICIT implicit-spec-list (read by imp-specs, proved with its own lemmas in fstmt-base.lisp); in the meaning a main program's or subprogram's undeclared names (a main program's DIMENSION'd names too) are typed by their first letter (8.7) |
 | R867 | implicit-spec | proved | declaration-type-spec ( letter-spec-list ): INTEGER, REAL, LOGICAL, COMPLEX, DOUBLE PRECISION, CHARACTER [* char-length]; no kind-selector |
 | R868 | letter-spec | proved | letter [- letter] |
+| R873 | common-stmt | proved | COMMON [/ [common-block-name] /] common-block-object-list [[,] / [common-block-name] / common-block-object-list]... (:common, a :citems); in the meaning each object gets SAVE and its block and place, the i-th object of a block one variable in every unit; subset: the same type, kind and bounds in each unit, no BLOCK DATA (fdecl) |
+| R874 | common-block-object | proved | variable-name [( array-spec )] |
 | R901 | designator | proved | object-name, array-element, array-section |
 | R902 | variable | proved | in assignment-stmt |
 | R908 | substring | proved | parent-string ( substring-range ); a scalar name's is a part-ref of one triplet, told apart by its type |

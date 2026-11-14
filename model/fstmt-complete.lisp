@@ -41,6 +41,8 @@
     (:prefix (or (tok-in tk *prefix-kws*) (tok-in tk *type-kws*) (equal tk (op "(")) (equal tk (op "*"))))
     (:fn-rest (equal tk (kw "result")))
     (:sub-rest (equal tk (op "(")))
+    (:citem (equal tk (op "(")))
+    (:citems (member-equal tk (list (op ",") (op "/") (op "//") (op "("))))
     (:dobj (cont-tok-p :prim tk))
     (:dval (or (equal tk (op "*")) (cont-tok-p :prim tk)))
     ((:shapes :shapes* :names :names1 :ranges :ixs :ios :kios :dobjs :dvals) nil)
@@ -75,6 +77,7 @@
        (implies (and (sfollow-ok :shape r) (not (equal (car r) (op ",")))) (equal (car r) (op ")")))
        (implies (sfollow-ok :ent r) (sfollow-ok :init r))
        (implies (sfollow-ok :ents r) (sfollow-ok :ent r))
+       (implies (sfollow-ok :citems r) (sfollow-ok :citem r))
        (implies (sfollow-ok :decl-rest r) (sfollow-ok :ents r)))
   :hints (("Goal" :in-theory (enable sfollow-ok follow-ok member-equal))))
 
@@ -253,6 +256,7 @@
   (declare (xargs :mode :program))
   (case nt ((:names :onames) `(names-p ,x)) (:names1 `(and (consp ,x) (names-p ,x)))
     (:shapes `(and (consp ,x) (shapes-same ,x (shape-kind (car ,x))) (fgs :shapes* ,x)))
+    (:citems `(and (fgs :citems ,x) (citems-sep ,x)))
     (otherwise `(fgs ,nt ,x))))
 
 (defmacro fps-complete-at (nt)
@@ -260,7 +264,7 @@
     `(defthm ,(packn (list 'fps-complete- nt))
        (implies (and ,(complete-hyp nt 'x) (sfollow-ok ,nt r))
                 (equal ,top (mv t x r)))
-       :hints (("Goal" ,@(if (member-eq nt '(:shapes* :names1 :onames :attrs :ents :items :prefix :ranges :ixs :oitems :kios :dobjs :dvals :dsets))
+       :hints (("Goal" ,@(if (member-eq nt '(:shapes* :names1 :onames :attrs :ents :citems :items :prefix :ranges :ixs :oitems :kios :dobjs :dvals :dsets))
                               '(:induct (len x)) nil)
                 :expand (,top) :in-theory (thy-or ,(packn (list 'fps-complete- nt)) (enable member-equal)))
                (top-expand-hint id ',top)))))
@@ -445,6 +449,55 @@
 (fps-complete-with :dsets ((:rewrite fps-complete-dobjs) (:rewrite fps-complete-dvals) (:linear len-fys-dobjs) (:linear len-fys-dvals) (:rewrite dset-open) (:rewrite cons-equal-consp) (:rewrite consp-fys-dobjs-dvals) (:rewrite equal-nil1) (:definition kadr) (:definition kaddr) (:rewrite dsets-first) (:forward-chaining dsets-follow)))
 (in-theory (disable cons-equal-consp equal-nil1 dset-open))   ; the DATA lists' own
 (fps-complete-at :ents)
+(defthm name-tok-not-sep
+  (implies (name-tok-p tk) (and (not (equal tk '(:op "/"))) (not (equal tk '(:op "//"))) (not (equal tk '(:op ","))) (not (equal tk '(:op "("))) (not (equal tk :blk))))
+  :hints (("Goal" :in-theory (enable name-tok-p))))
+(defthm equal-list2
+  (implies (and (true-listp x) (equal (len x) 2))
+           (equal (equal x (list a b)) (and (equal (car x) a) (equal (cadr x) b))))
+  :hints (("Goal" :expand ((len x) (len (cdr x)) (true-listp x) (true-listp (cdr x))))))
+(defthm fps-complete-citem
+  (implies (and (fgs :citem x) (sfollow-ok :citem r))
+           (equal (fps :citem (binary-append (fys :citem x) r)) (mv t x r)))
+  :hints (("Goal" :expand ((fps :citem (binary-append (fys :citem x) r)))
+           :in-theory (union-theories (append '((:rewrite name-tok-not-sep) (:rewrite equal-list2) (:definition booleanp) (:definition eq) (:definition sfollow-ok) (:definition scont-tok-p)
+                                                (:executable-counterpart name-tok-p) (:executable-counterpart op))
+                                              (cdr (assoc-eq 'fps-complete-ent *fsc-runes*)))
+                                      (theory 'minimal-theory)))))
+(defthm citem-first                  ; an item begins with its comma, its designator, or its name
+  (implies (fgs :citem i)
+           (and (consp (fys :citem i))
+                (not (equal (car (fys :citem i)) '(:op "(")))
+                (iff (member-equal (car (fys :citem i)) '((:op ",") (:op "/") (:op "//")))
+                     (or (car i) (equal (car (cadr i)) :blk)))))
+  :hints (("Goal" :expand ((fgs :citem i) (fys :citem i)) :in-theory (e/d (member-equal) (name-tok-p)))))
+(defthm fps-citems-step              ; one item read, then the rest decides
+  (implies (and (fgs :citem i) (sfollow-ok :citem rest))
+           (equal (fps :citems (binary-append (fys :citem i) rest))
+                  (if (or (equal (car (cadr i)) :blk) (member-equal (car rest) '((:op ",") (:op "/") (:op "//"))))
+                      (mv-let (ok2 is r2) (fps :citems rest)
+                        (if ok2 (mv t (cons i is) r2) (mv nil nil (binary-append (fys :citem i) rest))))
+                    (mv t (list i) rest))))
+  :hints (("Goal" :expand ((fps :citems (binary-append (fys :citem i) rest)) (len (fys :citem i)))
+           :use ((:instance citem-first))
+           :in-theory (union-theories '((:rewrite fps-complete-citem) (:rewrite len-append-fp) (:rewrite kar-kdr-consp) (:rewrite kadr-etc)
+                                        (:definition kar) (:definition kdr) (:definition len) (:definition fix) (:definition eq) (:definition atom) (:definition not) (:definition mv-nth)
+                                        (:type-prescription len) (:executable-counterpart op) (:executable-counterpart cons) (:executable-counterpart binary-+) (:executable-counterpart member-equal) (:definition member-equal) (:rewrite unicity-of-0) (:rewrite consp-append-fp))
+                                      (theory 'minimal-theory)))))
+(defthm list-car-self (implies (and (consp x) (not (cdr x))) (equal (cons (car x) nil) x)))
+(defthm citems-first                 ; a list of items begins as its first item
+  (implies (fgs :citems x) (and (fgs :citem (car x)) (consp (fys :citems x)) (equal (car (fys :citems x)) (car (fys :citem (car x))))))
+  :hints (("Goal" :expand ((fgs :citems x) (fys :citems x)) :in-theory (union-theories (quote ((:rewrite citem-first) (:rewrite car-append-fp) (:rewrite consp-append-fp))) (theory (quote minimal-theory))))))
+(defthm fps-complete-citems
+  (implies (and (fgs :citems x) (citems-sep x) (sfollow-ok :citems r))
+           (equal (fps :citems (binary-append (fys :citems x) r)) (mv t x r)))
+  :hints (("Goal" :induct (len x) :expand ((fys :citems x) (fgs :citems x) (citems-sep x))
+           :in-theory (union-theories '((:rewrite fps-citems-step) (:rewrite citem-first) (:rewrite citems-first) (:rewrite consp-append-fp) (:rewrite append-assoc-fp) (:rewrite car-append-fp) (:rewrite sfollow-facts)
+                                        (:rewrite kar-kdr-consp) (:rewrite kadr-etc) (:rewrite cons-car-cdr-fp) (:definition sfollow-ok) (:definition scont-tok-p) (:definition member-equal)
+                                        (:definition kar) (:definition kdr) (:definition eq) (:definition atom) (:definition not) (:definition mv-nth) (:definition null) (:definition binary-append)
+                                        (:induction len) (:executable-counterpart op) (:executable-counterpart member-equal) (:executable-counterpart consp) (:executable-counterpart car)
+                                        (:executable-counterpart equal) (:executable-counterpart not) (:rewrite car-cons) (:rewrite cdr-cons) (:rewrite list-car-self))
+                                      (theory 'minimal-theory)))))
 (fps-complete-at :decl-rest)
 (fps-complete-at :prefix)
 (fps-complete-at :fn-rest)
@@ -575,6 +628,7 @@
 (fps-complete-kind :save)
 (fps-complete-kind :dimstmt)
 (fps-complete-kind :parstmt)
+(fps-complete-kind :common)
 (fps-complete-kind :data)
 (fps-complete-kind :implicit)
 (fps-complete-kind :call)
@@ -599,7 +653,7 @@
   (if (endp ks) nil (cons `(equal (car x) ,(car ks)) (kind-cases (cdr ks)))))
 
 (defconst *stmt-kinds*
-  '(:program :module :end :contains :block :implicit-none :else :use :decl :assign :cassign :type :tdecl :if-then :else-if :do :simple :stop :allocate :deallocate :save :dimstmt :parstmt :implicit :data :call :print
+  '(:program :module :end :contains :block :implicit-none :else :use :decl :assign :cassign :type :tdecl :if-then :else-if :do :simple :stop :allocate :deallocate :save :dimstmt :parstmt :common :implicit :data :call :print
     :function :subroutine :if :select :case :case-default :label :goto :aif :ldo :format :write :read :readf))
 (defthm fgs-stmt-kinds                ; a statement is of one of the kinds above
   (implies (fgs :stmt x) (member-equal (car x) *stmt-kinds*))

@@ -5,24 +5,23 @@ whole; use the headings below and `grep -n` / `sed -n`.
 
 ## Where Stage A stands (update on every commit that moves a number)
 
-- SCOPE score: 161 of 199 rules proved, 38 in part, none missing (SCOPE.md, first
+- SCOPE score: 163 of 201 rules proved, 38 in part, none missing (SCOPE.md, first
   paragraphs).
-- FCVS: 63 of 180 programs print their reference output (SCOPE.md, "Theorem 3:
+- FCVS: 64 of 180 programs print their reference output (SCOPE.md, "Theorem 3:
   checked against the compilers", the FCVS bullet; the passing names are in
   build/fcvs.txt after `make check`).
 - Fuzzer: `make fuzz` (seed 1, 40 programs) agrees under gfortran and flang; seeds 1-5
   clean (same SCOPE section, "The fuzzer").
-- Oracle cases: 7 fsyn cases + 37 whole programs in model/cases/, all agree.
+- Oracle cases: 7 fsyn cases + 38 whole programs in model/cases/, all agree.
 
 ## Next lanes, in order
 
 FCVS top blockers (statements outside the subset), by count of programs stopped:
 1. Fixed-form blank-free COMPLEX: 16.
-2. COMMON: 14. WIP lives on the local branch `wip-common`; resume from it, don't redo it.
-3. OPEN: 11.
-4. Statement functions inside subprograms.
-5. DATA inside subprograms.
-6. fstmt-complete's runes write stalls on `decl-rest-comma-second`
+2. OPEN: 11.
+3. Statement functions inside subprograms.
+4. DATA inside subprograms.
+5. fstmt-complete's runes write stalls on `decl-rest-comma-second`
    (`make runes` / write mode doesn't finish there; see the traps).
 
 Then the rest of Stage A (derived-type gap, COMPLEX and the other "part" rows):

@@ -108,7 +108,7 @@
   (let ((g (gnt nt)))
    (append
     ; the trees never nil
-    (if (member-eq g '(:stmt :dsets :dobjs :dobj :dvals :dval :shapes :shapes* :ents :ent :names1 :ts :attr :shape :decl-rest :fn-rest :sub-rest :ranges :range :ixs :ix :io :ios))
+    (if (member-eq g '(:stmt :citems :citem :dsets :dobjs :dobj :dvals :dval :shapes :shapes* :ents :ent :names1 :ts :attr :shape :decl-rest :fn-rest :sub-rest :ranges :range :ixs :ix :io :ios))
         `(and ,x) '(and))
     (list
     (case g
@@ -146,6 +146,8 @@
                   (if (not ok) (mv nil nil)
                     (mv-let (ok2 vs r2) (fps :dvals r) (declare (ignore vs))
                       (if ok2 (mv t (if (equal (kar r2) (op ",")) (kdr r2) r2)) (mv nil nil))))))
+        (:citems (mv-let (ok i r) (fps :citem toks)
+                   (if (and ok (or (eq (kar (kadr i)) :blk) (member-equal (kar r) (list (op ",") (op "/") (op "//"))))) (mv t r) (mv nil nil))))
         (:ents (mv-let (ok e r) (fps :ent toks) (declare (ignore e))
                  (if (and ok (equal (kar r) (op ","))) (mv t (kdr r)) (mv nil nil))))
         (:kios (if (equal (kar toks) (op ","))
@@ -163,7 +165,7 @@
 ; a list nt inducts on list-ind; thy, if given, is the runes the proof uses
 ; (so it is as fast writing useless-runes as reading them)
 (defmacro fps-sound-at (nt &optional use thy)
-  (if (member-eq nt '(:shapes* :names1 :onames :attrs :ents :items :prefix :ranges :ixs :oitems :kios :dobjs :dvals :dsets))
+  (if (member-eq nt '(:shapes* :names1 :onames :attrs :ents :citems :items :prefix :ranges :ixs :oitems :kios :dobjs :dvals :dsets))
       `(defthm ,(packn (list 'fps-sound- nt))
          (implies (mv-nth 0 (fps ,nt toks))
                   ,(sound-concl nt `(mv-nth 1 (fps ,nt toks)) `(mv-nth 2 (fps ,nt toks)) 'toks))
@@ -216,6 +218,9 @@
 (fps-sound-at :attrs)
 (fps-sound-at :ent)
 (fps-sound-at :ents)
+(defthm fgs-citems-consp (implies (fgs :citems x) (consp x)) :rule-classes :forward-chaining :hints (("Goal" :expand ((fgs :citems x)))))
+(fps-sound-at :citem)
+(fps-sound-at :citems)
 (defthm dobj-prim                    ; a DATA object other than an implied-do is its primary
   (implies (not (equal (car x) :ido))
            (and (equal (fys :dobj x) (fy :prim x)) (equal (fgs :dobj x) (and (fg :prim x) (dobj-p x)))))
@@ -401,7 +406,7 @@
   '(:stmt :s-head :s-end :s-other :s-use :s-else :s-if :s-do :s-call :s-print :s-type :s-assign :s-unit :s-select :s-case
     :s-label :s-goto :s-format :s-write :s-read :oitems :ios :kios :io
     :fn-rest :sub-rest :decl-rest :ts :attrs :attr :shapes :shapes* :shape :ranges :range :ixs :ix :ents :ent :init
-    :dsets :dobjs :dobj :dvals :dval
+    :dsets :dobjs :dobj :dvals :dval :citems :citem
     :names :names1 :onames :items :ctl :prefix))
 
 (defthm fps-other
