@@ -532,3 +532,27 @@
     (if (not a) t
       (let ((s (rtrim-blanks (reverse (fi-up (coerce (if (stringp (kadr (kadr a))) (kadr (kadr a)) "") 'list))))))
         (cond ((equal s (coerce "SEY" 'list)) t) ((equal s (coerce "ON" 'list)) nil) (t (err :advance)))))))
+
+; ---- OPEN and CLOSE (R1204, R1208) for the subset: only a scratch file
+; (STATUS='SCRATCH', no FILE=, sequential formatted) is connected, to a
+; unit not preconnected (not 5 or 6); a named or default-named file depends
+; on the file system (an :error :pd); a spec outside this is an :error :open
+; or :close. st-units, the list of connected unit numbers, is the model's
+; record of it; READ and WRITE on such a unit are not in the subset yet.
+(defun io-kwv (nm ios)               ; the spec's value, upper case, trailing blanks dropped; nil when absent
+  (cond ((atom ios) nil)
+        ((and (eq (kar (car ios)) :kw) (equal (kadr (car ios)) nm))
+         (let ((s (kadr (kaddr (car ios)))))
+           (coerce (reverse (rtrim-blanks (reverse (fi-up (coerce (if (stringp s) s "") 'list))))) 'string)))
+        (t (io-kwv nm (cdr ios)))))
+(defun oc-run (k ios u st)           ; k :open or :close; u the unit's value
+  (let ((n (v-num u)) (stt (io-kwv "status" ios)) (e (if (eq k :open) :open :close)))
+    (cond ((not (and (ival-scalar u) (integerp n) (<= 0 n) (not (member-equal n '(5 6))))) (mv (err :unit) st))
+          ((eq k :close)
+           (cond ((or (io-kwv "file" ios) (io-kwv "access" ios) (io-kwv "form" ios) (not (member-equal stt '(nil "DELETE")))) (mv (err e) st))
+                 (t (mv :normal (st-units-set (remove1-equal n (st-units st)) st)))))
+          ((or (member-equal n (st-units st)) (not (member-equal (io-kwv "access" ios) '(nil "SEQUENTIAL")))
+               (not (member-equal (io-kwv "form" ios) '(nil "FORMATTED")))) (mv (err e) st))
+          ((io-kwv "file" ios) (mv (err (if (member-equal stt '(nil "UNKNOWN" "OLD" "NEW" "REPLACE")) :pd e)) st))
+          ((equal stt "SCRATCH") (mv :normal (st-units-set (cons n (st-units st)) st)))
+          (t (mv (err (if (member-equal stt '(nil "UNKNOWN")) :pd e)) st)))))

@@ -123,6 +123,9 @@
 ;                                   the token (:fmt s) its text from "(" to ")"
 ;         (:write ios items)        R1211 write-stmt: WRITE ( io-control-spec-list )
 ;                                   [output-item-list]
+;         (:open cs)                R1204 open-stmt: OPEN ( connect-spec-list ), cs the
+;                                   :io list (UNIT, then :kw specs; no format); R1208
+;         (:close cs)               close-stmt: CLOSE ( close-spec-list ), same shape
 ;         (:read ios items)         R1210 read-stmt: READ ( io-control-spec-list )
 ;                                   [input-item-list], R1216 input-item:
 ;                                   variable, a designator (lone-prim)
@@ -138,6 +141,7 @@
 ;                                   :star) or R1202 file-unit-number, an expr
 ;        (:fmt kwp f)               [FMT =] format (as PRINT's f); kwp nil
 ;                                   only as the list's second item
+;        (:kw nm tk)                OPEN/CLOSE's FILE=, STATUS=, ACCESS=, FORM= char-literal
 ;        (:adv tk)                  ADVANCE = scalar-default-char-expr, a
 ;                                   char-literal-constant in the subset
 ;  :oitems (e ...)                  R1216 output-item-list, e {, e}, to the end
@@ -297,6 +301,7 @@
                        (label-digits-p (car (cddddr x)))))
             (:ldo (and (= (len x) 3) (label-digits-p (cadr x)) (fgs :ctl (caddr x))))
             (:format (and (= (len x) 2) (stringp (cadr x))))
+            ((:open :close) (and (= (len x) 2) (consp (cadr x)) (fgs :io (car (cadr x))) (fgs :kios (cdr (cadr x))) (oios-ok (cadr x))))
             (:write (and (= (len x) 3) (fgs :ios (cadr x)) (fgs :oitems (caddr x))))
             (:read (and (= (len x) 3) (fgs :ios (cadr x)) (fgs :oitems (caddr x)) (all-lone (caddr x))))
             (:function (and (= (len x) 5) (fgs :prefix (cadr x)) (fgs :fn-rest (cddr x))))
@@ -376,6 +381,7 @@
                 (:unit (and (= (len x) 3) (booleanp (cadr x)) (or (eq (caddr x) :star) (fg :expr (caddr x)))))
                 (:fmt (and (= (len x) 3) (eq (cadr x) t) (fmt-spec-p (caddr x))))
                 (:adv (and (= (len x) 2) (char-tok-p (cadr x))))
+                (:kw (and (= (len x) 3) (member-equal (cadr x) *io-kws*) (char-tok-p (caddr x))))
                 (otherwise nil))))
     (:ctl (or (null x)
               (and (true-listp x)
@@ -465,6 +471,7 @@
                                                       (lab-int (kar (kdr (kdr (kdr (kdr x))))))))))
          (:ldo (list* (kw "do") (lab-int (kadr x)) (fys :ctl (kaddr x))))
          (:format (list (kw "format") (list :fmt (kadr x))))
+         ((:open :close) (list* (kw (if (eq (car x) :open) "open" "close")) (op "(") (append (fys :io (kar (kadr x))) (fys :kios (kdr (kadr x))))))
          (:write (list* (kw "write") (op "(") (append (fys :ios (kadr x)) (fys :oitems (kaddr x)))))
          (:read (list* (kw "read") (op "(") (append (fys :ios (kadr x)) (fys :oitems (kaddr x)))))
          (:function (append (fys :prefix (kadr x)) (fys :fn-rest (kdr (kdr x)))))
@@ -535,6 +542,7 @@
       (:io (case (car x)
              (:unit (append (if (kadr x) (list (kw "unit") (op "=")) nil) (if (eq (kaddr x) :star) (list (op "*")) (fy :expr (kaddr x)))))
              (:fmt (list (kw "fmt") (op "=") (fmt-tok (kaddr x))))
+             (:kw (list (kw (kadr x)) (op "=") (kaddr x)))
              (otherwise (list (kw "advance") (op "=") (kadr x)))))
       (:ctl (case (car x)
               (:range (append (if (kadr x) (list (op ",")) nil) (list (kaddr x) (op "="))

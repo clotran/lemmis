@@ -131,7 +131,7 @@
   :hints (("Goal" :in-theory (enable fmt-spec-p fmt-tok label-digits-p char-tok-p))))
 (defthm fmt-head-not-name (not (fmt-head-p (cons :name x))) :hints (("Goal" :in-theory (enable fmt-head-p char-tok-p label-int-p))))
 (defthm kw-head-p-io
-  (implies (and (consp toks) (member-equal (car toks) '((:name "unit") (:name "fmt") (:name "advance")))
+  (implies (and (consp toks) (member-equal (car toks) '((:name "unit") (:name "fmt") (:name "advance") (:name "file") (:name "status") (:name "access") (:name "form")))
                 (consp (cdr toks)) (equal (cadr toks) '(:op "=")))
            (kw-head-p toks))
   :hints (("Goal" :in-theory (enable kw-head-p name-tok-p member-equal))))
@@ -139,7 +139,9 @@
 (defthm expr-not-io-kw
   (implies (and (equal (cadr (append (fy :expr e) r)) '(:op "=")) (fg :expr e) (follow-ok :expr r))
            (and (not (equal (car (fy :expr e)) '(:name "unit"))) (not (equal (car (fy :expr e)) '(:name "fmt")))
-                (not (equal (car (fy :expr e)) '(:name "advance")))))
+                (not (equal (car (fy :expr e)) '(:name "advance")))
+                (not (equal (car (fy :expr e)) '(:name "file"))) (not (equal (car (fy :expr e)) '(:name "status")))
+                (not (equal (car (fy :expr e)) '(:name "access"))) (not (equal (car (fy :expr e)) '(:name "form")))))
   :hints (("Goal" :use ((:instance fp-complete (nt :expr) (x e)) (:instance kw-head-p-io (toks (append (fy :expr e) r))))
            :in-theory (disable fp-complete kw-head-p-io))))
 
@@ -646,6 +648,8 @@
 (fps-complete-kind :write)
 (fps-complete-kind :read)
 (fps-complete-kind :readf)
+(fps-complete-kind :open)
+(fps-complete-kind :close)
 ; last: its action statement is one of the kinds above (GO TO and WRITE among them)
 (fps-complete-kind :if)
 
@@ -654,7 +658,7 @@
 
 (defconst *stmt-kinds*
   '(:program :module :end :contains :block :implicit-none :else :use :decl :assign :cassign :type :tdecl :if-then :else-if :do :simple :stop :allocate :deallocate :save :dimstmt :parstmt :common :implicit :data :call :print
-    :function :subroutine :if :select :case :case-default :label :goto :aif :ldo :format :write :read :readf))
+    :function :subroutine :if :select :case :case-default :label :goto :aif :ldo :format :write :read :readf :open :close))
 (defthm fgs-stmt-kinds                ; a statement is of one of the kinds above
   (implies (fgs :stmt x) (member-equal (car x) *stmt-kinds*))
   :rule-classes nil :hints (("Goal" :expand ((fgs :stmt x)) :in-theory (enable member-equal))))

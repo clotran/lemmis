@@ -77,9 +77,15 @@
   (and (true-listp c) (= (len c) 3) (eq (car c) :fmt) (null (cadr c)) (fmt-spec-p (caddr c))))
 (defun ios-count (k cs) (declare (xargs :guard t)) (if (atom cs) 0 (+ (if (equal (kar (car cs)) k) 1 0) (ios-count k (cdr cs)))))
 (defun ios-fmt (cs) (declare (xargs :guard t)) (if (atom cs) nil (if (eq (kar (car cs)) :fmt) (kaddr (car cs)) (ios-fmt (cdr cs)))))
+(defconst *io-kws* '("file" "status" "access" "form"))   ; an OPEN/CLOSE spec written NAME = 'char-literal' (:kw name tk)
+(defun kw-names (cs) (declare (xargs :guard t)) (if (atom cs) nil (if (eq (kar (car cs)) :kw) (cons (kadr (car cs)) (kw-names (cdr cs))) (kw-names (cdr cs)))))
+(defun oios-ok (cs)                  ; R1205, R1208: UNIT once (C1204), no format, each spec at most once
+  (declare (xargs :guard t))
+  (and (equal (ios-count :unit cs) 1) (equal (ios-count :fmt cs) 0) (equal (ios-count :adv cs) 0)
+       (no-duplicatesp-equal (kw-names cs))))
 (defun ios-ok (cs)                   ; C1210, C1211, C1223; one format
   (declare (xargs :guard t))
-  (and (equal (ios-count :unit cs) 1) (equal (ios-count :fmt cs) 1) (<= (ios-count :adv cs) 1)
+  (and (equal (ios-count :unit cs) 1) (equal (ios-count :kw cs) 0) (equal (ios-count :fmt cs) 1) (<= (ios-count :adv cs) 1)
        (or (equal (ios-count :adv cs) 0) (not (eq (ios-fmt cs) :star)))))
 ; an expression tree that is a lone name or a lone name(args), and nothing
 ; else: a designator, an input item (R1216)

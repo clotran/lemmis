@@ -97,6 +97,11 @@
                       ((and (equal tk (kw "stop")) (consp (kdr toks)))      ; R1162 STOP stop-code
                        (mv-let (ok e r) (fp :expr (kdr toks)) (if ok (mv t (list :stop e) r) (fail))))
                       ((tok-in tk *simple-kinds*) (mv t (list :simple (kadr tk)) (kdr toks)))
+                      ((and (or (equal tk (kw "open")) (equal tk (kw "close"))) (equal (kadr toks) (op "(")))   ; R1204, R1208
+                       (mv-let (ok c r) (fps :io (kdr (kdr toks)))
+                         (if (not (and ok (< (len r) (len toks)))) (fail)
+                           (mv-let (ok2 cs r2) (fps :kios r)
+                             (if (and ok2 (oios-ok (cons c cs))) (mv t (list (if (equal tk (kw "open")) :open :close) (cons c cs)) r2) (fail))))))
                       (t (fail))))
       (:s-use
        (if (not (equal tk (kw "use"))) (fail)
@@ -174,6 +179,8 @@
                     (mv-let (ok e r) (fp :expr (kdr (kdr toks))) (if ok (mv t (list :unit t e) r) (fail)))))
                  ((and (equal tk (kw "fmt")) (equal (kadr toks) (op "=")))
                   (if (fmt-head-p (kaddr toks)) (mv t (list :fmt t (fmt-of (kaddr toks))) (kdr (kdr (kdr toks)))) (fail)))
+                 ((and (or (equal tk (kw "file")) (equal tk (kw "status")) (equal tk (kw "access")) (equal tk (kw "form"))) (equal (kadr toks) (op "=")))
+                  (if (char-tok-p (kaddr toks)) (mv t (list :kw (kadr tk) (kaddr toks)) (kdr (kdr (kdr toks)))) (fail)))
                  ((and (equal tk (kw "advance")) (equal (kadr toks) (op "=")))
                   (if (char-tok-p (kaddr toks)) (mv t (list :adv (kaddr toks)) (kdr (kdr (kdr toks)))) (fail)))
                  ((equal tk (op "*")) (mv t (list :unit nil :star) (kdr toks)))

@@ -131,7 +131,7 @@
 
 (defun me-program (units in fuel)    ; (mv status lines): in the input's records
   (declare (xargs :guard t :verify-guards nil))
-  (let ((gframe (ext-frame units)) (st (mk-st7 nil 0 nil nil nil nil (cons in nil))) (main (find-main units)))
+  (let ((gframe (ext-frame units)) (st (mk-st8 nil 0 nil nil nil nil (cons in nil) nil)) (main (find-main units)))
     (mv-let (e mods modenvs st) (me-modules units nil nil gframe st fuel)
       (cond (e (mv e (close-lines (reverse (true-list-fix (st-out st))))))
             ((not main) (mv (err :syntax) nil))

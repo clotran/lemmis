@@ -119,16 +119,6 @@
   (:executable-counterpart eql) (:executable-counterpart equal) (:executable-counterpart fys) (:executable-counterpart null) (:executable-counterpart op) (:rewrite car-cons) (:rewrite cdr-cons)
   (:rewrite fg-expr-consp) (:rewrite fgs-var-open) (:rewrite fp-complete) (:rewrite fps-empty) (:rewrite fps-open) (:rewrite fys-var-open) (:rewrite kar-kdr-consp)
   (:rewrite sfollow-facts) (:type-prescription fg) (:type-prescription fy) (:type-prescription sfollow-ok))
- (fps-complete-io
-  (:type-prescription len) (:compound-recognizer booleanp-compound-recognizer) (:definition =) (:definition atom) (:definition binary-append) (:definition char-tok-p) (:definition eq)
-  (:definition eql) (:definition kar) (:definition kdr) (:definition kw) (:definition len) (:definition mv-nth) (:definition not)
-  (:definition null) (:definition synp) (:definition true-listp) (:executable-counterpart binary-+) (:executable-counterpart binary-append) (:executable-counterpart booleanp) (:executable-counterpart car)
-  (:executable-counterpart cdr) (:executable-counterpart cons) (:executable-counterpart consp) (:executable-counterpart eql) (:executable-counterpart equal) (:executable-counterpart fg) (:executable-counterpart fmt-tok)
-  (:executable-counterpart fy) (:executable-counterpart kar) (:executable-counterpart kw) (:executable-counterpart len) (:executable-counterpart member-equal) (:executable-counterpart not) (:executable-counterpart op)
-  (:executable-counterpart tau-system) (:executable-counterpart zp) (:rewrite append-assoc-fp) (:rewrite car-append-fp) (:rewrite car-cons) (:rewrite cdr-cons) (:rewrite consp-append-fp)
-  (:rewrite equal-list3) (:rewrite equal-pair) (:rewrite expr-first-not) (:rewrite expr-not-io-kw) (:rewrite fgs-var-open) (:rewrite fmt-head-facts) (:rewrite fold-consts-in-+)
-  (:rewrite fp-complete) (:rewrite fps-open) (:rewrite fys-var-open) (:rewrite kadr-etc) (:rewrite kar-kdr-consp) (:rewrite sfollow-facts) (:type-prescription fg)
-  (:type-prescription fmt-spec-p) (:type-prescription fp) (:type-prescription sfollow-ok))
  (fps-complete-ios
   (:type-prescription len) (:definition =) (:definition atom) (:definition binary-append) (:definition eq) (:definition eql) (:definition fgs)
   (:definition fix) (:definition fmt-pos-p) (:definition fys) (:definition kar) (:definition kdr) (:definition kw) (:definition len)
