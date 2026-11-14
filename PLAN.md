@@ -182,6 +182,20 @@ ACL2) are the examples to learn from.
    cases join as the subset grows. Where gfortran and flang disagree,
    the standard decides, and the model says which follows it.
 
+   *The math intrinsics* (James, 2026-11-14). The standard makes SIN,
+   EXP, LOG and the rest "a processor-dependent approximation" with no
+   accuracy requirement; the model must still let people reason about
+   the math. So each is an encapsulated function constrained by an
+   accuracy property: the result is within N roundings of the true value
+   (N a named parameter; N = 1/2 is correctly rounded), the true value
+   pinned by rational enclosures (Taylor series with remainder), no
+   reals, no defaxiom. Theorems hold on every processor meeting N. The
+   attached executable (defattach) is the correctly rounded one, so the
+   rule a user reasons with is "every operation is the exact value,
+   rounded once", as IEEE gives + - * / and SQRT. Against gfortran and
+   flang these intrinsics compare within 1 ulp; where a compiler's libm
+   is off and the model is correctly rounded, the model is right.
+
 **Stage B -- Lemmis as a conservative extension.**
 4. *The extended grammar*: Stage A's plus the extensions, and the
    theorem that keeps the rule -- every program the Fortran grammar
@@ -231,6 +245,13 @@ The order is the scientists' first: free form, modules, procedures,
 arrays, the loops, `pure` and `elemental`, the intrinsics most used;
 then fixed form, GO TO, FORMAT and the rest of I/O (under way on branch
 `wip/fixed-form-goto-format`); coarrays last.
+
+9. *Real-number meaning and floating-point error bounds* (James,
+   2026-11-14; after Stage A). A Lemmis program has a meaning over the
+   reals, where its science is stated and proved (a solver converges,
+   energy is conserved), and a theorem bounds how far the floating-point
+   program strays from it, built on Stage A's accuracy properties. People
+   reason about the math; the bound carries it to the machine.
 
 ## Milestones, in order
 
