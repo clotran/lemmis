@@ -53,8 +53,8 @@ Not a theorem: a test, run by `make check` (exit 1 on any difference).
   reference output exactly (FM002-010, 012, 016-021, 025, 026, 030-045,
   060, 061, 097, 098, 109, 201-205, 251, 254, 256, 301, 306, 352-355,
   359-362, 368, 718, 801, 805-807, 812). Of the rest, most stop at a statement outside the
-  subset (first: fixed form's blank-free COMPLEX 16, OPEN 11, COMMON now in;
-  ...); 37 at a processor-dependent value (most an
+  subset (first: fixed form's blank-free COMPLEX 22, OPEN 11, REWIND 7,
+  EQUIVALENCE 7, ...; table in STATUS.md); 37 at a processor-dependent value (most an
   approximated SIN, EXP, LOG, ATAN2, ... the program compares within a
   tolerance); 5 at an I/O end or unit. (The score read 0 until the
   harness dropped the "exit 0" line LLVM's reference outputs end with.)

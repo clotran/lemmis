@@ -16,11 +16,21 @@ whole; use the headings below and `grep -n` / `sed -n`.
 
 ## Next lanes, in order
 
-FCVS top blockers (statements outside the subset), by count of programs stopped:
-1. Fixed-form blank-free COMPLEX: 16.
-2. OPEN: 11.
-3. Statement functions inside subprograms.
-4. DATA inside subprograms.
+FCVS top blockers, recounted 2026-11-14 (first stopping statement or run-time stop of
+each of the 116 failing programs; 64 pass). Script idea: run fortran-run-form on each
+program, bucket (:ERROR :PARSE)'s AT tokens, else STATUS:
+1. Processor-dependent value (:ERROR :PD; approximated SIN/EXP/LOG/ATAN2): 37.
+2. Fixed-form blank-free COMPLEX declaration: 22 (the 16 earlier count missed 6).
+3. OPEN: 11.
+4. REWIND (blank-free `REWIND I08`): 7.
+5. EQUIVALENCE: 7.
+6. Whole program unit fails to parse, cause not isolated (:PROGRAM): 6.
+7. WRITE with implied-DO / odd unit or FMT= variable: 5.
+8. EXTERNAL (blank-free): 4.
+9. Run-time end of file or unit (:ERROR :END 4, :UNIT 1): 5.
+10. Computed GO TO 3; END FILE 2; CALL with `*` alternate returns 2; BLOCK DATA 2.
+Many OPEN programs also use REWIND/END FILE/DIRECT access behind it.
+Open lane: OPEN/CLOSE.
 5. fstmt-complete's runes write stalls on `decl-rest-comma-second`
    (`make runes` / write mode doesn't finish there; see the traps).
 
