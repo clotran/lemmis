@@ -9,7 +9,7 @@ export ACL2_USELESS_RUNES ?= read?
 BOOKS := $(basename $(notdir $(wildcard model/*.lisp)))
 
 model: $(BOOKS:%=model/%.cert)
-.PHONY: model check check-gen runes fuzz
+.PHONY: model check check-gen runes fuzz book-map
 
 model/%.cert: model/%.lisp
 	@mkdir -p build; rm -f $@
@@ -21,9 +21,12 @@ model/%.cert: model/%.lisp
 runes:
 	@$(MAKE) -B model ACL2_USELESS_RUNES=write
 
+# quiet: full output in build/check.txt (and build/fcvs.txt); model/quiet.bb prints the summary
 check: model
-	@cd model && ACL2="$(ACL2)" bb check-fsem.bb
-	@$(MAKE) --no-print-directory fuzz
+	@mkdir -p build; bb model/quiet.bb check sh -c "cd model && ACL2=\"$(ACL2)\" bb check-fsem.bb && cd .. && $(MAKE) --no-print-directory fuzz"
+
+book-map:
+	@bb model/book-map.bb
 
 # random programs of the subset, the model against gfortran and flang (model/fuzz.bb)
 FUZZ_SEED ?= 1
@@ -35,7 +38,7 @@ fuzz: model
 # (model/check-gen.bb; reads clotran's certified books, writes nothing there)
 CLOTRAN ?= /Users/james/clotran/clotran
 check-gen: model/gen-disch-loop.cert model/gen-st-spush.cert model/gen-st-heap.cert
-	@cd model && ACL2="$(ACL2)" CLOTRAN="$(CLOTRAN)" bb check-gen.bb
+	@mkdir -p build; bb model/quiet.bb check-gen sh -c "cd model && ACL2=\"$(ACL2)\" CLOTRAN=\"$(CLOTRAN)\" bb check-gen.bb"
 
 build/deps.mk: $(BOOKS:%=model/%.lisp)
 	@mkdir -p build

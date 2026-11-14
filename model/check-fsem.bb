@@ -426,9 +426,9 @@
           (and want (#{":STOP" ":NORMAL"} (:status m)) (= want (:recs m))) (swap! fcvs-pass conj nm)
           :else nil)))
 (when (seq fcvs-files)
-  (println (format "check-fsem: FCVS %d of %d programs agree with their reference output (%.0f%%): %s"
-                   (count @fcvs-pass) (count fcvs-files) (* 100.0 (/ (count @fcvs-pass) (count fcvs-files)))
-                   (str/join " " @fcvs-pass))))
+  (spit (str here "/../build/fcvs.txt") (str (str/join "\n" @fcvs-pass) "\n")) ; the names, out of make check
+  (println (format "check-fsem: FCVS %d of %d programs agree with their reference output (%.0f%%); names in build/fcvs.txt"
+                   (count @fcvs-pass) (count fcvs-files) (* 100.0 (/ (count @fcvs-pass) (count fcvs-files))))))
 
 (doseq [[nm l t cs] @pd-seen]
   (println "processor dependent:" nm "line" l "value" t (str/join ", " (for [[fc v] cs] (str fc " printed " v)))))

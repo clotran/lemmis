@@ -1,6 +1,6 @@
 # Lemmis
 
-PLAN.md is the design and the milestone order. The proofs live in
+Lanes start from `model/STATUS.md` (status, next lanes, traps). PLAN.md is the design and the milestone order. The proofs live in
 `model/`, certified by ACL2 (`/Users/james/clotran/acl2/saved_acl2`).
 
 ## Proof work: keep the context small
