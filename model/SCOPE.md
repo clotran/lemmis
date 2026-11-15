@@ -49,14 +49,15 @@ Not a theorem: a test, run by `make check` (exit 1 on any difference).
   another for MOD): the model's value is processor dependent there
   (`cases/modzero.f90`).
 - **FCVS**: scored, not failed, and only when `fcvs/` is fetched
-  (`bb fetch-fcvs.bb`; not committed): 69 of 180 programs print their
+  (`bb fetch-fcvs.bb`; not committed): 75 of 180 programs print their
   reference output exactly (FM002-010, 012, 016-021, 025, 026, 030-045,
   060, 061, 097, 098, 109, 201-205, 251, 254, 256, 301, 306, 352-355,
-  359-362, 368-370, 718, 801, 803, 805-807, 812, 814, 816). Of the rest, most stop at a statement outside the
+  359-362, 368-370, 372-374, 718, 801, 803, 805-807, 812, 814, 816, 819, 821, 822). Of the rest, most stop at a statement outside the
   subset (first: EQUIVALENCE 24, OPEN 11 (its DIRECT, RECL=, FILE= variable forms), REWIND 7,
-  ...; table in STATUS.md); 33 at a processor-dependent value (most an
-  approximated SIN, COS, ATAN2, ... the program compares within a
-  tolerance; EXP and LOG are correctly rounded, `fintr.lisp`); 5 at an I/O end or unit. (The score read 0 until the
+  ...; table in STATUS.md); 27 at a processor-dependent value (most an
+  approximated ASIN, ACOS, SINH, COSH, TANH, LOG10, or MOD's zero sign; EXP,
+  LOG, SIN, COS, TAN, ATAN, ATAN2 are correctly rounded, `fintr.lisp`,
+  `ftrig.lisp`); 5 at an I/O end or unit. (The score read 0 until the
   harness dropped the "exit 0" line LLVM's reference outputs end with.)
 - **flang's parse tree** (PLAN.md's parsing oracle) is not compared yet.
 
@@ -110,6 +111,14 @@ Not a theorem: a test, run by `make check` (exit 1 on any difference).
   is fl-round's monotonicity (`fl-round-convex`) and so that every deciding
   depth agrees (`decides-agree`); `defattach`ed to an executable search
   (`cases/intrin.f90`).
+- `ftrig.lisp`: SIN, COS, TAN, ATAN, ATAN2 of a real (and DSIN, ...),
+  correctly rounded the same way (`fl-trig-correctly-rounded`): alternating
+  atan/sin/cos series (`alt-sound`), pi by Machin's formula (`pi-sound`,
+  `dpi-sound`), exact range reduction by a rational pi of 64 2^j + log2|x|
+  bits; the constraint is on the hull of depths 0..j (`hull-mono`,
+  `tdec-agree`), so that the composed reduction encloses the true value is
+  argued, not proved. ATAN2's zero and infinity cases are ISO/IEC 60559's
+  (`cases/trig.f90`; flang's ATAN2(-2d0, 0.5d0) is one ulp off).
 - `flex.lisp`: free source form (6.3.2) to statements of tokens, with
   `assert-event` tests. Not proved; it is checked by running programs.
   Fixed source form (6.3.3) is read without its blanks and a statement's

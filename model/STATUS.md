@@ -7,19 +7,20 @@ whole; use the headings below and `grep -n` / `sed -n`.
 
 - SCOPE score: 165 of 205 rules proved, 40 in part, none missing (SCOPE.md, first
   paragraphs).
-- FCVS: 69 of 180 programs print their reference output (SCOPE.md, "Theorem 3:
+- FCVS: 75 of 180 programs print their reference output (SCOPE.md, "Theorem 3:
   checked against the compilers", the FCVS bullet; the passing names are in
   build/fcvs.txt after `make check`).
 - Fuzzer: `make fuzz` (seed 1, 40 programs) agrees under gfortran and flang; seeds 1-5
   clean (same SCOPE section, "The fuzzer").
-- Oracle cases: 7 fsyn cases + 44 whole programs in model/cases/, all agree.
+- Oracle cases: 7 fsyn cases + 45 whole programs in model/cases/, all agree.
 
 ## Next lanes, in order
 
-FCVS blockers, 2026-11-14 (first stop of each failing program; 69 pass; recount with
+FCVS blockers, 2026-11-15 (first stop of each failing program; 75 pass; recount with
 fortran-run-form per program, bucketing (:ERROR :PARSE)'s AT tokens, else STATUS):
-1. :ERROR :PD (approximated SIN/COS/ATAN2): 33. Next: trig the way fintr.lisp does
-   EXP/LOG (an enclosure, fl-mag's constraint, an attached search).
+1. :ERROR :PD 27 (SIN/COS/TAN/ATAN/ATAN2 now correctly rounded, ftrig.lisp). Left:
+   ASIN/ACOS (FM307 375 376 379 823 824 ...), SINH/COSH/TANH (377 378 825 826),
+   LOG10 (371 818), MOD's zero sign (357 363 364 804 810). Next: ASIN/ACOS, hyperbolics via ftrig's hull.
 2. EQUIVALENCE 24 (17 the COMPLEX programs, `EQUIVALENCE (AVC, R2E)`). 3. OPEN outside
    the grammar 11 (ACCESS='DIRECT', RECL=, FILE= a variable). 4. REWIND (`REWIND I08`) 7.
 5. Unit fails to parse, cause not isolated (:PROGRAM) 6. 6. Run-time :END 5, :UNIT 1.

@@ -41,7 +41,7 @@
 
 (include-book "fprog-cost")
 (include-book "flex")
-(include-book "fintr")
+(include-book "ftrig")
 
 ; logic mode, guards not yet verified: the meaning runs, and theorems can
 ; be proved about it; verifying its guards is owed
@@ -590,6 +590,10 @@
         ((equal name "log")                                                  ; 16.9.120: X shall be > 0
          (let ((x (v-num a)))
            (if (or (eq x :nan) (fl-neg-p x) (fl-zero-p x)) (err :domain) (vr (v-kind a) (fl-log (v-kind a) x)))))
+        ((member-equal name '("sin" "cos" "tan" "atan"))                    ; 16.9.180, .55, .193, .20 (ftrig)
+         (let ((k (v-kind a)) (x (v-num a)))
+           (vr k (cond ((equal name "sin") (fl-sin k x)) ((equal name "cos") (fl-cos k x))
+                       ((equal name "tan") (fl-tan k x)) (t (fl-atan k x))))))
         ((member-equal name *pd-real-fns*) (list :pd :r (v-kind a)))
         (t (err :type))))
 (in-theory (disable el1))
@@ -608,7 +612,7 @@
              (vr k (if (fl-neg-p y) (fl-neg (fl-abs x)) (fl-abs x)))))
           ((equal name "dim")                                      ; 16.9.69: X - Y if X > Y, else zero
            (cond ((or (eq x :nan) (eq y :nan)) (list :pd :r k)) ((fl-less y x) (vr k (fl-sub k x y))) (t (vr k 0))))
-          ((equal name "atan2") (if (and (fl-zero-p x) (fl-zero-p y)) (err :domain) (list :pd :r k)))   ; 16.9.20
+          ((equal name "atan2") (if (and (fl-zero-p x) (fl-zero-p y)) (err :domain) (vr k (fl-atan2 k x y))))   ; 16.9.21 (ftrig): ATAN2 (Y=a, X=p)
           ((fl-zero-p y) (err :divide))                            ; P shall not be zero
           ; a zero result's sign the standard leaves open (16.9.145, 16.9.146 give the value):
           ; gfortran answers A's for MOD and P's for MODULO, flang other signs for MOD
