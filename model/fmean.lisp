@@ -387,6 +387,7 @@
               (declare (ignore cps))
               (if e (mv e nil nil st)
                 (me-decls (cdr ds) env st cx (1- fuel) (cons (cons tn (list :type (frame-vals cfr st))) fr) copies key dns)))))
+         ((eq (kar (car ds)) :equiv) (mv (err :equiv) nil nil st))   ; EQUIVALENCE outside a main program: frun's me-equiv reads a main's
          ((eq (kar (car ds)) :data) (mv (err :data) nil nil st))   ; DATA outside a main program: frun's me-data reads a main's
          ; TYPE ( type-name ): entities of a type defined in scope
          ((eq (kar (car ds)) :tdecl)

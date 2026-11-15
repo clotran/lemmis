@@ -44,6 +44,7 @@
     (:citem (equal tk (op "(")))
     (:citems (member-equal tk (list (op ",") (op "/") (op "//") (op "("))))
     (:dobj (cont-tok-p :prim tk))
+    (:esets (equal tk (op ",")))
     (:dval (or (equal tk (op "*")) (cont-tok-p :prim tk)))
     ((:shapes :shapes* :names :names1 :ranges :ixs :ios :kios :dobjs :dvals) nil)
     (otherwise t)))                       ; a statement is whole; DO's control ends it
@@ -288,6 +289,12 @@
   (implies (fgs :kios y) (sfollow-ok :io (append (fys :kios y) r)))
   :hints (("Goal" :expand ((fys :kios y) (fgs :kios y)) :in-theory (enable sfollow-ok scont-tok-p member-equal))))
 (fps-complete-at :kios)
+(defthm follow-ok-args (follow-ok :args r) :hints (("Goal" :in-theory (enable follow-ok cont-tok-p))))
+(defthm fps-complete-esets             ; each set "(" then its actual args, "," between
+  (implies (and (fgs :esets x) (sfollow-ok :esets r))
+           (equal (fps :esets (binary-append (fys :esets x) r)) (mv t x r)))
+  :hints (("Goal" :induct (len x) :expand ((fps :esets (binary-append (fys :esets x) r)) (fys :esets x) (fgs :esets x))
+           :in-theory (e/d (sfollow-ok scont-tok-p member-equal fps-open) (fgs-var-open fys-var-open)))))
 (defthm io-spelled                 ; a spec reads a token; one with its keyword begins with a name
   (implies (fgs :io c) (and (consp (fys :io c)) (implies (not (unit-pos-p c)) (equal (car (car (fys :io c))) :name))))
   :hints (("Goal" :expand ((fgs :io c) (fys :io c)) :use ((:instance expr-first-not (x (caddr c)))))))
@@ -632,6 +639,7 @@
 (fps-complete-kind :parstmt)
 (fps-complete-kind :common)
 (fps-complete-kind :data)
+(fps-complete-kind :equiv)
 (fps-complete-kind :implicit)
 (fps-complete-kind :call)
 (fps-complete-kind :print)
@@ -658,7 +666,7 @@
 
 (defconst *stmt-kinds*
   '(:program :module :end :contains :block :implicit-none :else :use :decl :assign :cassign :type :tdecl :if-then :else-if :do :simple :stop :allocate :deallocate :save :dimstmt :parstmt :common :implicit :data :call :print
-    :function :subroutine :if :select :case :case-default :label :goto :aif :ldo :format :write :read :readf :open :close))
+    :function :subroutine :if :select :case :case-default :label :goto :aif :ldo :format :write :read :readf :open :close :equiv))
 (defthm fgs-stmt-kinds                ; a statement is of one of the kinds above
   (implies (fgs :stmt x) (member-equal (car x) *stmt-kinds*))
   :rule-classes nil :hints (("Goal" :expand ((fgs :stmt x)) :in-theory (enable member-equal))))

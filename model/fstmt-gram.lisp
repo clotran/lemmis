@@ -83,6 +83,7 @@
 ;                                   (name shapes), shapes nil or its array-spec;
 ;                                   citems-ok: no "," first, a designator
 ;                                   followed by an object with no ","
+;         (:equiv ss)               R870 equivalence-stmt: EQUIVALENCE ss, an :esets
 ;         (:data ss)                R840 data-stmt: DATA data-stmt-set [[,] data-stmt-set]...
 ;                                   (ss a :dsets)
 ;         (:stop e)                 R1162 stop-stmt: STOP stop-code (R1163,
@@ -136,6 +137,8 @@
 ;                                   most once (C1210), an ADVANCE= only with
 ;                                   a format other than * (C1223); exactly
 ;                                   one format in the subset (formatted I/O)
+;  :esets (as ...) nonempty         R870 equivalence-set-list: each "( as" (fp :args, its ")"
+;                                   included) an equivalence-set (eqv-set-p), "," between
 ;  :kios (io ...) ")" included      the specs written with their keyword, each ", io"
 ;  :io   (:unit kwp u)              [UNIT =] io-unit: R1201 io-unit * (u
 ;                                   :star) or R1202 file-unit-number, an expr
@@ -288,6 +291,7 @@
             (:common (and (= (len x) 2) (fgs :citems (cadr x)) (citems-ok (cadr x))))
             (:implicit (and (= (len x) 2) (imps-p (cadr x))))
             (:data (and (= (len x) 2) (fgs :dsets (cadr x))))
+            (:equiv (and (= (len x) 2) (fgs :esets (cadr x))))
             (:save (and (= (len x) 3) (booleanp (cadr x)) (names-p (caddr x)) (or (null (cadr x)) (consp (caddr x)))))
             (:call (and (= (len x) 4) (name-tok-p (cadr x)) (booleanp (caddr x))
                         (if (caddr x) (fg :args (cadddr x)) (null (cadddr x)))))
@@ -376,6 +380,7 @@
     (:ios (and (consp x) (fgs :io (car x)) (ios-ok x)
                (if (and (unit-pos-p (car x)) (consp (cdr x)) (fmt-pos-p (cadr x))) (fgs :kios (cddr x)) (fgs :kios (cdr x)))))
     (:kios (if (atom x) (null x) (and (fgs :io (car x)) (not (unit-pos-p (car x))) (fgs :kios (cdr x)))))
+    (:esets (and (consp x) (fg :args (car x)) (eqv-set-p (car x)) (or (null (cdr x)) (fgs :esets (cdr x)))))
     (:io (and (true-listp x)
               (case (car x)
                 (:unit (and (= (len x) 3) (booleanp (cadr x)) (or (eq (caddr x) :star) (fg :expr (caddr x)))))
@@ -455,6 +460,7 @@
          (:dimstmt (cons (kw "dimension") (append (if (kadr x) (dcolon) nil) (fys :ents (kaddr x)))))
          (:parstmt (list* (kw "parameter") (op "(") (append (fys :ents (kadr x)) (list (op ")")))))
          (:common (cons (kw "common") (fys :citems (kadr x))))
+         (:equiv (cons (kw "equivalence") (fys :esets (kadr x))))
          (:implicit (cons (kw "implicit") (imps-y (kadr x))))
          (:data (cons (kw "data") (fys :dsets (kadr x))))
          (:save (cons (kw "save") (append (if (kadr x) (dcolon) nil) (onames-y (kaddr x)))))
@@ -534,6 +540,7 @@
       (:init (cons (op "=") (fy :expr x)))
       (:items (cons (op ",") (append (fy :expr (car x)) (fys :items (cdr x)))))
       (:oitems (append (fy :expr (car x)) (if (consp (cdr x)) (cons (op ",") (fys :oitems (cdr x))) nil)))
+      (:esets (cons (op "(") (append (fy :args (car x)) (if (consp (cdr x)) (cons (op ",") (fys :esets (cdr x))) nil))))
       (:ios (append (fys :io (car x))
                     (if (and (unit-pos-p (car x)) (consp (cdr x)) (fmt-pos-p (cadr x)))
                         (list* (op ",") (fmt-tok (kaddr (cadr x))) (fys :kios (cddr x)))

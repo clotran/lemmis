@@ -66,7 +66,7 @@
   (and (implies (fmt-head-p tk) (and (fmt-spec-p (fmt-of tk)) (equal (fmt-tok (fmt-of tk)) tk)))
        (implies (fmt-spec-p f) (and (fmt-head-p (fmt-tok f)) (equal (fmt-of (fmt-tok f)) f))))
   :hints (("Goal" :in-theory (enable label-int-p-rules))))
-(in-theory (disable fmt-head-p fmt-of fmt-tok fmt-spec-p ios-ok all-lone alloc-objs-p))
+(in-theory (disable fmt-head-p fmt-of fmt-tok fmt-spec-p ios-ok all-lone alloc-objs-p eqv-set-p))
 (def-cons-opener fgs-cons-open (fgs nt x))
 (def-cons-opener fys-cons-open (fys nt x))
 (in-theory (disable fgs fys shape-kind))
@@ -108,7 +108,7 @@
   (let ((g (gnt nt)))
    (append
     ; the trees never nil
-    (if (member-eq g '(:stmt :citems :citem :dsets :dobjs :dobj :dvals :dval :shapes :shapes* :ents :ent :names1 :ts :attr :shape :decl-rest :fn-rest :sub-rest :ranges :range :ixs :ix :io :ios))
+    (if (member-eq g '(:stmt :esets :citems :citem :dsets :dobjs :dobj :dvals :dval :shapes :shapes* :ents :ent :names1 :ts :attr :shape :decl-rest :fn-rest :sub-rest :ranges :range :ixs :ix :io :ios))
         `(and ,x) '(and))
     (list
     (case g
@@ -140,6 +140,10 @@
                   (mv nil nil)))
         (:dobjs (mv-let (ok o r) (fps :dobj toks) (declare (ignore o))
                   (if (and ok (equal (kar r) (op ","))) (mv t (kdr r)) (mv nil nil))))
+        (:esets (if (equal (kar toks) (op "("))
+                    (mv-let (ok as r) (fp :args (kdr toks)) (declare (ignore as))
+                      (if (and ok (equal (kar r) (op ","))) (mv t (kdr r)) (mv nil nil)))
+                  (mv nil nil)))
         (:dvals (mv-let (ok o r) (fps :dval toks) (declare (ignore o))
                   (if (and ok (equal (kar r) (op ","))) (mv t (kdr r)) (mv nil nil))))
         (:dsets (mv-let (ok os r) (fps :dobjs toks) (declare (ignore os))
@@ -165,7 +169,7 @@
 ; a list nt inducts on list-ind; thy, if given, is the runes the proof uses
 ; (so it is as fast writing useless-runes as reading them)
 (defmacro fps-sound-at (nt &optional use thy)
-  (if (member-eq nt '(:shapes* :names1 :onames :attrs :ents :citems :items :prefix :ranges :ixs :oitems :kios :dobjs :dvals :dsets))
+  (if (member-eq nt '(:shapes* :names1 :onames :attrs :ents :citems :items :prefix :ranges :ixs :oitems :kios :dobjs :dvals :dsets :esets))
       `(defthm ,(packn (list 'fps-sound- nt))
          (implies (mv-nth 0 (fps ,nt toks))
                   ,(sound-concl nt `(mv-nth 1 (fps ,nt toks)) `(mv-nth 2 (fps ,nt toks)) 'toks))
@@ -241,6 +245,8 @@
 (in-theory (enable prim-as-base))
 (fps-sound-at :dvals)
 (fps-sound-at :dsets)
+(defthm fgs-esets-consp (implies (fgs :esets x) (consp x)) :rule-classes :forward-chaining :hints (("Goal" :expand ((fgs :esets x)))))
+(fps-sound-at :esets)
 (fps-sound-at :decl-rest)
 (fps-sound-at :prefix)
 (fps-sound-at :fn-rest)
@@ -406,7 +412,7 @@
   '(:stmt :s-head :s-end :s-other :s-use :s-else :s-if :s-do :s-call :s-print :s-type :s-assign :s-unit :s-select :s-case
     :s-label :s-goto :s-format :s-write :s-read :oitems :ios :kios :io
     :fn-rest :sub-rest :decl-rest :ts :attrs :attr :shapes :shapes* :shape :ranges :range :ixs :ix :ents :ent :init
-    :dsets :dobjs :dobj :dvals :dval :citems :citem
+    :dsets :dobjs :dobj :dvals :dval :citems :citem :esets
     :names :names1 :onames :items :ctl :prefix))
 
 (defthm fps-other

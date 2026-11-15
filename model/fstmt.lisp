@@ -81,6 +81,8 @@
                          (if (and ok (consp es) (par-ents-p es) (equal (kar r) (op ")"))) (mv t (list :parstmt es) (kdr r)) (fail))))
                       ((equal tk (kw "common"))                             ; R873 common-stmt
                        (mv-let (ok is r) (fps :citems (kdr toks)) (if (and ok (citems-ok is)) (mv t (list :common is) r) (fail))))
+                      ((equal tk (kw "equivalence"))                        ; R870 equivalence-stmt
+                       (mv-let (ok ss r) (fps :esets (kdr toks)) (if ok (mv t (list :equiv ss) r) (fail))))
                       ((equal tk (kw "data"))                               ; R840 data-stmt
                        (mv-let (ok ss r) (fps :dsets (kdr toks)) (if ok (mv t (list :data ss) r) (fail))))
                       ((equal tk (kw "save"))                               ; R859 save-stmt
@@ -412,6 +414,12 @@
                           ((equal (kar r2) (op ","))
                            (mv-let (ok3 ss r3) (fps :dsets (kdr r2)) (if ok3 (mv t (cons (list os vs t) ss) r3) (fail))))
                           (t (mv-let (ok3 ss r3) (fps :dsets r2) (if ok3 (mv t (cons (list os vs nil) ss) r3) (fail)))))))))
+      (:esets (if (not (equal tk (op "("))) (fail)
+                (mv-let (ok as r) (fp :args (kdr toks))
+                  (cond ((not (and ok (< (len r) (len toks)) (eqv-set-p as))) (fail))
+                        ((equal (kar r) (op ","))
+                         (mv-let (ok2 ss r2) (fps :esets (kdr r)) (if ok2 (mv t (cons as ss) r2) (fail))))
+                        (t (mv t (list as) r))))))
       (:dobjs (mv-let (ok o r) (fps :dobj toks)
                 (cond ((not (and ok (< (len r) (len toks)))) (fail))
                       ((equal (kar r) (op "/")) (mv t (list o) (kdr r)))

@@ -5,31 +5,31 @@ whole; use the headings below and `grep -n` / `sed -n`.
 
 ## Where Stage A stands (update on every commit that moves a number)
 
-- SCOPE score: 165 of 205 rules proved, 40 in part, none missing (SCOPE.md, first
+- SCOPE score: 165 of 208 rules proved, 43 in part, none missing (SCOPE.md, first
   paragraphs).
-- FCVS: 90 of 180 programs print their reference output (SCOPE.md, "Theorem 3:
+- FCVS: 97 of 180 programs print their reference output (SCOPE.md, "Theorem 3:
   checked against the compilers", the FCVS bullet; the passing names are in
   build/fcvs.txt after `make check`).
 - Fuzzer: `make fuzz` (seed 1, 40 programs) agrees under gfortran and flang; seeds 1-5
   clean (same SCOPE section, "The fuzzer").
-- Oracle cases: 7 fsyn cases + 45 whole programs in model/cases/, all agree.
+- Oracle cases: 7 fsyn cases + 47 whole programs in model/cases/, all agree.
 
 ## Next lanes, in order
 
-FCVS blockers, 2026-11-15 (first stop of each failing program; 90 pass; recount with
+FCVS blockers, 2026-11-15 (first stop of each failing program; 97 pass; recount with
 fortran-run-form per program, bucketing (:ERROR :PARSE)'s AT tokens, else STATUS):
-1. :ERROR :PD 12 (SIN..ATAN2 ftrig.lisp; ASIN/ACOS/SINH/COSH/TANH/LOG10 fhyp.lisp, now
-   correctly rounded). Left: MOD's zero sign (357 363 364 804 810) and the rest.
-   fhyp gap: asin/acos enclosure containment is argued, not proved (header).
-2. EQUIVALENCE 24 (17 the COMPLEX programs, `EQUIVALENCE (AVC, R2E)`). 3. OPEN outside
-   the grammar 11 (ACCESS='DIRECT', RECL=, FILE= a variable). 4. REWIND (`REWIND I08`) 7.
-5. Unit fails to parse, cause not isolated (:PROGRAM) 6. 6. Run-time :END 5, :UNIT 1.
-7. WRITE implied-DO / odd unit / FMT= variable 5. 8. EXTERNAL (blank-free) 5. 9. Computed
-   GO TO 3, END FILE 2, CALL `*` returns 2, BLOCK DATA 2. 10. FM907's records differ.
-A new blank-free keyword is one more `*ff-keywords*` entry (flex.lisp `ff-stmt`).
-After these: READ/WRITE on a connected unit (per-unit records in st-units), INQUIRE.
-fstmt-complete's runes write stalls on `decl-rest-comma-second` (see the traps).
-Then the rest of Stage A (derived-type gap, the "part" rows): SCOPE.md, "The rules".
+1. :ERROR :PD 21: MOD's zero sign (357 363 364 804 810), the COMPLEX intrinsics CSQRT
+   CEXP CLOG CSIN CCOS (813 815 817 820 828 830 831 833 834), rest. fhyp gap: asin/acos
+   enclosure containment is argued, not proved (header).
+2. OPEN outside the grammar 11 (ACCESS='DIRECT', RECL=, FILE= a variable). 3. REWIND
+   (`REWIND I08`) 7. 4. EXTERNAL (blank-free) 7. 5. WRITE implied-DO / odd unit / FMT=
+   variable 6. 6. Unit fails to parse, cause not isolated (:PROGRAM) 6. 7. Run-time :END 5,
+   :UNIT 2. 8. Computed GO TO 3, END FILE 2, CALL `*` returns 2, BLOCK DATA 2; DATA
+   implied-DO/substring (FM700), :TYPE (FM829), READ implied-DO, INQUIRE, ASSIGN 1 each.
+EQUIVALENCE (fequiv.lisp, frun me-equiv): main programs only; a subprogram's is :error :equiv.
+New blank-free keyword: one more `*ff-keywords*` entry (flex.lisp `ff-stmt`). After these:
+READ/WRITE on a connected unit (per-unit records in st-units), INQUIRE.
+fstmt-complete's runes write stalls on `decl-rest-comma-second` (traps). Then the rest of Stage A (derived-type gap, the "part" rows): SCOPE.md, "The rules".
 
 ## Milestone order
 

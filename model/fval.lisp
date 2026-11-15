@@ -442,7 +442,7 @@
     (list (list :w loc :all))))
 
 (defun st-get (loc st) (declare (xargs :guard t)) (cdr (alk loc (st-store st))))
-(defun st-put (loc v st)
+(defun st-put1 (loc v st)            ; fequiv.lisp's st-put adds the associates
   (declare (xargs :guard t))
   (let ((st (if (st-trace st) (st-log (write-entries loc (st-get loc st) v) st) st)))
     (mk-st (aput loc v (st-store st)) (st-next st) (st-out st) (st-dovars st) (st-saves st))))

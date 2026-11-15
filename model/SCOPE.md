@@ -11,7 +11,7 @@ proved to accept exactly that grammar (`fp-`, `fps-`, `fpu-sound` and
 `-complete`), for every alternative the Scope uses; **part** when only
 some alternatives are in; **no** otherwise.
 
-Score: **165 of 205** Scope rules proved (80%); 40 more in part; none not yet in.
+Score: **165 of 208** Scope rules proved (79%); 43 more in part; none not yet in.
 
 ## Theorem 3: checked against the compilers (status)
 
@@ -49,12 +49,13 @@ Not a theorem: a test, run by `make check` (exit 1 on any difference).
   another for MOD): the model's value is processor dependent there
   (`cases/modzero.f90`).
 - **FCVS**: scored, not failed, and only when `fcvs/` is fetched
-  (`bb fetch-fcvs.bb`; not committed): 90 of 180 programs print their
+  (`bb fetch-fcvs.bb`; not committed): 97 of 180 programs print their
   reference output exactly (build/fcvs.txt lists them; the names below are the earlier 75) (FM002-010, 012, 016-021, 025, 026, 030-045,
   060, 061, 097, 098, 109, 201-205, 251, 254, 256, 301, 306, 352-355,
   359-362, 368-370, 372-374, 718, 801, 803, 805-807, 812, 814, 816, 819, 821, 822). Of the rest, most stop at a statement outside the
-  subset (first: EQUIVALENCE 24, OPEN 11 (its DIRECT, RECL=, FILE= variable forms), REWIND 7,
-  ...; table in STATUS.md); 12 at a processor-dependent value (mostly MOD's zero sign; EXP,
+  subset (first: OPEN 11 (its DIRECT, RECL=, FILE= variable forms), REWIND 7, EXTERNAL 7,
+  ...; table in STATUS.md); 21 at a processor-dependent value (MOD's zero sign; the COMPLEX
+  intrinsics CSQRT, CEXP, CLOG, CSIN, CCOS that EQUIVALENCE's programs now reach; EXP,
   LOG, SIN, COS, TAN, ATAN, ATAN2 are correctly rounded, `fintr.lisp`,
   `ftrig.lisp`, and ASIN, ACOS, SINH, COSH, TANH, LOG10, `fhyp.lisp`); 5 at an I/O end or unit. (The score read 0 until the
   harness dropped the "exit 0" line LLVM's reference outputs end with.)
@@ -88,8 +89,8 @@ Not a theorem: a test, run by `make check` (exit 1 on any difference).
   parser `fpu`, `fpu-sound` (on statement trees), `fpu-complete` and
   `fpu-cost` (`fprog-cost.lisp`): at most 32 calls per statement, plus `fpu-d` (at most 12).
   About 5 minutes.
-- `fval.lisp`, `fhelp.lisp`, `fio.lisp`, `fmean.lisp`, `frun.lisp`: the meaning (item 2): the
-  values, state and intrinsics; the helpers and labels; formatted and
+- `fval.lisp`, `fequiv.lisp`, `fhelp.lisp`, `fio.lisp`, `fmean.lisp`, `frun.lisp`: the meaning (item 2): the
+  values, state and intrinsics; storage association (st-put, EQUIVALENCE); the helpers and labels; formatted and
   list-directed I/O on the unit * (13); the evaluation itself; a whole
   program from its text (`fmean-cost.lisp`: its data operations' cost, and tests). `fortran-parse` is flex, then fps
   on each statement, then fpu; `fortran-parse-sound`: what it accepts is
@@ -262,6 +263,9 @@ Not a theorem: a test, run by `make check` (exit 1 on any difference).
 | R866 | implicit-stmt | proved | IMPLICIT NONE, IMPLICIT implicit-spec-list (read by imp-specs, proved with its own lemmas in fstmt-base.lisp); in the meaning a main program's or subprogram's undeclared names (a main program's DIMENSION'd names too) are typed by their first letter (8.7) |
 | R867 | implicit-spec | proved | declaration-type-spec ( letter-spec-list ): INTEGER, REAL, LOGICAL, COMPLEX, DOUBLE PRECISION, CHARACTER [* char-length]; no kind-selector |
 | R868 | letter-spec | proved | letter [- letter] |
+| R870 | equivalence-stmt | part | EQUIVALENCE equivalence-set-list (:equiv, an :esets; parse proved); in the meaning a main program's only (fequiv.lisp storage units, frun's me-equiv); elsewhere an :error :equiv |
+| R871 | equivalence-set | part | ( equivalence-object , equivalence-object-list ), read as actual args (eqv-set-p); the objects' storage starts together, sets sharing a variable one group; integer, real, logical, complex, all default kind or one type and kind (C8110), else :error :equiv; no initialized object |
+| R872 | equivalence-object | part | variable-name or array-element (subscripts any integer expression); no substring, character or derived type |
 | R873 | common-stmt | proved | COMMON [/ [common-block-name] /] common-block-object-list [[,] / [common-block-name] / common-block-object-list]... (:common, a :citems); in the meaning each object gets SAVE and its block and place, the i-th object of a block one variable in every unit; subset: the same type, kind and bounds in each unit, no BLOCK DATA (fdecl) |
 | R874 | common-block-object | proved | variable-name [( array-spec )] |
 | R901 | designator | proved | object-name, array-element, array-section |

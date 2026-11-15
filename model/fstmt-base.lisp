@@ -108,6 +108,16 @@
   (let ((p (and (eq (kar a) :sub) (lone-prim (kadr a)))))
     (if d (eq (kar p) :name) (and (eq (kar p) :ref) (consp (kaddr p)) (alloc-specs-p (kaddr p))))))
 (defun alloc-objs-p (as d) (declare (xargs :guard t)) (if (atom as) (null as) (and (alloc-obj-p (car as) d) (alloc-objs-p (cdr as) d))))
+;; R871 equivalence-set: ( equivalence-object , equivalence-object-list ), read as
+;; actual args; R872 equivalence-object: a variable-name or an array-element
+;; (its subscripts plain, their values the meaning's); no substring in the subset
+(defun subs-only (as) (declare (xargs :guard t)) (if (atom as) t (and (eq (kar (car as)) :sub) (subs-only (cdr as)))))
+(defun eqv-obj-p (a)
+  (declare (xargs :guard t))
+  (let ((p (and (eq (kar a) :sub) (lone-prim (kadr a)))))
+    (or (eq (kar p) :name) (and (eq (kar p) :ref) (consp (kaddr p)) (subs-only (kaddr p))))))
+(defun eqv-objs-p (as) (declare (xargs :guard t)) (if (atom as) (null as) (and (eqv-obj-p (car as)) (eqv-objs-p (cdr as)))))
+(defun eqv-set-p (as) (declare (xargs :guard t)) (and (consp as) (consp (cdr as)) (eqv-objs-p as)))
 ; the three labels of an arithmetic IF after its ( expr ), and the statement's end
 (defun aif-labs-p (r)
   (declare (xargs :guard t))

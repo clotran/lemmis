@@ -4,7 +4,7 @@
 
 (in-package "ACL2")
 
-(include-book "fval")
+(include-book "fequiv")   ; fval, and st-put with storage association
 (include-book "fdecl")   ; the declarations' statements applied (unit-spec)
 
 (set-verify-guards-eagerness 0)
