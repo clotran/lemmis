@@ -49,15 +49,14 @@ Not a theorem: a test, run by `make check` (exit 1 on any difference).
   another for MOD): the model's value is processor dependent there
   (`cases/modzero.f90`).
 - **FCVS**: scored, not failed, and only when `fcvs/` is fetched
-  (`bb fetch-fcvs.bb`; not committed): 75 of 180 programs print their
-  reference output exactly (FM002-010, 012, 016-021, 025, 026, 030-045,
+  (`bb fetch-fcvs.bb`; not committed): 90 of 180 programs print their
+  reference output exactly (build/fcvs.txt lists them; the names below are the earlier 75) (FM002-010, 012, 016-021, 025, 026, 030-045,
   060, 061, 097, 098, 109, 201-205, 251, 254, 256, 301, 306, 352-355,
   359-362, 368-370, 372-374, 718, 801, 803, 805-807, 812, 814, 816, 819, 821, 822). Of the rest, most stop at a statement outside the
   subset (first: EQUIVALENCE 24, OPEN 11 (its DIRECT, RECL=, FILE= variable forms), REWIND 7,
-  ...; table in STATUS.md); 27 at a processor-dependent value (most an
-  approximated ASIN, ACOS, SINH, COSH, TANH, LOG10, or MOD's zero sign; EXP,
+  ...; table in STATUS.md); 12 at a processor-dependent value (mostly MOD's zero sign; EXP,
   LOG, SIN, COS, TAN, ATAN, ATAN2 are correctly rounded, `fintr.lisp`,
-  `ftrig.lisp`); 5 at an I/O end or unit. (The score read 0 until the
+  `ftrig.lisp`, and ASIN, ACOS, SINH, COSH, TANH, LOG10, `fhyp.lisp`); 5 at an I/O end or unit. (The score read 0 until the
   harness dropped the "exit 0" line LLVM's reference outputs end with.)
 - **flang's parse tree** (PLAN.md's parsing oracle) is not compared yet.
 

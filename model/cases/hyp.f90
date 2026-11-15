@@ -1,0 +1,11 @@
+! hyp (not here: flang asin(0.5d0), acos(0.5d0), asin(0.3d0), acos(0.3d0), sinh(1d0), one ulp off the true 1.17520119364380145...): ASIN, ACOS, SINH, COSH, TANH, LOG10, correctly rounded (fhyp.lisp).
+program hyp
+  use iso_fortran_env, only: real32, real64
+  implicit none
+  real(real32) :: s
+  s = 0.75
+  print *, dacos(0.75d0), dasin(-0.75d0), sinh(0.75d0), cosh(1d0)
+  print *, tanh(0.5d0), log10(2d0), log10(1000d0), dasin(0.25d0)
+  print *, sinh(-0.5d0), cosh(2d0), tanh(-3d0), acos(-0.5d0)
+  print *, asin(s), acos(s), sinh(s), log10(s)
+end program hyp

@@ -41,7 +41,7 @@
 
 (include-book "fprog-cost")
 (include-book "flex")
-(include-book "ftrig")
+(include-book "fhyp")
 
 ; logic mode, guards not yet verified: the meaning runs, and theorems can
 ; be proved about it; verifying its guards is owed
@@ -594,6 +594,16 @@
          (let ((k (v-kind a)) (x (v-num a)))
            (vr k (cond ((equal name "sin") (fl-sin k x)) ((equal name "cos") (fl-cos k x))
                        ((equal name "tan") (fl-tan k x)) (t (fl-atan k x))))))
+        ((member-equal name '("asin" "acos"))                               ; 16.9.17, .4: |X| <= 1 (fhyp)
+         (let ((x (v-num a)) (k (v-kind a)))
+           (if (or (eq x :nan) (and (fl-x-p x) (not (fl-inf-p x)) (< 1 (abs (fl-val x))))) (err :domain)
+             (vr k (if (equal name "asin") (fl-asin k x) (fl-acos k x))))))
+        ((equal name "log10")                                               ; 16.9.121: X shall be > 0
+         (let ((x (v-num a)))
+           (if (or (eq x :nan) (fl-neg-p x) (fl-zero-p x)) (err :domain) (vr (v-kind a) (fl-log10 (v-kind a) x)))))
+        ((member-equal name '("sinh" "cosh" "tanh"))                        ; 16.9.183, .54, .195 (fhyp)
+         (let ((k (v-kind a)) (x (v-num a)))
+           (vr k (cond ((equal name "sinh") (fl-sinh k x)) ((equal name "cosh") (fl-cosh k x)) (t (fl-tanh k x))))))
         ((member-equal name *pd-real-fns*) (list :pd :r (v-kind a)))
         (t (err :type))))
 (in-theory (disable el1))
