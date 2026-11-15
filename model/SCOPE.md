@@ -20,8 +20,7 @@ Not a theorem: a test, run by `make check` (exit 1 on any difference).
 - **Oracle programs**: check-fsem.bb's 7 fsyn cases (the subset clotran's
   generator emits) and the 42 whole programs of `cases/`, each run by the
   model and by gfortran (-std=f2018) and flang; all agree, and the two
-  compilers agree with each other on all of them but `modzero.f90`, whose
-  values the standard leaves open (below). One, `acdotyped.f90`,
+  compilers agree with each other on all of them. One, `acdotyped.f90`,
   runs under flang only: gfortran 16 rejects R783's integer-type-spec
   (a case's first line `! not gfortran: why` says so).
 - **The fuzzer**: `fuzz.bb` (`make fuzz`, run by `make check` with seed
@@ -46,15 +45,15 @@ Not a theorem: a test, run by `make check` (exit 1 on any difference).
   `cases/dtprint.f90`); and the sign of a real MOD or MODULO's zero
   result, which the standard leaves open (16.9.145, 16.9.146 give the
   value; gfortran answers A's sign for MOD and P's for MODULO, flang
-  another for MOD): the model's value is processor dependent there
-  (`cases/modzero.f90`).
+  another for MOD): MOD now takes A's sign, as gfortran, flang and
+  flang-new do (`cases/modzero.f90`); MODULO's zero stays processor dependent.
 - **FCVS**: scored, not failed, and only when `fcvs/` is fetched
   (`bb fetch-fcvs.bb`; not committed): 97 of 180 programs print their
   reference output exactly (build/fcvs.txt lists them; the names below are the earlier 75) (FM002-010, 012, 016-021, 025, 026, 030-045,
   060, 061, 097, 098, 109, 201-205, 251, 254, 256, 301, 306, 352-355,
   359-362, 368-370, 372-374, 718, 801, 803, 805-807, 812, 814, 816, 819, 821, 822). Of the rest, most stop at a statement outside the
   subset (first: OPEN 11 (its DIRECT, RECL=, FILE= variable forms), REWIND 7, EXTERNAL 7,
-  ...; table in STATUS.md); 21 at a processor-dependent value (MOD's zero sign; the COMPLEX
+  ...; table in STATUS.md); 16 at a processor-dependent value (the COMPLEX
   intrinsics CSQRT, CEXP, CLOG, CSIN, CCOS that EQUIVALENCE's programs now reach; EXP,
   LOG, SIN, COS, TAN, ATAN, ATAN2 are correctly rounded, `fintr.lisp`,
   `ftrig.lisp`, and ASIN, ACOS, SINH, COSH, TANH, LOG10, `fhyp.lisp`); 5 at an I/O end or unit. (The score read 0 until the

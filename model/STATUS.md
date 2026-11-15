@@ -18,7 +18,7 @@ whole; use the headings below and `grep -n` / `sed -n`.
 
 FCVS blockers, 2026-11-15 (first stop of each failing program; 97 pass; recount with
 fortran-run-form per program, bucketing (:ERROR :PARSE)'s AT tokens, else STATUS):
-1. :ERROR :PD 21: MOD's zero sign (357 363 364 804 810), the COMPLEX intrinsics CSQRT
+1. :ERROR :PD 16: the COMPLEX intrinsics CSQRT
    CEXP CLOG CSIN CCOS (813 815 817 820 828 830 831 833 834), rest. fhyp gap: asin/acos
    enclosure containment is argued, not proved (header).
 2. OPEN outside the grammar 11 (ACCESS='DIRECT', RECL=, FILE= a variable). 3. REWIND
