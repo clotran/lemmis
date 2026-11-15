@@ -49,14 +49,14 @@ Not a theorem: a test, run by `make check` (exit 1 on any difference).
   another for MOD): the model's value is processor dependent there
   (`cases/modzero.f90`).
 - **FCVS**: scored, not failed, and only when `fcvs/` is fetched
-  (`bb fetch-fcvs.bb`; not committed): 65 of 180 programs print their
+  (`bb fetch-fcvs.bb`; not committed): 69 of 180 programs print their
   reference output exactly (FM002-010, 012, 016-021, 025, 026, 030-045,
   060, 061, 097, 098, 109, 201-205, 251, 254, 256, 301, 306, 352-355,
-  359-362, 368, 718, 801, 803, 805-807, 812). Of the rest, most stop at a statement outside the
+  359-362, 368-370, 718, 801, 803, 805-807, 812, 814, 816). Of the rest, most stop at a statement outside the
   subset (first: EQUIVALENCE 24, OPEN 11 (its DIRECT, RECL=, FILE= variable forms), REWIND 7,
-  ...; table in STATUS.md); 37 at a processor-dependent value (most an
-  approximated SIN, EXP, LOG, ATAN2, ... the program compares within a
-  tolerance); 5 at an I/O end or unit. (The score read 0 until the
+  ...; table in STATUS.md); 33 at a processor-dependent value (most an
+  approximated SIN, COS, ATAN2, ... the program compares within a
+  tolerance; EXP and LOG are correctly rounded, `fintr.lisp`); 5 at an I/O end or unit. (The score read 0 until the
   harness dropped the "exit 0" line LLVM's reference outputs end with.)
 - **flang's parse tree** (PLAN.md's parsing oracle) is not compared yet.
 
@@ -104,6 +104,12 @@ Not a theorem: a test, run by `make check` (exit 1 on any difference).
   real kinds 4 and 8: rounding to nearest even, signed zeros, infinities,
   NaN, subnormals, a correctly rounded SQRT; `assert-event` tests against
   values clj computes, and the cost of its integer square root.
+- `fintr.lisp`: EXP and LOG of a real, correctly rounded: constrained
+  (`fl-mag-correctly-rounded`) to the common rounding of rational Taylor and
+  atanh enclosures, whose soundness is proved (`enc-sound`, `ser-sound`), as
+  is fl-round's monotonicity (`fl-round-convex`) and so that every deciding
+  depth agrees (`decides-agree`); `defattach`ed to an executable search
+  (`cases/intrin.f90`).
 - `flex.lisp`: free source form (6.3.2) to statements of tokens, with
   `assert-event` tests. Not proved; it is checked by running programs.
   Fixed source form (6.3.3) is read without its blanks and a statement's

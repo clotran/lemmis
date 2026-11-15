@@ -20,7 +20,7 @@
 ;     multiply-add by default, parentheses or not, which that paragraph
 ;     allows: check-fsem compiles with -ffp-contract=off).
 ;   - What the standard gives only as a processor-dependent approximation
-;     -- SIN, EXP, LOG and the rest (16.9), x**y of reals, SUM and PRODUCT
+;     -- SIN, COS and the rest (16.9; EXP and LOG: fintr.lisp), x**y of reals, SUM and PRODUCT
 ;     of reals once a rounding happens (16.9.201, 16.9.165), MAX and MIN
 ;     and SIGN where a NaN or two zeros of either sign leave the choice
 ;     open (16.9.135, 16.9.141, 16.9.189) -- fmean answers :pd, a

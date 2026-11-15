@@ -41,7 +41,7 @@
 
 (include-book "fprog-cost")
 (include-book "flex")
-(include-book "freal")
+(include-book "fintr")
 
 ; logic mode, guards not yet verified: the meaning runs, and theorems can
 ; be proved about it; verifying its guards is owed
@@ -586,6 +586,10 @@
          (let ((x (v-num a)))
            (if (or (eq x :nan) (and (fl-neg-p x) (not (fl-zero-p x)))) (err :domain)   ; X shall be >= 0
              (vr (v-kind a) (fl-sqrt (v-kind a) x)))))
+        ((equal name "exp") (vr (v-kind a) (fl-exp (v-kind a) (v-num a))))   ; 16.9.74, correctly rounded (fintr)
+        ((equal name "log")                                                  ; 16.9.120: X shall be > 0
+         (let ((x (v-num a)))
+           (if (or (eq x :nan) (fl-neg-p x) (fl-zero-p x)) (err :domain) (vr (v-kind a) (fl-log (v-kind a) x)))))
         ((member-equal name *pd-real-fns*) (list :pd :r (v-kind a)))
         (t (err :type))))
 (in-theory (disable el1))
