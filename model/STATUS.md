@@ -7,7 +7,7 @@ whole; use the headings below and `grep -n` / `sed -n`.
 
 - SCOPE score: 165 of 208 rules proved, 43 in part, none missing (SCOPE.md, first
   paragraphs).
-- FCVS: 113 of 180 programs print their reference output (SCOPE.md, "Theorem 3:
+- FCVS: 117 of 180 programs print their reference output (SCOPE.md, "Theorem 3:
   checked against the compilers", the FCVS bullet; the passing names are in
   build/fcvs.txt after `make check`).
 - Fuzzer: `make fuzz` (seed 1, 40 programs) agrees under gfortran and flang; seeds 1-5
@@ -16,7 +16,7 @@ whole; use the headings below and `grep -n` / `sed -n`.
 
 ## Next lanes, in order
 
-FCVS blockers, 2026-11-15 (first stop of each failing program; 113 pass; recount with
+FCVS blockers, 2026-11-15 (first stop of each failing program; 117 pass; recount with
 fortran-run-form per program, bucketing (:ERROR :PARSE)'s AT tokens, else STATUS):
 1. :ERROR :PD, 9 programs left (REAL ** REAL now answered, correctly rounded, fcplx fl-pow: 351 363 364 520 800 810 moved), 15 (isolated 2026-11-15; REAL ** INTEGER 3..64 with an exact value
    now answered, 3 programs moved; the table is the stop before that change). program | construct | bucket:
@@ -29,7 +29,7 @@ fortran-run-form per program, bucketing (:ERROR :PARSE)'s AT tokens, else STATUS
    needing a sign-unobserved analysis in the model, not done. No missing intrinsic. COMPLEX intrinsics done (fcplx: CSQRT CEXP CLOG CSIN CCOS,
    CABS, correctly rounded; gfortran/flang libm is an ulp off on some, cases/cfuns.f90). fhyp: asin/acos containment argued, not proved.
 2. OPEN outside the grammar 11 (ACCESS='DIRECT', RECL=, FILE= a variable). 3. REWIND
-   (`REWIND I08`) 7. 4. EXTERNAL and INTRINSIC parse (R1210, R1216; no run-time effect yet; FCVS 112 unchanged): typed-prefix FUNCTION headers (INTEGER/REAL/LOGICAL/DOUBLE PRECISION FUNCTION, blank-free, flex *ff-keywords*) now parse (113): 308 311 317 328 parse and stop at (:ERROR :TYPE), cause not yet isolated (bisect with a real-newline driver; NEXT STEP: fortran-run-form each, find the first type error), 509 CALL `*` returns, 500 CHARACTER*2D2, 722 unit, 903 READ implied-DO. FM407/413/910/912/914/916/917/919-922/915 stop at OPEN/INQUIRE and need an in-memory file store (queued). 5. WRITE implied-DO / odd unit / FMT=
+   (`REWIND I08`) 7. 4. EXTERNAL and INTRINSIC parse (R1210, R1216; no run-time effect yet; FCVS 112 unchanged): typed-prefix FUNCTION headers (INTEGER/REAL/LOGICAL/DOUBLE PRECISION FUNCTION, blank-free, flex *ff-keywords*) now parse (113): 308 311 now pass (a type statement naming an intrinsic or an external function, REAL SINH, INTEGER FF312, is a call; statement functions in external functions); 317 (test 26) and 328 (test 17) stop at (:ERROR :TYPE): an array element actual (RADN12(1)) to an explicit-shape array dummy, sequence association (F77 15.9.3.3), needs a section-from-element copy-in/out in me-bind, a design decision, 509 CALL `*` returns, 500 CHARACTER*2D2, 722 unit, 903 READ implied-DO. FM407/413/910/912/914/916/917/919-922/915 stop at OPEN/INQUIRE and need an in-memory file store (queued). 5. WRITE implied-DO / odd unit / FMT=
    variable 6. 6. Unit fails to parse, cause not isolated (:PROGRAM) 6. 7. Run-time :END 5,
    :UNIT 2. 8. Computed GO TO 3, END FILE 2, CALL `*` returns 2, BLOCK DATA 2; DATA
    implied-DO/substring (FM700), :TYPE (FM829), READ implied-DO, INQUIRE, ASSIGN 1 each.

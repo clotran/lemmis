@@ -184,37 +184,6 @@
   (declare (xargs :guard t))
   (if (atom units) nil (if (eq (kar (car units)) :main) (car units) (find-main (cdr units)))))
 
-; R1544 statement functions: an assignment name ( names ) = expr leading the
-; execution part, name not an array, is a statement function's definition
-; (15.6.4; the token sequences are the same, the standard tells them apart
-; so). A main program's only, in the subset.
-(defun arg-names (ts)                ; the tokens n , n , ... ) to the names, or :bad
-  (declare (xargs :guard t))
-  (cond ((equal ts (list (op ")"))) nil)
-        ((and (eq (kar (car ts)) :name) (consp (cdr ts)) (member-equal (cadr ts) (list (op ",") (op ")"))))
-         (let ((r (arg-names (if (equal (cadr ts) (op ",")) (cddr ts) (cdr ts)))))
-           (if (eq r :bad) r (cons (kadr (car ts)) r))))
-        (t :bad)))
-(defun sfun-ty (n fr st rules imp)   ; (:u ty k): the type n has in fr, implicitly if undeclared; nil for an array
-  (declare (xargs :guard t))
-  (let ((b (cdr (alk n fr))))
-    (cond ((null b) (and (not imp) (ts-undef (imp-rule n rules))))
-          ((eq (kar b) :var) (let ((v (st-get (kadr b) st))) (and (not (aval-p v)) (scal-ty v) (list :u (scal-ty v) (scal-k v)))))
-          (t nil))))
-(defun sfun-tys (ns fr st rules imp)  ; ((n :u ty k) ...), or :bad
-  (declare (xargs :guard t))
-  (if (atom ns) nil
-    (let ((u (sfun-ty (car ns) fr st rules imp)) (r (sfun-tys (cdr ns) fr st rules imp)))
-      (if (or (null u) (eq r :bad)) :bad (cons (cons (car ns) u) r)))))
-(defun sfun-frame (cs fr st rules imp)   ; (mv frame rest): the leading statement functions of cs
-  (declare (xargs :guard t :verify-guards nil))
-  (let* ((s (kadr (kar cs))) (ds (if (and (eq (kar (kar cs)) :act) (eq (kar s) :assign) (eq (kaddr s) t))
-                                    (arg-names (fy :args (kadddr s))) :bad))
-         (dts (if (true-listp ds) (sfun-tys ds fr st rules imp) :bad)) (fty (sfun-ty (tok-name (kadr s)) fr st rules imp)))
-    (if (or (atom cs) (eq dts :bad) (null fty) (not (stringp (tok-name (kadr s))))) (mv nil cs)
-      (mv-let (sfr rest) (sfun-frame (cdr cs) fr st rules imp)
-        (mv (cons (cons (tok-name (kadr s)) (list :sfun dts (kar (cddddr s)) fty)) sfr) rest)))))
-
 (defun me-program (units in fuel)    ; (mv status lines): in the input's records
   (declare (xargs :guard t :verify-guards nil))
   (let ((gframe (ext-frame units)) (st (mk-st8 nil 0 nil nil nil nil (cons in nil) nil)) (main (find-main units)))
