@@ -7,7 +7,7 @@ whole; use the headings below and `grep -n` / `sed -n`.
 
 - SCOPE score: 165 of 208 rules proved, 43 in part, none missing (SCOPE.md, first
   paragraphs).
-- FCVS: 126 of 180 programs print their reference output (SCOPE.md, "Theorem 3:
+- FCVS: 127 of 180 programs print their reference output (SCOPE.md, "Theorem 3:
   checked against the compilers", the FCVS bullet; the passing names are in
   build/fcvs.txt after `make check`).
 - Fuzzer: `make fuzz` (seed 1, 40 programs) agrees under gfortran and flang; seeds 1-5
@@ -16,7 +16,7 @@ whole; use the headings below and `grep -n` / `sed -n`.
 
 ## Next lanes, in order
 
-FCVS stops classified 2026-11-16 (126 pass; FM403 FM404 passed once the harness fed each program its .reference_input, and a bare "." reads as 0): FM110 passed (a lone sign in a numeric input field reads as 0, as gfortran and flang do); FM900 passed (READ and formatted WRITE of COMPLEX items, 2026-11-16: two real edit descriptors, list-directed (re,im)); FM901 :END (harness); FM405 passed (READ from a scalar CHARACTER internal file, 2026-11-16); FM908 passed (READ from a CHARACTER array internal file, a record per element, 12.2.5, 2026-11-16); FM302 :COMMON = a block redeclared with other types/shapes, needs a storage-sequence model (15.9.4); FM080 :TYPE test 686 RVON03 = FF083(..) implicit-real external function, not isolated; FM829 test 3 fixed (INT and DBLE of a complex), now :PD after test 28; FM905 FM907 list-directed * output of REAL/COMPLEX prints a placeholder (13.10.4), the printing milestone. NEXT: internal WRITE.
+FCVS stops classified 2026-11-16 (127 pass; FM403 FM404 passed once the harness fed each program its .reference_input, and a bare "." reads as 0): FM110 passed (a lone sign in a numeric input field reads as 0, as gfortran and flang do); FM900 passed (READ and formatted WRITE of COMPLEX items, 2026-11-16: two real edit descriptors, list-directed (re,im)); FM901 passed (a scalar CHARACTER substring as a READ item, R908); FM405 passed (READ from a scalar CHARACTER internal file, 2026-11-16); FM908 passed (READ from a CHARACTER array internal file, a record per element, 12.2.5, 2026-11-16); FM302 :COMMON = a block redeclared with other types/shapes, needs a storage-sequence model (15.9.4); FM080 :TYPE test 686 RVON03 = FF083(..) implicit-real external function, not isolated; FM829 test 3 fixed (INT and DBLE of a complex), now :PD after test 28; FM905 FM907 list-directed * output of REAL/COMPLEX prints a placeholder (13.10.4), the printing milestone. NEXT: internal WRITE.
 FCVS blockers, 2026-11-15 (first stop of each failing program; 122 pass; recount with
 fortran-run-form per program, bucketing (:ERROR :PARSE)'s AT tokens, else STATUS):
 1. :ERROR :PD, 9 programs left (REAL ** REAL now answered, correctly rounded, fcplx fl-pow: 351 363 364 520 800 810 moved), 15 (isolated 2026-11-15; REAL ** INTEGER 3..64 with an exact value
