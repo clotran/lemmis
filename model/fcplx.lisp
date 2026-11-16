@@ -147,3 +147,7 @@
 (assert-event (equal (fl-cfun :exp 8 -1 :nzero) (cons 828390857088487/2251799813685248 :nzero)))
 (assert-event (equal (fl-cfun :exp 4 10 3) (cons -5582345/256 24867/8)))
 (assert-event (equal (fl-cfun :exp 8 :pinf 0) :pd))
+(assert-event (equal (fl-cfun :log 8 1 1) (cons 6243314768165359/18014398509481984 884279719003555/1125899906842624)))
+(assert-event (equal (fl-cfun :log 8 -1 :nzero) (cons 0 -884279719003555/281474976710656)))
+(assert-event (equal (fl-cfun :log 4 -3 1/4) (cons 4622427/4194304 12828075/4194304)))
+(assert-event (equal (fl-cfun :log 8 0 :nzero) :pd))
