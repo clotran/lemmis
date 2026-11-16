@@ -7,7 +7,7 @@ whole; use the headings below and `grep -n` / `sed -n`.
 
 - SCOPE score: 165 of 208 rules proved, 43 in part, none missing (SCOPE.md, first
   paragraphs).
-- FCVS: 100 of 180 programs print their reference output (SCOPE.md, "Theorem 3:
+- FCVS: 98 of 180 programs print their reference output (SCOPE.md, "Theorem 3:
   checked against the compilers", the FCVS bullet; the passing names are in
   build/fcvs.txt after `make check`).
 - Fuzzer: `make fuzz` (seed 1, 40 programs) agrees under gfortran and flang; seeds 1-5
@@ -16,7 +16,7 @@ whole; use the headings below and `grep -n` / `sed -n`.
 
 ## Next lanes, in order
 
-FCVS blockers, 2026-11-15 (first stop of each failing program; 100 pass; recount with
+FCVS blockers, 2026-11-15 (first stop of each failing program; 98 pass; recount with
 fortran-run-form per program, bucketing (:ERROR :PARSE)'s AT tokens, else STATUS):
 1. :ERROR :PD 16: the COMPLEX intrinsics (CSQRT done, fcplx.lisp) (done: fcplx.lisp, correctly rounded)
    CEXP CLOG CSIN CCOS (813 815 817 820 828 830 831 833 834), rest. fhyp gap: asin/acos

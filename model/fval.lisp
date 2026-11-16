@@ -629,8 +629,11 @@
           ((equal name "atan2") (if (and (fl-zero-p x) (fl-zero-p y)) (err :domain) (vr k (fl-atan2 k x y))))   ; 16.9.21 (ftrig): ATAN2 (Y=a, X=p)
           ((fl-zero-p y) (err :divide))                            ; P shall not be zero
           ; a zero result's sign the standard leaves open (16.9.145, 16.9.146 give the value):
-          ; MOD takes A's sign (gfortran, flang, flang-new agree); MODULO's stays :pd
-          ((equal name "mod") (let ((r (fl-mod k x y))) (vr k (if (fl-zero-p r) (fl-signed-zero (fl-neg-p x)) r))))   ; A - INT (A/P) * P
+          ; MOD takes A's sign, except +0 A (gfortran 0., flang -0.) stays :pd; MODULO's stays :pd
+          ((equal name "mod") (let ((r (fl-mod k x y)))   ; +0 A with a zero result: gfortran prints 0., flang -0. (processor dependent)
+                       (cond ((not (fl-zero-p r)) (vr k r))
+                             ((and (fl-zero-p x) (not (fl-neg-p x))) (list :pd :r k))
+                             (t (vr k (fl-signed-zero (fl-neg-p x)))))))   ; A - INT (A/P) * P
           ((equal name "modulo")                                   ; A - FLOOR (A/P) * P
            (if (not (and (fl-fin-p x) (fl-fin-p y))) (vr k :nan)
              (let ((r (- (fl-val x) (* (floor (/ (fl-val x) (fl-val y)) 1) (fl-val y)))))
