@@ -43,6 +43,10 @@
       (mv-let (sfr rest) (sfun-frame (cdr cs) fr st rules imp)
         (mv (cons (cons (tok-name (kadr s)) (list :sfun dts (kar (cddddr s)) fty)) sfr) rest)))))
 
+;; an internal file (12.2.5): a CHARACTER scalar, one record, or a CHARACTER array, a record per element
+(defun int-file-p (u) (or (cval-p u) (and (aval-p u) (eq (a-ty u) :c))))
+(defun int-recs (vs) (if (atom vs) nil (cons (lx-str (c-chars (car vs))) (int-recs (cdr vs)))))
+
 (me-mutual   ; each defun without a declare: (xargs :guard t :measure (nfix fuel))
 
  (defun me-ev (nt x env st cx fuel)
@@ -738,17 +742,17 @@
                                     (me-ev :expr u env st cx (1- fuel)))
                      ; the unit * is OUTPUT_UNIT, 6, or INPUT_UNIT, 5, for both compilers (16.10.2.23, .13)
                      (cond ((not (or (and (ival-scalar u) (equal (v-num u) (if (member-eq (kar s) '(:write :print)) 6 5)))
-                                      (and (eq (kar u) :c) (eq (kar s) :read)))) (mv (err :unit) st))   ; an internal file: a CHARACTER scalar (12.2.5)
+                                      (and (int-file-p u) (eq (kar s) :read)))) (mv (err :unit) st))   ; an internal file: a CHARACTER scalar (12.2.5)
                            ((errp fm) (mv fm st)) ((errp adv) (mv adv st))
                            ((member-eq (kar s) '(:write :print))
                             (with-v (vs st) (me-list (kaddr s) env st cx (1- fuel)) (io-write fm vs adv st)))
-                           (t (let* ((oin (st-in st)) (st (if (eq (kar u) :c) (st-in-set (cons (list (lx-str (c-chars u))) nil) st) st)))   ; its one record, a fresh position each READ
+                           (t (let* ((oin (st-in st)) (st (if (int-file-p u) (st-in-set (cons (int-recs (flat-vals (list u))) nil) st) st)))   ; its one record, a fresh position each READ
                               (mv-let (rs in) (rd-begin fm (st-in st))
                                 (if (errp rs) (mv rs st)
                                   (mv-let (e rs st) (me-ritems (kaddr s) rs env (st-in-set in st) cx (1- fuel))
                                     (if (errp e) (mv e st)
                                       (mv-let (e in) (rd-end rs (st-in st) adv)
-                                        (if e (mv e st) (mv :normal (st-in-set (if (eq (kar u) :c) oin in) st))))))))))))))))
+                                        (if e (mv e st) (mv :normal (st-in-set (if (int-file-p u) oin in) st))))))))))))))))
        ((:open :close) (let ((e (kaddr (io-spec :unit (kadr s)))))
           (cond ((cx-pure cx) (mv (err :pure) st)) ((or (st-trace st) (eq e :star)) (mv (err (if (eq e :star) :unit :pd)) st))
                 (t (with-v (u st) (me-ev :expr e env st cx (1- fuel)) (oc-run (kar s) (kadr s) u st))))))
