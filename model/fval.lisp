@@ -570,7 +570,7 @@
                 (let ((r (fl-csqrt (v-kind a) (z-re a) (z-im a))))
                   (if (consp r) (vz (v-kind a) (car r) (cdr r)) (list :pd :z (v-kind a)))))
                ((and (equal name "log") (fl-zero-p (z-re a)) (fl-zero-p (z-im a))) (err :domain))   ; 16.9.120: X shall not be 0
-               ((member-equal name '("exp" "log" "sin"))                       ; 16.9.74 .120 .180 .55, correctly rounded (fcplx)
+               ((member-equal name '("exp" "log" "sin" "cos"))                       ; 16.9.74 .120 .180 .55, correctly rounded (fcplx)
                 (let ((r (fl-cfun (cond ((equal name "exp") :exp) ((equal name "log") :log) ((equal name "sin") :sin) (t :cos)) (v-kind a) (z-re a) (z-im a))))
                   (if (consp r) (vz (v-kind a) (car r) (cdr r)) (list :pd :z (v-kind a)))))
                ((member-equal name *pd-real-fns*) (list :pd :z (v-kind a)))

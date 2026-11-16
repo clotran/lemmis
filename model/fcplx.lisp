@@ -1,4 +1,4 @@
-; fcplx: CSQRT of a complex (16.9.191), correctly rounded in each part.
+; fcplx: CSQRT (16.9.191), and below CEXP CLOG CSIN CCOS, of a complex, correctly rounded in each part.
 ;
 ; The standard gives it as a processor-dependent approximation; the model
 ; pins it the way fintr pins EXP: each part is the true value rounded
@@ -155,3 +155,6 @@
 (assert-event (equal (fl-cfun :sin 8 :nzero -3/2) (cons :nzero -149834721258323/70368744177664)))
 (assert-event (equal (fl-cfun :sin 8 2 0) (cons 4095111552621091/4503599627370496 :nzero)))   ; cos 2 < 0 times +0
 (assert-event (equal (fl-cfun :sin 4 10 3) (cons -11486145/2097152 -4407015/524288)))
+(assert-event (equal (fl-cfun :cos 8 1 1) (cons 3754786230508237/4503599627370496 -8907198678362355/9007199254740992)))
+(assert-event (equal (fl-cfun :cos 4 2 0) (cons -13963571/33554432 :nzero)))
+(assert-event (equal (fl-cfun :cos 8 1/2 -2) (cons 7434626331112217/2251799813685248 978862729552351/562949953421312)))
