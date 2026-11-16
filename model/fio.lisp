@@ -371,6 +371,7 @@
               (mv-let (xv xn r) (fi-digs r 0 0)
                 (let ((m (if dot (+ iv (/ fv (expt 10 fn))) (/ iv (expt 10 (nfix d))))))
                   (cond ((atom cs) (mv 1 0))
+                        ((and (not dot) (= 0 (+ in fn)) (atom r) (not hasx) (member (kar cs) '(#\+ #\-))) (mv sg 0)) ; a lone sign is zero (gfortran, flang)
                         ((or (consp r) (and (not dot) (= 0 (+ in fn))) (and hasx (= xn 0))) (mv sg nil))
                         (hasx (mv sg (* m (expt 10 (* xs xv)))))
                         (t (mv sg (* m (expt 10 (- (ifix p))))))))))))))))
