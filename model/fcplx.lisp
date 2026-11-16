@@ -151,3 +151,7 @@
 (assert-event (equal (fl-cfun :log 8 -1 :nzero) (cons 0 -884279719003555/281474976710656)))
 (assert-event (equal (fl-cfun :log 4 -3 1/4) (cons 4622427/4194304 12828075/4194304)))
 (assert-event (equal (fl-cfun :log 8 0 :nzero) :pd))
+(assert-event (equal (fl-cfun :sin 8 1 1) (cons 5847733079821391/4503599627370496 2859623250018249/4503599627370496)))
+(assert-event (equal (fl-cfun :sin 8 :nzero -3/2) (cons :nzero -149834721258323/70368744177664)))
+(assert-event (equal (fl-cfun :sin 8 2 0) (cons 4095111552621091/4503599627370496 :nzero)))   ; cos 2 < 0 times +0
+(assert-event (equal (fl-cfun :sin 4 10 3) (cons -11486145/2097152 -4407015/524288)))
