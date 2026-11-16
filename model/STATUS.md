@@ -29,7 +29,7 @@ fortran-run-form per program, bucketing (:ERROR :PARSE)'s AT tokens, else STATUS
    needing a sign-unobserved analysis in the model, not done. No missing intrinsic. COMPLEX intrinsics done (fcplx: CSQRT CEXP CLOG CSIN CCOS,
    CABS, correctly rounded; gfortran/flang libm is an ulp off on some, cases/cfuns.f90). fhyp: asin/acos containment argued, not proved.
 2. OPEN outside the grammar 11 (ACCESS='DIRECT', RECL=, FILE= a variable). 3. REWIND
-   (`REWIND I08`) 7. 4. EXTERNAL (blank-free) 7. 5. WRITE implied-DO / odd unit / FMT=
+   (`REWIND I08`) 7. 4. EXTERNAL parses (R1210, :external, no run-time effect yet; FCVS count unchanged 112): 308 311 317 328 now stop at INTRINSIC (blank-free, same shape: next, 4 programs), 509 CALL `*` returns, 500 CHARACTER*2D2, 722 unit, 903 READ implied-DO. FM407/413/910/912/914/916/917/919-922/915 stop at OPEN/INQUIRE and need an in-memory file store (queued). 5. WRITE implied-DO / odd unit / FMT=
    variable 6. 6. Unit fails to parse, cause not isolated (:PROGRAM) 6. 7. Run-time :END 5,
    :UNIT 2. 8. Computed GO TO 3, END FILE 2, CALL `*` returns 2, BLOCK DATA 2; DATA
    implied-DO/substring (FM700), :TYPE (FM829), READ implied-DO, INQUIRE, ASSIGN 1 each.

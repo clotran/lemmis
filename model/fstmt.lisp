@@ -92,6 +92,12 @@
                                 (if (and ok (consp ns)) (mv t (list :save t ns) r) (fail))))
                              (t (mv-let (ok ns r) (fps :onames (kdr toks))
                                   (if (and ok (consp ns)) (mv t (list :save nil ns) r) (fail))))))
+                      ((equal tk (kw "external"))                           ; R1210 external-stmt
+                       (if (and (equal (kadr toks) (op ":")) (equal (kaddr toks) (op ":")))
+                           (mv-let (ok ns r) (fps :onames (kdr (kdr (kdr toks))))
+                             (if (and ok (consp ns)) (mv t (list :external t ns) r) (fail)))
+                         (mv-let (ok ns r) (fps :onames (kdr toks))
+                           (if (and ok (consp ns)) (mv t (list :external nil ns) r) (fail)))))
                       ((and (tok-in tk '("allocate" "deallocate")) (equal (kadr toks) (op "(")))   ; R929, R944
                        (mv-let (ok as r) (fp :args (kdr (kdr toks)))
                          (let ((d (equal tk (kw "deallocate"))))

@@ -68,6 +68,7 @@
 ;         (:deallocate as)          R944 deallocate-stmt: DEALLOCATE (
 ;                                   allocate-object-list ), each a name
 ;         (:save dc ns)             R859 save-stmt: SAVE [[::] ns], ns saved
+;         (:external dc ns)         R1210 external-stmt: EXTERNAL [::] ns, ns nonempty
 ;                                   entity names (not a common block's)
 ;         (:dimstmt dc es)          R851 dimension-stmt: DIMENSION [::] es,
 ;                                   each entity-decl (:ent) an array-name (
@@ -293,6 +294,7 @@
             (:data (and (= (len x) 2) (fgs :dsets (cadr x))))
             (:equiv (and (= (len x) 2) (fgs :esets (cadr x))))
             (:save (and (= (len x) 3) (booleanp (cadr x)) (names-p (caddr x)) (or (null (cadr x)) (consp (caddr x)))))
+            (:external (and (= (len x) 3) (booleanp (cadr x)) (names-p (caddr x)) (consp (caddr x))))
             (:call (and (= (len x) 4) (name-tok-p (cadr x)) (booleanp (caddr x))
                         (if (caddr x) (fg :args (cadddr x)) (null (cadddr x)))))
             (:print (and (= (len x) 3) (fmt-spec-p (cadr x)) (fgs :items (caddr x))))
@@ -464,6 +466,7 @@
          (:implicit (cons (kw "implicit") (imps-y (kadr x))))
          (:data (cons (kw "data") (fys :dsets (kadr x))))
          (:save (cons (kw "save") (append (if (kadr x) (dcolon) nil) (onames-y (kaddr x)))))
+         (:external (cons (kw "external") (append (if (kadr x) (dcolon) nil) (onames-y (kaddr x)))))
          (:call (list* (kw "call") (kadr x) (if (kaddr x) (cons (op "(") (fy :args (kadddr x))) nil)))
          (:print (list* (kw "print") (fmt-tok (kadr x)) (fys :items (kaddr x))))
          (:readf (list* (kw "read") (fmt-tok (kadr x)) (fys :items (kaddr x))))
