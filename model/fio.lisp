@@ -367,7 +367,7 @@
               (mv-let (xv xn r) (fi-digs r 0 0)
                 (let ((m (if dot (+ iv (/ fv (expt 10 fn))) (/ iv (expt 10 (nfix d))))))
                   (cond ((atom cs) (mv 1 0))
-                        ((or (consp r) (= 0 (+ in fn)) (and hasx (= xn 0))) (mv sg nil))
+                        ((or (consp r) (and (not dot) (= 0 (+ in fn))) (and hasx (= xn 0))) (mv sg nil))
                         (hasx (mv sg (* m (expt 10 (* xs xv)))))
                         (t (mv sg (* m (expt 10 (- (ifix p))))))))))))))))
 (defun fi-real-val (k sg q)          ; to kind k: nearest, ties to even (13.7.2.3.8), -0 kept

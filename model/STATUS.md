@@ -7,7 +7,7 @@ whole; use the headings below and `grep -n` / `sed -n`.
 
 - SCOPE score: 165 of 208 rules proved, 43 in part, none missing (SCOPE.md, first
   paragraphs).
-- FCVS: 120 of 180 programs print their reference output (SCOPE.md, "Theorem 3:
+- FCVS: 122 of 180 programs print their reference output (SCOPE.md, "Theorem 3:
   checked against the compilers", the FCVS bullet; the passing names are in
   build/fcvs.txt after `make check`).
 - Fuzzer: `make fuzz` (seed 1, 40 programs) agrees under gfortran and flang; seeds 1-5
@@ -16,7 +16,8 @@ whole; use the headings below and `grep -n` / `sed -n`.
 
 ## Next lanes, in order
 
-FCVS blockers, 2026-11-15 (first stop of each failing program; 120 pass; recount with
+FCVS stops classified 2026-11-16 (122 pass; FM403 FM404 passed once the harness fed each program its .reference_input, and a bare "." reads as 0): FM110 was :END, fixed by the harness + fi-real, unverified; FM900 :TYPE at READ of a COMPLEX item; FM901 :END (harness); FM405 FM908 :UNIT = READ from an internal file (12.2.5); FM302 :COMMON = a block redeclared with other types/shapes, needs a storage-sequence model (15.9.4); FM080 :TYPE test 686 RVON03 = FF083(..) implicit-real external function, not isolated; FM829 :TYPE test 3 INT((1.24,5.67)) complex arg to INT (15.10); FM905 FM907 list-directed * output of REAL/COMPLEX prints a placeholder (13.10.4), the printing milestone. NEXT: READ of COMPLEX items (FM900), internal-file READ (FM405 FM908), INT of a complex (FM829).
+FCVS blockers, 2026-11-15 (first stop of each failing program; 122 pass; recount with
 fortran-run-form per program, bucketing (:ERROR :PARSE)'s AT tokens, else STATUS):
 1. :ERROR :PD, 9 programs left (REAL ** REAL now answered, correctly rounded, fcplx fl-pow: 351 363 364 520 800 810 moved), 15 (isolated 2026-11-15; REAL ** INTEGER 3..64 with an exact value
    now answered, 3 programs moved; the table is the stop before that change). program | construct | bucket:

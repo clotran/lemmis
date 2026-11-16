@@ -401,13 +401,17 @@
 
 (def fcvs-files (if (fs/exists? (str here "/fcvs")) (sort (map str (fs/glob (str here "/fcvs") "FM*.f"))) []))
 
+(defn fcvs-input [f] ; the program's card reader: its reference_input, one record per line
+  (let [i (str/replace f #"\.f$" ".reference_input")]
+    (if (fs/exists? i) (str "'(" (str/join " " (map lisp-str (str/split-lines (slurp i)))) ")") "nil")))
+
 (def fcvs-model
   (if (empty? fcvs-files) []
     (let [input (str "(include-book \"frun\")\n(set-iprint nil)\n(set-fmt-hard-right-margin 100000 state)\n(set-fmt-soft-right-margin 100000 state)\n"
                      "(defun show-recs (ls) (declare (xargs :mode :program))\n"
                      "  (if (endp ls) nil (prog2$ (cw \"REC~s0~%\" (car (car ls))) (show-recs (cdr ls)))))\n"
                      (str/join (for [f fcvs-files]
-                                 (str "(let ((r (fortran-run-form " (lisp-str (slurp f)) " t 2000000)))\n"
+                                 (str "(let ((r (fortran-run-in " (lisp-str (slurp f)) " t " (fcvs-input f) " 2000000)))\n"
                                       "  (prog2$ (cw \"~%FCVS~%STATUS ~x0~%\" (car r)) (if (consp (car r)) (cw \"AT ~x0~%\" (cadr r)) (show-recs (cadr r)))))\n")))
                      "(good-bye)\n")
           r (sh! 3000 {:dir here :in input} "nice" acl2)
