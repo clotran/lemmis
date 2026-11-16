@@ -47,6 +47,35 @@
 (defun int-file-p (u) (or (cval-p u) (and (aval-p u) (eq (a-ty u) :c))))
 (defun int-recs (vs) (if (atom vs) nil (cons (lx-str (c-chars (car vs))) (int-recs (cdr vs)))))
 
+;; WRITE to an internal file (12.2.5, 12.8): the records the format makes fill the variable, a record per
+;; element, each blank-filled; a record longer than the element, or more records than elements, is an error.
+;; ponytail: a whole CHARACTER variable or array only, formatted (not list-directed); an element or substring unit is :unit
+(defun int-pad (s k) (if (and (stringp s) (<= (length s) k)) (coerce (append (coerce s 'list) (make-list (- k (length s)) :initial-element #\Space)) 'string) nil))
+(defun int-fill (recs k n)
+  (cond ((atom recs) (make-list n :initial-element (int-pad "" k)))
+        ((zp n) :bad)
+        (t (let ((s (int-pad (car recs) k)) (r (int-fill (cdr recs) k (1- n)))) (if (or (null s) (eq r :bad)) :bad (cons s r))))))
+(defun out-texts (out acc)           ; st-out's lines, oldest first, each line's text after its "~F"
+  (if (atom out) acc
+    (let ((s (kar (car out)))) (out-texts (cdr out) (cons (if (stringp s) (coerce (nthcdr 2 (coerce s 'list)) 'string) "") acc)))))
+(defun int-write (e fm vs adv env st)
+  (let* ((p (lone-prim e)) (tk (kadr p)))
+    (mv-let (b suf d) (env-lookup (tok-name tk) env)
+      (declare (ignore suf d))
+      (let* ((loc (kadr b)) (a (st-get loc st)))
+        (cond ((or (not (eq (kar b) :var)) (eq (kar p) :ref) (eq fm :star) (not adv)) (mv (err :unit) st))
+              ((eq (kaddr b) :in) (mv (err :intent) st))
+              ((member loc (st-dovars st)) (mv (err :do-var) st))
+              (t (let ((out (st-out st)))
+                   (mv-let (e st) (io-write fm vs t (st-out-set nil st))
+                     (let ((recs (out-texts (st-out st) nil)) (st (st-out-set out st)))
+                       (if (errp e) (mv e st)
+                         (let* ((ar (aval-p a)) (k (if ar (a-k a) (c-len a)))
+                                (fs (int-fill recs k (if ar (len (a-es a)) 1))))
+                           (if (eq fs :bad) (mv (err :record) st)
+                             (mv :normal (st-put loc (if ar (mk-arr :c k (a-lbs a) (a-ubs a) fs) (wrap :c k (car fs)))
+                                                 (st-log (list (list :w loc :all)) st)))))))))))))))
+
 (me-mutual   ; each defun without a declare: (xargs :guard t :measure (nfix fuel))
 
  (defun me-ev (nt x env st cx fuel)
@@ -746,10 +775,10 @@
                                     (me-ev :expr u env st cx (1- fuel)))
                      ; the unit * is OUTPUT_UNIT, 6, or INPUT_UNIT, 5, for both compilers (16.10.2.23, .13)
                      (cond ((not (or (and (ival-scalar u) (equal (v-num u) (if (member-eq (kar s) '(:write :print)) 6 5)))
-                                      (and (int-file-p u) (eq (kar s) :read)))) (mv (err :unit) st))   ; an internal file: a CHARACTER scalar (12.2.5)
+                                      (and (int-file-p u) (member-eq (kar s) '(:read :write))))) (mv (err :unit) st))   ; an internal file: a CHARACTER scalar (12.2.5)
                            ((errp fm) (mv fm st)) ((errp adv) (mv adv st))
                            ((member-eq (kar s) '(:write :print))
-                            (with-v (vs st) (me-list (kaddr s) env st cx (1- fuel)) (io-write fm vs adv st)))
+                            (with-v (vs st) (me-list (kaddr s) env st cx (1- fuel)) (if (int-file-p u) (int-write (kaddr (io-spec :unit ios)) fm vs adv env st) (io-write fm vs adv st))))
                            (t (let* ((oin (st-in st)) (st (if (int-file-p u) (st-in-set (cons (int-recs (flat-vals (list u))) nil) st) st)))   ; its one record, a fresh position each READ
                               (mv-let (rs in) (rd-begin fm (st-in st))
                                 (if (errp rs) (mv rs st)
