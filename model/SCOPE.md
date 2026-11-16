@@ -48,13 +48,13 @@ Not a theorem: a test, run by `make check` (exit 1 on any difference).
   another for MOD): MOD now takes A's sign, as gfortran, flang and
   flang-new do (`cases/modzero.f90`); MODULO's zero stays processor dependent.
 - **FCVS**: scored, not failed, and only when `fcvs/` is fetched
-  (`bb fetch-fcvs.bb`; not committed): 98 of 180 programs print their
+  (`bb fetch-fcvs.bb`; not committed): 103 of 180 programs print their
   reference output exactly (build/fcvs.txt lists them; the names below are the earlier 75) (FM002-010, 012, 016-021, 025, 026, 030-045,
   060, 061, 097, 098, 109, 201-205, 251, 254, 256, 301, 306, 352-355,
   359-362, 368-370, 372-374, 718, 801, 803, 805-807, 812, 814, 816, 819, 821, 822). Of the rest, most stop at a statement outside the
   subset (first: OPEN 11 (its DIRECT, RECL=, FILE= variable forms), REWIND 7, EXTERNAL 7,
-  ...; table in STATUS.md); 16 at a processor-dependent value (the COMPLEX
-  intrinsics CSQRT, CEXP, CLOG, CSIN, CCOS that EQUIVALENCE's programs now reach; EXP,
+  ...; table in STATUS.md); 15 at a processor-dependent value (CSQRT, CEXP, CLOG, CSIN, CCOS, CABS are correctly
+  rounded, `fcplx.lisp`; EXP,
   LOG, SIN, COS, TAN, ATAN, ATAN2 are correctly rounded, `fintr.lisp`,
   `ftrig.lisp`, and ASIN, ACOS, SINH, COSH, TANH, LOG10, `fhyp.lisp`); 5 at an I/O end or unit. (The score read 0 until the
   harness dropped the "exit 0" line LLVM's reference outputs end with.)

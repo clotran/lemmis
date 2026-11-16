@@ -557,10 +557,10 @@
         ((equal name "abs")                                                  ; 16.9.2
          (cond ((ival-scalar a) (mk-int (v-kind a) (abs (v-num a))))
                ((rval-p a) (vr (v-kind a) (fl-abs (v-num a))))
-               ((zval-p a)          ; 16.9.2: the processor's approximation of the modulus
-                (let* ((k (v-kind a)) (x (fl-val (z-re a))) (y (fl-val (z-im a))) (r (fl-sqrt k (+ (* x x) (* y y)))))
-                  (if (and (z-fin a a) (fl-exact k (+ (* x x) (* y y))) (rationalp r) (= (* r r) (+ (* x x) (* y y))))
-                      (vr k r) (list :pd :r k))))
+               ((zval-p a)          ; 16.9.2: the modulus, correctly rounded (fcplx cq-root: sqrt s = t for S = 4s^2, SX = 0)
+                (let* ((k (v-kind a)) (x (fl-val (z-re a))) (y (fl-val (z-im a))) (s (+ (* x x) (* y y)))
+                       (r (if (= s 0) 0 (cq-root k (* 4 s s) 0))))
+                  (if (and (z-fin a a) (rkind-p k) (rationalp r)) (vr k r) (list :pd :r k))))
                (t (err :type))))
         ((zval-p a)
          (cond ((equal name "aimag") (vr (v-kind a) (z-im a)))                ; 16.9.6
