@@ -159,3 +159,63 @@
 (assert-event (equal (fl-cfun :cos 4 2 0) (cons -13963571/33554432 :nzero)))
 (assert-event (equal (fl-cfun :cos 8 1/2 -2) (cons 7434626331112217/2251799813685248 978862729552351/562949953421312)))
 (assert-event (equal (cq-root 8 (* 4 2 2) 0) 6369051672525773/4503599627370496))   ; |(1,1)| = sqrt 2
+
+;; ---- REAL ** REAL (10.1.5.2.1), x >= 0: correctly rounded -------------------------
+;
+; The standard leaves x**y to the processor; the model pins it as fintr pins EXP:
+; the true value rounded (fl-round, ties to even). Exact first: y = p/2^d in lowest
+; terms; x**y is rational iff x^(1/2^d) is (Bezout), found by d exact square roots
+; (rq-root); then x**y = r^p rounded (|p| bounded, so r^p stays small; past the
+; bound it overflows or underflows, or is not on a rounding boundary). Otherwise
+; x**y is an algebraic irrational, never on a boundary: at depth j, log x is in
+; +-[lg-lo, lg-hi], u = y log x in [ulo, uhi], u = m log 2 + v with v widened
+; outward to a 2^-b grid (b = 64 + 48j, keeps the rationals small), so x**y is in
+; 2^m [xe-lo(vlo), xe-hi(vhi)] (exp monotone: argued, not proved); a depth decides
+; when both ends round alike (cx-iv). |u| > 1000 (past overflow/underflow), depths
+; 0..5 undecided (a near-tie closer than ~2^-300), overflow, -0, infinities, NaN: :pd.
+; A negative x is fval's (prohibited, 10.1.5.2.4p1).
+
+(defun rq-sqrt (q)                   ; the rational square root of q >= 0, or nil
+  (declare (xargs :guard t))
+  (let* ((q (rfix q)) (n (numerator q)) (d (denominator q)) (a (fl-isqrt n)) (b (fl-isqrt d)))
+    (and (<= 0 q) (= (* a a) n) (= (* b b) d) (/ a (max b 1)))))
+
+(defun rq-root (q d)                 ; q^(1/2^d) when rational, or nil
+  (declare (xargs :guard t :measure (nfix d)))
+  (if (zp (nfix d)) (rfix q) (let ((r (rq-sqrt q))) (and r (rq-root r (- (nfix d) 1))))))
+
+(defun pow-exact (k x y)             ; x**y rounded when it is rational and modest (x > 0), else nil
+  (declare (xargs :guard t))
+  (let* ((y (rfix y)) (p (numerator y)) (r (rfix (rq-root x (+ -1 (integer-length (denominator y)))))))
+    (and (rq-root x (+ -1 (integer-length (denominator y)))) (< 0 r) (<= (abs p) 2200)
+         (<= (* (abs p) (abs (- (integer-length (numerator r)) (integer-length (denominator r))))) 4400)
+         (fl-round k (expt r p)))))
+
+(defun dy-dn (q b) (declare (xargs :guard t)) (/ (floor (* (rfix q) (expt 2 (nfix b))) 1) (expt 2 (nfix b))))
+(defun dy-up (q b) (declare (xargs :guard t)) (/ (ceiling (* (rfix q) (expt 2 (nfix b))) 1) (expt 2 (nfix b))))
+
+(defun pow-depth (k x y j)           ; x**y rounded at depth j (x > 0, x**y irrational), or nil
+  (declare (xargs :guard t))
+  (let* ((a (rfix x)) (y (rfix y)) (l1 (lg-lo a j)) (l2 (lg-hi a j))
+         (u1 (* y (if (< a 1) (- l2) l1))) (u2 (* y (if (< a 1) (- l1) l2)))
+         (ulo (min u1 u2)) (uhi (max u1 u2)))
+    (and (<= -1000 ulo) (<= uhi 1000)
+         (let* ((m (round (/ (* ulo 1000000) 693147) 1)) (g1 (* m (lg-lo 2 j))) (g2 (* m (lg-hi 2 j)))
+                (b (+ 64 (* 48 (nfix j))))
+                (vlo (dy-dn (- ulo (max g1 g2)) b)) (vhi (dy-up (- uhi (min g1 g2)) b)))
+           (cx-iv k (* (expt 2 m) (xe-lo vlo j)) (* (expt 2 m) (xe-hi vhi j)))))))
+
+(defun pow-search (k x y j fuel)
+  (declare (xargs :guard (natp j) :measure (nfix fuel)))
+  (cond ((not (posp fuel)) nil)
+        ((pow-depth k x y j))
+        (t (pow-search k x y (+ 1 j) (- fuel 1)))))
+
+(defun fl-pow (k x y)                ; x**y, x >= 0 and y of kind k: the rounded value, or :pd
+  (declare (xargs :guard t))
+  (let ((r (cond ((not (and (rkind-p k) (fl-fin-p x) (fl-fin-p y) (not (fl-neg-p x)))) :pd)
+                 ((fl-zero-p x) (if (< 0 (fl-val y)) 0 :pd))
+                 ((fl-zero-p y) 1)
+                 ((pow-exact k (fl-val x) (fl-val y)))
+                 (t (pow-search k (fl-val x) (fl-val y) 0 6)))))
+    (if (and r (fl-fin-p r)) r :pd)))

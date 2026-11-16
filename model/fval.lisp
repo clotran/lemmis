@@ -133,8 +133,10 @@
 
 ; x1 ** x2 with a real: an integer power 0, 1, 2, -1 (or 3..64, when its value is exact) is one exact
 ; operation (or none); any other is the processor's approximation
-; (10.1.5.2.1), as is a real power; a negative real to a real power is
-; prohibited (10.1.5.2.4p1)
+; (10.1.5.2.1); a real power is pinned as the true value rounded (fcplx fl-pow;
+; an integer-valued one agrees with the integer rules where they answer); a
+; negative real to a real power is prohibited (10.1.5.2.4p1), even an
+; integer-valued one
 (defun real-pow (k a b)
   (declare (xargs :guard t))
   (let ((x (to-fl k a)))
@@ -151,8 +153,21 @@
                     (vr k (expt x n)))
                    (t (list :pd :r k)))))
           ((and (fl-neg-p x) (not (fl-zero-p x))) (err :domain))
-          (t (list :pd :r k)))))
+          (t (let ((r (fl-pow k x (to-fl k b)))) (if (eq r :pd) (list :pd :r k) (vr k r)))))))
 (in-theory (disable real-pow))
+; expected values: exact rational arithmetic (bb)
+(assert-event (equal (real-pow 4 (vr 4 5/2) (vi 4 3)) (vr 4 125/8)))
+(assert-event (equal (real-pow 8 (vr 8 -2) (vi 4 3)) (vr 8 -8)))
+(assert-event (equal (real-pow 8 (vr 8 1/2) (vi 4 64)) (vr 8 1/18446744073709551616)))
+(assert-event (equal (real-pow 4 (vr 4 3835) (vi 4 5)) '(:pd :r 4)))    ; 3835^5 needs 60 bits
+(assert-event (equal (real-pow 8 (vr 8 3) (vi 4 33)) (vr 8 5559060566555523)))
+(assert-event (equal (real-pow 8 (vr 8 3) (vi 4 34)) '(:pd :r 8)))      ; 3^34 > 2^53
+(assert-event (equal (real-pow 8 (vr 8 1/2) (vi 4 65)) '(:pd :r 8)))    ; past 64
+(assert-event (equal (real-pow 4 (vr 4 10) (vr 4 5)) (vr 4 100000)))
+(assert-event (equal (real-pow 8 (vr 8 4) (vr 8 1/2)) (vr 8 2)))
+(assert-event (equal (real-pow 8 (vr 8 5/2) (vr 8 3)) (vr 8 125/8)))
+(assert-event (equal (real-pow 8 (vr 8 -2) (vr 8 3)) (err :domain)))
+(assert-event (equal (real-pow 8 (vr 8 0) (vr 8 -1)) '(:pd :r 8)))
 
 ; + - * / ** and the relations when an operand is real: the other is
 ; converted to the real's kind, the greater precision when both are

@@ -7,25 +7,25 @@ whole; use the headings below and `grep -n` / `sed -n`.
 
 - SCOPE score: 165 of 208 rules proved, 43 in part, none missing (SCOPE.md, first
   paragraphs).
-- FCVS: 106 of 180 programs print their reference output (SCOPE.md, "Theorem 3:
+- FCVS: 112 of 180 programs print their reference output (SCOPE.md, "Theorem 3:
   checked against the compilers", the FCVS bullet; the passing names are in
   build/fcvs.txt after `make check`).
 - Fuzzer: `make fuzz` (seed 1, 40 programs) agrees under gfortran and flang; seeds 1-5
   clean (same SCOPE section, "The fuzzer").
-- Oracle cases: 7 fsyn cases + 48 whole programs in model/cases/, all agree.
+- Oracle cases: 7 fsyn cases + 49 whole programs in model/cases/, all agree.
 
 ## Next lanes, in order
 
-FCVS blockers, 2026-11-15 (first stop of each failing program; 106 pass; recount with
+FCVS blockers, 2026-11-15 (first stop of each failing program; 112 pass; recount with
 fortran-run-form per program, bucketing (:ERROR :PARSE)'s AT tokens, else STATUS):
-1. :ERROR :PD, 15 programs at the start (isolated 2026-11-15; REAL ** INTEGER 3..64 with an exact value
+1. :ERROR :PD, 9 programs left (REAL ** REAL now answered, correctly rounded, fcplx fl-pow: 351 363 364 520 800 810 moved), 15 (isolated 2026-11-15; REAL ** INTEGER 3..64 with an exact value
    now answered, 3 programs moved; the table is the stop before that change). program | construct | bucket:
    062 (REAL ** 5, 3835.**5 inexact) 356 (3.0**3 in ABS) 802 (D**3) 808 (2.5**3) = real ** integer >= 3;
    351 (RVON01 ** RVON02) 363 (AINT(x)**0.5) 364 (real ** real) 520 (10.0**5.0 PARAMETER) 800 (D**2.5)
-   810 (DINT(x)**2.0) = real ** real, a processor's libm pow (not exact-checkable: not done);
+   810 (DINT(x)**2.0) = real ** real (done: fl-pow, cases/rpow.f90);
    828 (CSQRT(z)**2) 830 (SQRT(z)+EXP(z)*LOG(z)) 831 (SIN(z)*COS(z)) = inexact complex * / **, :pd by design;
    357 804 (AMOD/DMOD(0.0,4.5), +0 A) = MOD +0 disagreement, but the tests compare REAVS+-0.00005 so either sign
-   passes; a narrower :pd would be "answer +0 when the value only reaches a relation, :pd when it is printed",
+   passes. DECIDED (James, 2026-11-15): FM357/FM804 stay honest :pd stops; no 'unknown zero' value. A narrower :pd would be "answer +0 when the value only reaches a relation, :pd when it is printed",
    needing a sign-unobserved analysis in the model, not done. No missing intrinsic. COMPLEX intrinsics done (fcplx: CSQRT CEXP CLOG CSIN CCOS,
    CABS, correctly rounded; gfortran/flang libm is an ulp off on some, cases/cfuns.f90). fhyp: asin/acos containment argued, not proved.
 2. OPEN outside the grammar 11 (ACCESS='DIRECT', RECL=, FILE= a variable). 3. REWIND
