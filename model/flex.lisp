@@ -354,7 +354,7 @@
   (and (consp cs) (if (atom cs) t (and (or (lx-digit-p (kar cs)) (eql (kar cs) #\,)) (or (atom (kdr cs)) (ff-labels-p (kdr cs)))))))
 
 (defconst *ff-keywords*              ; a statement's first word, longest first where one begins another
-  '("doubleprecision" "implicitnone" "endprogram" "endsubroutine" "endfunction" "endmodule" "subroutine" "dimension"
+  '("doubleprecisionfunction" "integerfunction" "logicalfunction" "realfunction" "doubleprecision" "implicitnone" "endprogram" "endsubroutine" "endfunction" "endmodule" "subroutine" "dimension"
     "continue" "function" "implicit" "integer" "logical" "program" "contains" "elseif" "endif" "enddo" "return"
     "format" "write" "print" "read" "character" "complex" "real" "call" "stop" "else" "then" "end" "data" "common" "external" "intrinsic"))
 (defun ff-kw (cs ks)                 ; the keyword cs begins with
@@ -363,7 +363,7 @@
         ((and (stringp (kar ks)) (ff-prefix-p (coerce (kar ks) 'list) cs)) (kar ks))
         (t (ff-kw cs (kdr ks)))))
 (defconst *ff-spaced*                ; a keyword written as two words in free form
-  '(("doubleprecision" . "double precision") ("implicitnone" . "implicit none") ("endprogram" . "end program")
+  '(("doubleprecisionfunction" . "double precision function") ("integerfunction" . "integer function") ("logicalfunction" . "logical function") ("realfunction" . "real function") ("doubleprecision" . "double precision") ("implicitnone" . "implicit none") ("endprogram" . "end program")
     ("endsubroutine" . "end subroutine") ("endfunction" . "end function") ("endmodule" . "end module")
     ("elseif" . "else if") ("endif" . "end if") ("enddo" . "end do")))
 
