@@ -14,7 +14,7 @@ fstmt-complete.cert: fstmt-sound.cert
 fstmt-cost.cert: fstmt-complete.cert
 fprog.cert: fstmt-cost.cert
 fintr.cert: freal.cert
-fcplx.cert: freal.cert
+fcplx.cert: fhyp.cert
 ftrig.cert: fintr.cert
 fhyp.cert: ftrig.cert
 fval.cert: fprog.cert flex.cert fhyp.cert fcplx.cert
