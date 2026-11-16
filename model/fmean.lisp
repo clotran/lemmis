@@ -304,6 +304,9 @@
          ((nil) (with-v (vs st) (mv-let (vs kw st) (me-iargs args (member-equal (tok-name tk) '("size" "lbound" "ubound" "kind" "huge" "len" "allocated")) env st cx (1- fuel))
                                   (mv (if (errp vs) vs (list :ok vs kw)) st))
                   (mv (intrinsic-spec (tok-name tk) (kadr vs) (kaddr vs)) st)))
+         (:intr (with-v (vs st) (mv-let (vs kw st) (me-iargs args nil env st cx (1- fuel))   ; a dummy procedure bound to an intrinsic
+                                  (mv (if (errp vs) vs (list :ok vs kw)) st))
+                  (mv (intrinsic-spec (kadr b) (kadr vs) (kaddr vs)) st)))
          (otherwise (mv (err :type) st))))))
 
  (defun me-elem (u host vs i n env st cx fuel)   ; the results at elements i .. n-1
@@ -367,6 +370,8 @@
                   (mv-let (b suf d) (if p (env-lookup (tok-name (kadr p)) env) (mv nil nil 0))
                     (declare (ignore suf d))
                     (cond
+                     ((and p (eq (kar p) :name) (proc-actual (tok-name (kadr p)) b env st))   ; a procedure name (F77 15.9.2)
+                      (me-bind (cdr dns) m env st cx (1- fuel) (cons (cons dn (proc-actual (tok-name (kadr p)) b env st)) fr) copies))
                      ((and p (eq (kar p) :name) (eq (kar b) :var))
                       (me-bind (cdr dns) m env st cx (1- fuel) (cons (cons dn (list :var (kadr b) (if (eq (kaddr b) :alloc) :rw (kaddr b)))) fr) copies))
                      ((and p (eq (kar p) :ref) (eq (kar b) :var) (aval-p (st-get (kadr b) st)))
@@ -494,6 +499,7 @@
  ; explicit-shape one the actual's leading elements (15.5.2.12)
  (defun me-dummy (n ty k ss attrs env st cx fuel fr copies)
    (if (not (posp fuel)) (mv (err :fuel) nil nil st)
+     (if (member-eq (kar (cdr (alk n fr))) '(:proc :intr)) (mv nil fr copies st)   ; a dummy procedure: its type is the function's
      (let* ((b (cdr (alk n fr))) (loc (kadr b)) (v (st-get loc st)) (int (decl-intent attrs))
             ; a character dummy of assumed length takes its actual's (8.5.13); a
             ; scalar one shorter than its actual, the actual's leftmost characters (15.5.2.4p2)
@@ -517,7 +523,7 @@
                   (mv-let (los st) (me-lowers (shapes-lower ss) env st cx (1- fuel))
                     (mv los (if (errp los) nil (uppers los (extents (a-lbs v) (a-ubs v)))) st)))
                  (t (me-bounds ss env st cx (1- fuel))))
-           (dummy-fin n ty k ss attrs int b v ls us fr copies st)))))))
+           (dummy-fin n ty k ss attrs int b v ls us fr copies st))))))))
 
  (defun me-lowers (los env st cx fuel)
    (cond ((not (posp fuel)) (mv (err :fuel) st))

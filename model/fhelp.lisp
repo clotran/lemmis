@@ -5,6 +5,7 @@
 (in-package "ACL2")
 
 (include-book "fequiv")   ; fval, and st-put with storage association
+(include-book "fspec")   ; *specifics*: the intrinsics a dummy procedure may name
 (include-book "fdecl")   ; the declarations' statements applied (unit-spec)
 
 (set-verify-guards-eagerness 0)
@@ -569,6 +570,24 @@
              (implicit-vars (cdr ns) (cons (cons (car ns) (list :var loc :rw)) fr) env st rules)))))
 
 ; ---- fmean's non-recursive steps, kept out of its mutual recursion
+
+; a procedure name as an actual argument (F77 15.9.2, 8.7, 8.8): the procedure binding
+; the dummy takes, or nil. An external one is the ext frame's entry (named in EXTERNAL, so
+; the name's variable is never defined); an intrinsic must be a specific name (F77 15.3):
+; (:intr name). ponytail: generic names and conversions are never passed (nil, so :type)
+(defconst *passable*
+  '("sin" "cos" "tan" "exp" "sqrt" "log" "log10" "asin" "acos" "atan" "atan2" "sinh" "cosh" "tanh"))
+(defun proc-actual (n b env st)
+  (declare (xargs :guard t))
+  (let ((e (cdr (alk n (car (last env))))))
+    (cond ((and (eq (kar b) :proc) (not (eq (kaddr b) :host))) b)
+          ((and (eq (kar b) :var) (consp (st-get (kadr b) st)) (eq (kar (st-get (kadr b) st)) :u)
+                (eq (kar e) :proc) (not (aval-p (st-get (kadr b) st))))
+           e)
+          ((and (or (null b) (and (eq (kar b) :var) (eq (kar (st-get (kadr b) st)) :u)))
+                (or (assoc-equal n *specifics*) (member-equal n *passable*)))
+           (list :intr n))
+          (t nil))))
 
 ; me-dummy's binding of the dummy n once its bounds ls, us are known; b
 ; its actual's binding, v the actual's value, int its intent
