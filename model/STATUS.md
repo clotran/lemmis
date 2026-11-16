@@ -7,7 +7,7 @@ whole; use the headings below and `grep -n` / `sed -n`.
 
 - SCOPE score: 165 of 208 rules proved, 43 in part, none missing (SCOPE.md, first
   paragraphs).
-- FCVS: 103 of 180 programs print their reference output (SCOPE.md, "Theorem 3:
+- FCVS: 106 of 180 programs print their reference output (SCOPE.md, "Theorem 3:
   checked against the compilers", the FCVS bullet; the passing names are in
   build/fcvs.txt after `make check`).
 - Fuzzer: `make fuzz` (seed 1, 40 programs) agrees under gfortran and flang; seeds 1-5
@@ -16,11 +16,18 @@ whole; use the headings below and `grep -n` / `sed -n`.
 
 ## Next lanes, in order
 
-FCVS blockers, 2026-11-15 (first stop of each failing program; 103 pass; recount with
+FCVS blockers, 2026-11-15 (first stop of each failing program; 106 pass; recount with
 fortran-run-form per program, bucketing (:ERROR :PARSE)'s AT tokens, else STATUS):
-1. :ERROR :PD 15 (062 351 356 357 363 364 520 800 802 804 808 810 828 830 831), the value
-   not isolated per program (MOD +0 A in 357 804). COMPLEX intrinsics done (fcplx: CSQRT CEXP CLOG
-   CSIN CCOS, CABS, correctly rounded; gfortran/flang libm is an ulp off on some, cases/cfuns.f90). fhyp: asin/acos containment argued, not proved.
+1. :ERROR :PD, 15 programs at the start (isolated 2026-11-15; REAL ** INTEGER 3..64 with an exact value
+   now answered, 3 programs moved; the table is the stop before that change). program | construct | bucket:
+   062 (REAL ** 5, 3835.**5 inexact) 356 (3.0**3 in ABS) 802 (D**3) 808 (2.5**3) = real ** integer >= 3;
+   351 (RVON01 ** RVON02) 363 (AINT(x)**0.5) 364 (real ** real) 520 (10.0**5.0 PARAMETER) 800 (D**2.5)
+   810 (DINT(x)**2.0) = real ** real, a processor's libm pow (not exact-checkable: not done);
+   828 (CSQRT(z)**2) 830 (SQRT(z)+EXP(z)*LOG(z)) 831 (SIN(z)*COS(z)) = inexact complex * / **, :pd by design;
+   357 804 (AMOD/DMOD(0.0,4.5), +0 A) = MOD +0 disagreement, but the tests compare REAVS+-0.00005 so either sign
+   passes; a narrower :pd would be "answer +0 when the value only reaches a relation, :pd when it is printed",
+   needing a sign-unobserved analysis in the model, not done. No missing intrinsic. COMPLEX intrinsics done (fcplx: CSQRT CEXP CLOG CSIN CCOS,
+   CABS, correctly rounded; gfortran/flang libm is an ulp off on some, cases/cfuns.f90). fhyp: asin/acos containment argued, not proved.
 2. OPEN outside the grammar 11 (ACCESS='DIRECT', RECL=, FILE= a variable). 3. REWIND
    (`REWIND I08`) 7. 4. EXTERNAL (blank-free) 7. 5. WRITE implied-DO / odd unit / FMT=
    variable 6. 6. Unit fails to parse, cause not isolated (:PROGRAM) 6. 7. Run-time :END 5,

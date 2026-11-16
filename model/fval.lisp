@@ -131,7 +131,7 @@
   (declare (xargs :guard t))
   (if (ival-p v) (if (integerp (v-num v)) (fl-round k (v-num v)) :nan) (fl-conv k (v-num v))))
 
-; x1 ** x2 with a real: an integer power 0, 1, 2, -1 is one exact
+; x1 ** x2 with a real: an integer power 0, 1, 2, -1 (or 3..64, when its value is exact) is one exact
 ; operation (or none); any other is the processor's approximation
 ; (10.1.5.2.1), as is a real power; a negative real to a real power is
 ; prohibited (10.1.5.2.4p1)
@@ -144,6 +144,11 @@
                    ((equal n 2) (vr k (fl-mul k x x)))
                    ((equal n -1) (vr k (fl-div k 1 x)))
                    ((and (equal n 0) (rationalp x) (not (= x 0))) (vr k 1))
+                   ; x**n, 3 <= n <= 64, whose true value is exact in kind k: every order of
+                   ; multiplying (x*x*x or squaring) is exact too (m**j has fewer bits than m**n)
+                   ((and (integerp n) (<= 3 n) (<= n 64) (rationalp x) (not (= x 0))
+                         (equal (fl-round k (expt x n)) (expt x n)))
+                    (vr k (expt x n)))
                    (t (list :pd :r k)))))
           ((and (fl-neg-p x) (not (fl-zero-p x))) (err :domain))
           (t (list :pd :r k)))))
