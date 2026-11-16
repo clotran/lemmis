@@ -351,7 +351,11 @@
                                                       (unit-key u) (dummy-names hd))
                      (if e (mv e st)
                        (mv-let (fr st) (if (kadr spec) (mv fr st)     ; IMPLICIT NONE, or implicit typing (8.7)
-                                         (implicit-vars (used-names (unit-exec u)) fr (append ufr host) st (unit-rules u)))
+                                         (mv-let (fr st) (if (and fn (not (prefix-ts hd)) (not (alk (result-name hd) fr)))   ; 4.1.2: an untyped function's result is typed by its name
+                                                 (mv-let (loc st) (st-new (ts-undef (imp-rule (result-name hd) (unit-rules u))) st)
+                                                   (mv (cons (cons (result-name hd) (list :var loc :rw)) fr) st))
+                                               (mv fr st))
+                                         (implicit-vars (used-names (unit-exec u)) fr (append ufr host) st (unit-rules u))))
                        (let ((env2 (cons fr (append ufr host))))
                          (mv-let (sfr exec) (sfun-frame (unit-exec u) fr st (unit-rules u) (kadr spec))   ; R1544
                          (mv-let (s st) (me-blk exec (if sfr (list* sfr fr (append ufr host)) env2) st cx2 (1- fuel))
