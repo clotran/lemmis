@@ -310,8 +310,8 @@ extension starts before Stage A is done.
    by check-gen) equal a-ev of their bodies under their guards, with no
    int64 overflow, so `<fn>-fortran-correct`: under the guard, on int64
    arguments, the generated procedure answers the ACL2 function's value.
-   ex-aplook's guard (t) does not cover `req + 1` at req = 2^63 - 1; its
-   theorem states `req < 2^63 - 1` (GEN.md).
+   ex-aplook (clotran c2e8cc3c form) computes k - 1 only when k > req >= 0, so
+   its theorem has no extra hypothesis (GEN.md).
    Layer 3 begun: `gen-call.lisp`, f-ev's frame agreement over fsem's
    clique with calls (`f-ev-agree`).
    Tail recursion proved: `gen-tail`, `gen-loop`, `gen-loop2`,
