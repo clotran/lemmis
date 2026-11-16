@@ -42,6 +42,7 @@
 (include-book "fprog-cost")
 (include-book "flex")
 (include-book "fhyp")
+(include-book "fcplx")
 
 ; logic mode, guards not yet verified: the meaning runs, and theorems can
 ; be proved about it; verifying its guards is owed
@@ -565,7 +566,10 @@
          (cond ((equal name "aimag") (vr (v-kind a) (z-im a)))                ; 16.9.6
                ((equal name "conjg") (vz (v-kind a) (z-re a) (fl-neg (z-im a))))   ; 16.9.59
                ((equal name "real") (if (rkind-p k) (vr k (fl-conv k (z-re a))) (err :type)))   ; 16.9.170
-               ((member-equal name (cons "sqrt" *pd-real-fns*)) (list :pd :z (v-kind a)))
+               ((equal name "sqrt")                                         ; 16.9.191, correctly rounded (fcplx)
+                (let ((r (fl-csqrt (v-kind a) (z-re a) (z-im a))))
+                  (if (consp r) (vz (v-kind a) (car r) (cdr r)) (list :pd :z (v-kind a)))))
+               ((member-equal name *pd-real-fns*) (list :pd :z (v-kind a)))
                (t (err :type))))
         ((not (num-p a)) (err :type))
         ((member-equal name '("real" "dble"))                                ; 16.9.170, 16.9.68

@@ -2,7 +2,7 @@
 # them, one at a time under nice; make -C model check: the cross-check
 # against gfortran (and flang if present). ACL2=/path overrides.
 ACL2 ?= $(abspath ../..)/acl2/saved_acl2
-BOOKS = fsyn fsem gen gen-cf fgram fparse flex fstmt fstmt-sound fstmt-complete fstmt-cost fprog freal fintr ftrig fhyp fval fequiv fhelp fmean
+BOOKS = fsyn fsem gen gen-cf fgram fparse flex fstmt fstmt-sound fstmt-complete fstmt-cost fprog freal fcplx fintr ftrig fhyp fval fequiv fhelp fmean
 .PHONY: all check clean
 all: $(BOOKS:%=%.cert)
 fsem.cert fgram.cert: fsyn.cert
@@ -14,9 +14,10 @@ fstmt-complete.cert: fstmt-sound.cert
 fstmt-cost.cert: fstmt-complete.cert
 fprog.cert: fstmt-cost.cert
 fintr.cert: freal.cert
+fcplx.cert: freal.cert
 ftrig.cert: fintr.cert
 fhyp.cert: ftrig.cert
-fval.cert: fprog.cert flex.cert fhyp.cert
+fval.cert: fprog.cert flex.cert fhyp.cert fcplx.cert
 fequiv.cert: fval.cert
 fhelp.cert: fequiv.cert
 fmean.cert: fhelp.cert
