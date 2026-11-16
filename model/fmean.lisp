@@ -503,6 +503,10 @@
        (cond
         ((and (not short) (not (ty-match ty k v)))
          (mv (err :type) nil nil st))
+        ((and ss (not (all-assumed ss)) (not (aval-p v))     ; an element actual: sequence association (F77 15.9.3.3)
+              (let ((c (assoc-equal n copies))) (and c (eq (kar (kaddr c)) :tuples) (not (cdr (kaddr (kaddr c)))))))
+         (mv-let (ls us st) (me-bounds ss env st cx (1- fuel))
+           (dummy-elem n attrs int (assoc-equal n copies) ls us fr copies st)))
         ((if ss (not (aval-p v)) (aval-p v)) (mv (err :type) nil nil st))
         ((and (member-equal int '(("out") ("inout") ("in" "out"))) (eq (kaddr b) :in)) (mv (err :intent) nil nil st))
         (short (dummy-short n k attrs int b v fr copies st))

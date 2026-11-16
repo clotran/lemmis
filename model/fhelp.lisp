@@ -325,6 +325,9 @@
            (es (if (aval-p v) (a-es v) (list (raw v))))
            (new (case (kar tg)
                   (:tuples (arr-sets old (kaddr tg) es))
+                  ; an element actual to an array dummy: the dummy's elements from offset (kaddr tg)
+                  (:from (mk-arr (a-ty old) (a-k old) (a-lbs old) (a-ubs old)
+                                 (append (take (kaddr tg) (a-es old)) es (nthcdr (+ (kaddr tg) (len es)) (a-es old)))))
                   ; a character dummy shorter than its actual: the actual's leftmost characters
                   (:cprefix (list :c (c-len old) (coerce (append (c-str v) (nthcdr (c-len v) (c-str old))) 'string)))
                   (:whole (if (aval-p old) (mk-arr (a-ty old) (a-k old) (a-lbs old) (a-ubs old) es) v))
@@ -599,6 +602,25 @@
           (mv nil (cons (cons n (list :var loc :in)) fr) (drop-copies n copies) st))
          ((equal int '("out")) (mv nil fr copies (st-put loc v3 st)))
          (t (mv nil fr copies st))))))))
+
+; an array element actual (the copy c: (:tuples loc (tuple))) to an explicit-shape
+; array dummy n of bounds ls, us: sequence association (F77 15.9.3.3), the
+; dummy the storage sequence from that element, written back from offset off
+(defun dummy-elem (n attrs int c ls us fr copies st)   ; (mv err fr copies st)
+  (declare (xargs :guard t))
+  (let* ((loc (kadr (kaddr c))) (arr (st-get loc st)) (need (prod (extents ls us))))
+    (cond
+     ((errp ls) (mv ls nil nil st))
+     ((not (aval-p arr)) (mv (err :type) nil nil st))
+     (t
+      (let ((off (arr-offset (kar (kaddr (kaddr c))) (a-lbs arr) (a-ubs arr))))
+        (if (or (not (natp off)) (< (len (a-es arr)) (+ off need)))
+            (mv (err :shape) nil nil st)
+          (mv-let (l2 st) (st-new (mk-arr (a-ty arr) (a-k arr) ls us (take need (nthcdr off (a-es arr)))) st)
+            (if (or (decl-has :value attrs) (equal int '("in")))
+                (mv nil (cons (cons n (list :var l2 (if (decl-has :value attrs) :rw :in))) fr) (drop-copies n copies) st)
+              (mv nil (cons (cons n (list :var l2 :rw)) fr)
+                  (cons (list n l2 (list :from loc off)) (drop-copies n copies)) st)))))))))
 
 ; a character dummy n of length k shorter than its scalar actual v: the
 ; actual's leftmost characters (15.5.2.4p2)
