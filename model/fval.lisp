@@ -586,6 +586,8 @@
          (cond ((equal name "aimag") (vr (v-kind a) (z-im a)))                ; 16.9.6
                ((equal name "conjg") (vz (v-kind a) (z-re a) (fl-neg (z-im a))))   ; 16.9.59
                ((equal name "real") (if (rkind-p k) (vr k (fl-conv k (z-re a))) (err :type)))   ; 16.9.170
+               ((equal name "dble") (vr 8 (fl-conv 8 (z-re a))))                    ; 16.9.68: the real part
+               ((equal name "int") (let ((n (fl-to-int :trunc (z-re a)))) (if (integerp n) (mk-int k n) (err :overflow))))   ; 16.9.110: the real part truncated
                ((equal name "sqrt")                                         ; 16.9.191, correctly rounded (fcplx)
                 (let ((r (fl-csqrt (v-kind a) (z-re a) (z-im a))))
                   (if (consp r) (vz (v-kind a) (car r) (cdr r)) (list :pd :z (v-kind a)))))
