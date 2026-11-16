@@ -92,6 +92,12 @@
                                 (if (and ok (consp ns)) (mv t (list :save t ns) r) (fail))))
                              (t (mv-let (ok ns r) (fps :onames (kdr toks))
                                   (if (and ok (consp ns)) (mv t (list :save nil ns) r) (fail))))))
+                      ((equal tk (kw "intrinsic"))                          ; R1216 intrinsic-stmt
+                       (if (and (equal (kadr toks) (op ":")) (equal (kaddr toks) (op ":")))
+                           (mv-let (ok ns r) (fps :onames (kdr (kdr (kdr toks))))
+                             (if (and ok (consp ns)) (mv t (list :intrinsic t ns) r) (fail)))
+                         (mv-let (ok ns r) (fps :onames (kdr toks))
+                           (if (and ok (consp ns)) (mv t (list :intrinsic nil ns) r) (fail)))))
                       ((equal tk (kw "external"))                           ; R1210 external-stmt
                        (if (and (equal (kadr toks) (op ":")) (equal (kaddr toks) (op ":")))
                            (mv-let (ok ns r) (fps :onames (kdr (kdr (kdr toks))))

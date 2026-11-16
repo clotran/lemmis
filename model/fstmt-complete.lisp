@@ -636,6 +636,7 @@
 (fps-complete-kind :deallocate)
 (fps-complete-kind :save)
 (fps-complete-kind :external)
+(fps-complete-kind :intrinsic)
 (fps-complete-kind :dimstmt)
 (fps-complete-kind :parstmt)
 (fps-complete-kind :common)
@@ -667,7 +668,7 @@
 
 (defconst *stmt-kinds*
   '(:program :module :end :contains :block :implicit-none :else :use :decl :assign :cassign :type :tdecl :if-then :else-if :do :simple :stop :allocate :deallocate :save :dimstmt :parstmt :common :implicit :data :call :print
-    :function :subroutine :if :select :case :case-default :label :goto :aif :ldo :format :write :read :readf :open :close :equiv :external))
+    :function :subroutine :if :select :case :case-default :label :goto :aif :ldo :format :write :read :readf :open :close :equiv :external :intrinsic))
 (defthm fgs-stmt-kinds                ; a statement is of one of the kinds above
   (implies (fgs :stmt x) (member-equal (car x) *stmt-kinds*))
   :rule-classes nil :hints (("Goal" :expand ((fgs :stmt x)) :in-theory (enable member-equal))))
