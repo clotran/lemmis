@@ -209,10 +209,48 @@
 
 ; ---- the text to its answer
 
+; F77 12.8.2.3: an io-implied-do output item "( list , v = a , b [, c] )" is written as the
+; array constructor [ ( list , v = a , b [, c] ) ], whose values come in order each trip
+; (the same ac-implied-do); the token rewrite is before the one fps read, so fps-sound covers it.
+(defun paren-end (toks d)             ; the tokens through the ")" closing depth d, or nil
+  (declare (xargs :guard t :measure (len toks)))
+  (cond ((atom toks) nil)
+        ((equal (car toks) (op "(")) (let ((r (paren-end (cdr toks) (1+ d)))) (and r (1+ r))))
+        ((equal (car toks) (op ")")) (if (= d 1) 1 (let ((r (paren-end (cdr toks) (1- d)))) (and r (1+ r)))))
+        (t (let ((r (paren-end (cdr toks) d))) (and r (1+ r))))))
+(defun eq-at-1 (toks d)               ; a "=" at paren depth 1 before the close
+  (declare (xargs :guard t :measure (len toks)))
+  (cond ((atom toks) nil)
+        ((equal (car toks) (op "(")) (eq-at-1 (cdr toks) (1+ d)))
+        ((equal (car toks) (op ")")) (and (< 1 d) (eq-at-1 (cdr toks) (1- d))))
+        ((equal (car toks) (op "=")) (or (= d 1) (eq-at-1 (cdr toks) d)))
+        (t (eq-at-1 (cdr toks) d))))
+(defthm len-nthcdr-lt
+  (implies (and (posp n) (<= n (len x))) (< (len (nthcdr n x)) (len x)))
+  :hints (("Goal" :induct (nthcdr n x))) :rule-classes :linear)
+(defun io-items (toks start d)        ; start: at an item start; d: paren depth
+  (declare (xargs :guard t :measure (len toks)))
+  (let ((n (and start (equal (car toks) (op "(")) (paren-end toks 0))))
+    (cond ((atom toks) nil)
+          ((and n (posp n) (<= n (len toks)) (eq-at-1 (take n toks) 0)
+                (or (= n (len toks)) (equal (nth n toks) (op ","))))
+           (append (list (op "[")) (take n toks) (list (op "]")) (io-items (nthcdr n toks) nil d)))
+          (t (cons (car toks)
+                   (io-items (cdr toks) (and (= d 0) (equal (car toks) (op ","))) 
+                             (cond ((equal (car toks) (op "(")) (1+ d)) ((equal (car toks) (op ")")) (if (< 0 d) (1- d) 0)) (t d))))))))
+(defun io-sugar (toks)                ; WRITE ( ios ) items
+  (declare (xargs :guard t))
+  (if (and (equal (car toks) (kw "write")) (equal (cadr toks) (op "(")))
+      (let ((n (paren-end (cdr toks) 0)))
+        (if (and n (<= (1+ n) (len toks)))
+            (append (take (1+ n) toks) (io-items (nthcdr (1+ n) toks) t 0))
+          toks))
+    toks))
+
 (defun parse-stmts (ss)              ; each statement parsed whole, or nil
   (declare (xargs :guard t :verify-guards nil))
   (if (atom ss) (mv t nil)
-    (mv-let (ok s r) (fps :stmt (car ss))
+    (mv-let (ok s r) (fps :stmt (io-sugar (car ss)))
       (if (not (and ok (null r))) (mv nil (car ss))
         (mv-let (ok2 rest) (parse-stmts (cdr ss)) (if ok2 (mv t (cons s rest)) (mv nil rest)))))))
 
@@ -236,7 +274,7 @@
 (defthm parse-stmts-sound
   (implies (mv-nth 0 (parse-stmts ss)) (stmts-p (mv-nth 1 (parse-stmts ss))))
   :hints (("Goal" :induct (parse-stmts ss))
-          ("Subgoal *1/2" :use ((:instance fps-sound (nt :stmt) (toks (car ss)))) :in-theory (disable fps-sound))))
+          ("Subgoal *1/2" :use ((:instance fps-sound (nt :stmt) (toks (io-sugar (car ss))))) :in-theory (disable fps-sound))))
 
 ; a label DO rewritten keeps every statement one of the grammar
 (defthm ldo-sugar-stmts
