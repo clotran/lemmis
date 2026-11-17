@@ -163,14 +163,10 @@
   (declare (xargs :guard t))
   (if (atom ds) nil (append (if (eq (kar (car ds)) :equiv) (true-list-fix (kadr (car ds))) nil) (unit-equivs (cdr ds)))))
 
-(defun prim-names (ps)               ; the names of primaries (:name tk) or (:ref tk ...)
-  (declare (xargs :guard t))
-  (if (atom ps) nil (append (if (member-eq (kar (car ps)) '(:name :ref)) (list (tok-name (kadr (car ps)))) nil) (prim-names (cdr ps)))))
 (defun lone-prims (as) (declare (xargs :guard t)) (if (atom as) nil (cons (lone-prim (kadr (car as))) (lone-prims (cdr as)))))
 (defun eqv-names (ss)                ; an EQUIVALENCE's objects' names
   (declare (xargs :guard t))
   (if (atom ss) nil (append (prim-names (lone-prims (car ss))) (eqv-names (cdr ss)))))
-(defun data-names (ss) (declare (xargs :guard t)) (if (atom ss) nil (append (prim-names (kar (car ss))) (data-names (cdr ss)))))
 (defun spec-names (ds)               ; the names only a main's DATA or EQUIVALENCE may give (8.7)
   (declare (xargs :guard t))
   (cond ((atom ds) nil)
@@ -181,13 +177,34 @@
   (declare (xargs :guard t))
   (if (atom units) nil (if (eq (kar (car units)) :main) (car units) (find-main (cdr units)))))
 
+;; R1111 BLOCK DATA / DATA in an external procedure (8.6.7, 16.2.5): its DATA objects are saved, and
+;; defined once before the program's first statement: each such procedure's declarations are elaborated,
+;; its DATA applied, and the unit marked (fmean's me-call then skips the DATA). Every DATA object must be declared.
+(defun me-proc-datas (units g gframe st fuel)   ; (mv err st)
+  (declare (xargs :guard t :verify-guards nil))
+  (if (atom units) (mv nil st)
+    (let* ((u (car units)) (spec (and (eq (kar u) :proc) (unit-spec u))))
+      (if (not (and spec (has-data (kaddr spec))))
+          (me-proc-datas (cdr units) g gframe st fuel)
+        (let* ((cx (list g nil (unit-formats u))) (ufr (use-frames (kar spec) (car g))) (env0 (append ufr (list gframe)))
+               (pfr (proc-frame (kadr (unit-int u)) :host)))
+          (mv-let (e fr copies st) (me-decls (no-datas (kaddr spec)) env0 st cx fuel pfr nil (unit-key u) nil)
+            (declare (ignore copies))
+            (if e (mv e st)
+              (if (not (subsetp-equal (data-names (unit-datas (kaddr spec))) (strip-cars (alist-fix fr)))) (mv (err :data) st)
+                (mv-let (e st) (me-data (unit-datas (kaddr spec)) (cons fr env0) st cx fuel)
+                  (if e (mv e st)
+                    (mv-let (loc st) (st-new (vi 4 0) st)
+                      (me-proc-datas (cdr units) g gframe (st-save (data-marker (unit-key u)) loc st) fuel)))))))))))) 
 (defun me-program (units in fuel)    ; (mv status lines): in the input's records
   (declare (xargs :guard t :verify-guards nil))
   (let ((gframe (ext-frame units)) (st (mk-st8 nil 0 nil nil nil nil (cons in nil) nil)) (main (find-main units)))
     (mv-let (e mods modenvs st) (me-modules units nil nil gframe st fuel)
       (cond (e (mv e (close-lines (reverse (true-list-fix (st-out st))))))
             ((not main) (mv (err :syntax) nil))
-            (t (let* ((g (list mods modenvs gframe)) (cx (list g nil (unit-formats main))) (spec (unit-spec main))
+            (t (mv-let (e st) (me-proc-datas units (list mods modenvs gframe) gframe st fuel)
+                 (if e (mv e (close-lines (reverse (true-list-fix (st-out st)))))
+                 (let* ((g (list mods modenvs gframe)) (cx (list g nil (unit-formats main))) (spec (unit-spec main))
                       (ufr (use-frames (kar spec) mods)) (env0 (append ufr (list gframe)))
                       (pfr (proc-frame (kadr (unit-int main)) :host)))
                  (mv-let (e fr copies st) (me-decls (no-datas (kaddr spec)) env0 st cx fuel pfr nil (unit-key main) nil)
@@ -201,7 +218,7 @@
                                           (if e (mv e st) (me-blk exec (if sfr (list* sfr fr env0) (cons fr env0)) st cx fuel))))
                          (mv (cond ((equal s (err :stop)) :stop) ((eq s :normal) :normal)
                                    ((errp s) s) ((goto-p s) (err :label)) (t (err :syntax)))
-                             (close-lines (reverse (true-list-fix (st-out st)))))))))))))))
+                             (close-lines (reverse (true-list-fix (st-out st)))))))))))))))))
 (in-theory (disable me-program))
 
 ; ---- the text to its answer
@@ -235,14 +252,16 @@
           (t (cons (car toks)
                    (io-items (cdr toks) (and (= d 0) (equal (car toks) (op ","))) 
                              (cond ((equal (car toks) (op "(")) (1+ d)) ((equal (car toks) (op ")")) (if (< 0 d) (1- d) 0)) (t d))))))))
-(defun io-sugar (toks)                ; WRITE ( ios ) items
+(defun io-sugar (toks)                ; WRITE ( ios ) items; BLOCK DATA [name] as a subroutine
   (declare (xargs :guard t))
+  (if (and (equal (car toks) (kw "block")) (equal (cadr toks) (kw "data")) (atom (cdddr toks)))   ; R1116 (F77 16.2.5): its DATA is me-proc-datas'
+      (list (kw "subroutine") (kw (if (and (consp (cddr toks)) (stringp (kadr (caddr toks)))) (concatenate 'string "blockdata_" (kadr (caddr toks))) "blockdata_")))
   (if (and (equal (car toks) (kw "write")) (equal (cadr toks) (op "(")))
       (let ((n (paren-end (cdr toks) 0)))
         (if (and n (<= (1+ n) (len toks)))
             (append (take (1+ n) toks) (io-items (nthcdr (1+ n) toks) t 0))
           toks))
-    toks))
+    toks)))
 
 (defun parse-stmts (ss)              ; each statement parsed whole, or nil
   (declare (xargs :guard t :verify-guards nil))

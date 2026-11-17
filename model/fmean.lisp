@@ -376,7 +376,7 @@
                         (ufr (use-frames (kar spec) (g-mods (cx-g cx))))
                         (fr (append (proc-frame (kadr (unit-int u)) :host) fr))
                         (cx2 (list (cx-g cx) purep (unit-formats u))))
-                   (mv-let (e fr copies st) (me-decls (kaddr spec) (append ufr host) st cx2 (1- fuel) fr copies
+                   (mv-let (e fr copies st) (me-decls (if (assoc-equal (data-marker (unit-key u)) (st-saves st)) (strip-datas (kaddr spec)) (kaddr spec)) (append ufr host) st cx2 (1- fuel) fr copies
                                                       (unit-key u) (dummy-names hd))
                      (if e (mv e st)
                        (mv-let (fr st) (if (kadr spec) (mv fr st)     ; IMPLICIT NONE, or implicit typing (8.7)

@@ -354,7 +354,7 @@
   (and (consp cs) (if (atom cs) t (and (or (lx-digit-p (kar cs)) (eql (kar cs) #\,)) (or (atom (kdr cs)) (ff-labels-p (kdr cs)))))))
 
 (defconst *ff-keywords*              ; a statement's first word, longest first where one begins another
-  '("doubleprecisionfunction" "integerfunction" "logicalfunction" "realfunction" "doubleprecision" "implicitnone" "endprogram" "endsubroutine" "endfunction" "endmodule" "subroutine" "dimension"
+  '("blockdata" "doubleprecisionfunction" "integerfunction" "logicalfunction" "realfunction" "doubleprecision" "implicitnone" "endprogram" "endsubroutine" "endfunction" "endmodule" "subroutine" "dimension"
     "continue" "function" "implicit" "integer" "logical" "program" "contains" "elseif" "endif" "enddo" "return"
     "format" "write" "print" "read" "character" "complex" "real" "call" "stop" "else" "then" "end" "data" "common" "external" "intrinsic"))
 (defun ff-kw (cs ks)                 ; the keyword cs begins with
@@ -363,7 +363,7 @@
         ((and (stringp (kar ks)) (ff-prefix-p (coerce (kar ks) 'list) cs)) (kar ks))
         (t (ff-kw cs (kdr ks)))))
 (defconst *ff-spaced*                ; a keyword written as two words in free form
-  '(("doubleprecisionfunction" . "double precision function") ("integerfunction" . "integer function") ("logicalfunction" . "logical function") ("realfunction" . "real function") ("doubleprecision" . "double precision") ("implicitnone" . "implicit none") ("endprogram" . "end program")
+  '(("blockdata" . "block data") ("doubleprecisionfunction" . "double precision function") ("integerfunction" . "integer function") ("logicalfunction" . "logical function") ("realfunction" . "real function") ("doubleprecision" . "double precision") ("implicitnone" . "implicit none") ("endprogram" . "end program")
     ("endsubroutine" . "end subroutine") ("endfunction" . "end function") ("endmodule" . "end module")
     ("elseif" . "else if") ("endif" . "end if") ("enddo" . "end do")))
 
@@ -392,6 +392,9 @@
     (mv-let (d r2) (lx-digits (ff-drop 6 cs))
       (if (ff-prefix-p '(#\t #\o) r2) (append (coerce "assign " 'list) d (coerce " to " 'list) (ff-drop 2 r2)) cs)))
    ((ff-prefix-p '(#\g #\o #\t #\o) cs) (append (coerce "go to " 'list) (ff-drop 4 cs)))
+   ((ff-prefix-p '(#\c #\h #\a #\r #\a #\c #\t #\e #\r #\*) cs)   ; CHARACTER*n name: the length's digits, a blank (so 2 D2XVK is not the real 2D2)
+    (mv-let (d r2) (lx-digits (ff-drop 10 cs))
+      (append (coerce "character*" 'list) d (cons #\Space r2))))
    (t (let ((k (ff-kw cs *ff-keywords*)))
         (if (not k) cs
           (let ((sp (kdr (assoc-equal k *ff-spaced*))))
@@ -418,6 +421,14 @@
 (defthm ff-no-blanks-goto
   (implies (ff-prefix-p '(#\g #\o #\t #\o) cs) (equal (ff-no-blanks cs) (list* #\g #\o #\t #\o (ff-no-blanks (ff-drop 4 cs)))))
   :hints (("Goal" :use (:instance ff-no-blanks-prefix (p '(#\g #\o #\t #\o))) :in-theory (disable ff-no-blanks-prefix))))
+(defthm ff-no-blanks-charstar
+  (implies (ff-prefix-p '(#\c #\h #\a #\r #\a #\c #\t #\e #\r #\*) cs)
+           (equal (ff-no-blanks cs)
+                  (append (coerce "character*" 'list)
+                          (append (ff-no-blanks (car (lx-digits (ff-drop 10 cs)))) (ff-no-blanks (mv-nth 1 (lx-digits (ff-drop 10 cs))))))))
+  :hints (("Goal" :use ((:instance ff-no-blanks-prefix (p '(#\c #\h #\a #\r #\a #\c #\t #\e #\r #\*)))
+                        (:instance ff-no-blanks-digits (cs (ff-drop 10 cs))))
+           :in-theory (disable ff-no-blanks-prefix ff-no-blanks-digits))))
 (defthm ff-no-blanks-assign
   (implies (and (ff-prefix-p '(#\a #\s #\s #\i #\g #\n) cs) (ff-prefix-p '(#\t #\o) (mv-nth 1 (lx-digits (ff-drop 6 cs)))))
            (equal (ff-no-blanks cs)
