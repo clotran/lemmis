@@ -389,8 +389,8 @@
                          (mv-let (sfr exec) (sfun-frame (unit-exec u) fr st (unit-rules u) (kadr spec))   ; R1544
                          (mv-let (s st) (me-blk exec (if sfr (list* sfr fr (append ufr host)) env2) st cx2 (1- fuel))
                            (cond ((errp s) (mv s st))
-                                 ((not (member-eq s '(:normal :return))) (mv (err :syntax) st))
-                                 (t (call-result fn hd copies fr st)))))))))))))))))))
+                                 ((not (or (member-eq s '(:normal :return)) (and (not fn) (altret-p s)))) (mv (err :syntax) st))
+                                 (t (mv-let (r st) (call-result fn hd copies fr st) (mv (if (and (altret-p s) (eq r :normal)) s r) st))))))))))))))))))))
 
  ; each dummy dn bound to its actual: a whole variable by reference; an
  ; element or section to a temporary copied back; an expression to a
@@ -798,11 +798,16 @@
        (:allocate (me-alloc (kadr s) env st cx (1- fuel)))
        (:deallocate (dealloc-all (kadr s) env st cx))
        (:stop (with-v (v st) (me-ev :expr (kadr s) env st cx (1- fuel)) (mv (if (or (ival-scalar v) (cval-p v)) (err :stop) (cond-err v)) st)))   ; R1163
-       (:call (mv-let (b suf d) (env-lookup (tok-name (kadr s)) env)
-                (declare (ignore d))
-                (if (and (eq (kar b) :proc) (eq (kar (unit-hd (kadr b))) :subroutine))
-                    (me-call (kadr b) (proc-host (kaddr b) suf cx) (kadddr s) env st cx (1- fuel))
-                  (mv (err (if b :type :undeclared)) st))))
+       (:call (if (equal (tok-name (kadr s)) "altret_")        ; RETURN e (F77 15.8.4), see altret-p
+                  (if (consp (cdr (kadddr s))) (mv (err :syntax) st)
+                    (with-v (v st) (me-ev :expr (kadr (kar (kadddr s))) env st cx (1- fuel))
+                      (mv (if (ival-scalar v) (altret-status v) (cond-err v)) st)))
+                (mv-let (b suf d) (env-lookup (tok-name (kadr s)) env)
+                  (declare (ignore d))
+                  (if (and (eq (kar b) :proc) (eq (kar (unit-hd (kadr b))) :subroutine))
+                      (mv-let (r st) (me-call (kadr b) (proc-host (kaddr b) suf cx) (alt-neutral (kadddr s)) env st cx (1- fuel))
+                        (mv (altret-target r (kadddr s)) st))
+                    (mv (err (if b :type :undeclared)) st)))))
        (:if (with-v (v st) (me-ev :expr (kadr s) env st cx (1- fuel))
               (cond ((not (and (lval-p v) (booleanp (v-num v)))) (mv (cond-err v) st))
                     ((v-num v) (me-act (kaddr s) env st cx (1- fuel)))

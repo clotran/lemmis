@@ -680,6 +680,34 @@
        (let ((d (coerce (explode-nonnegative-integer (v-num v) 10 nil) 'string)))
          (and (or (null (kaddr s)) (member-equal d (lab-args-digits (kaddr s)))) (list :goto d)))))
 
+;
+; F77 15.6.3.5, 15.8.4 alternate return, by token sugar in frun's io-sugar: a dummy * is the
+; dummy altstar_k, an actual *label the name altlab_<label>, RETURN e the call altret_ ( e ).
+; RETURN e runs as the status (:goto (:altret n)) (no label matches, so it leaves the unit);
+; the CALL that made it turns it into (:goto the n-th *label), or :normal when n is out of range.
+(defun altret-p (s) (declare (xargs :guard t)) (and (goto-p s) (consp (kadr s)) (eq (car (kadr s)) :altret) t))
+(defun altret-status (v)            ; RETURN e, e integer: n > 0 an alternate return, else the ordinary one
+  (declare (xargs :guard t))
+  (if (and (natp (v-num v)) (< 0 (v-num v))) (list :goto (list :altret (v-num v))) :return))
+(defun alt-label (a)                ; an actual argument *label: the label's digits, else nil
+  (declare (xargs :guard t))
+  (let* ((p (and (eq (kar a) :sub) (lone-prim (kadr a)))) (nm (kadr (kadr p))))
+    (and (eq (kar p) :name) (stringp nm)
+         (let ((cs (coerce nm 'list)))
+           (and (equal (take 7 cs) (coerce "altlab_" 'list))
+                (let ((r (nthcdr 7 cs))) (and (character-listp r) (coerce r 'string))))))))
+(defun alt-labels (as) (declare (xargs :guard t))
+  (if (atom as) nil (let ((l (alt-label (car as)))) (if l (cons l (alt-labels (cdr as))) (alt-labels (cdr as))))))
+(defun alt-neutral (as)             ; the arguments with each *label the literal 0 (bound to its * dummy)
+  (declare (xargs :guard t))
+  (if (atom as) nil
+    (cons (if (alt-label (car as)) (list :sub (prim-expr nil (list :lit (lab-int "0")))) (car as)) (alt-neutral (cdr as)))))
+(defun altret-target (s as)         ; the CALL's status s from its arguments as
+  (declare (xargs :guard t))
+  (if (not (altret-p s)) s
+    (let ((n (cadr (kadr s))) (ls (alt-labels as)))
+      (if (and (posp n) (<= n (len ls))) (list :goto (nth (1- n) ls)) :normal))))
+
 (defun cgoto-goto (s v)             ; F77 11.2: the label i of the list for an integer i in range, else :normal; nil if v is no integer
   (declare (xargs :guard t))
   (and (ival-scalar v)

@@ -252,8 +252,35 @@
           (t (cons (car toks)
                    (io-items (cdr toks) (and (= d 0) (equal (car toks) (op ","))) 
                              (cond ((equal (car toks) (op "(")) (1+ d)) ((equal (car toks) (op ")")) (if (< 0 d) (1- d) 0)) (t d))))))))
-(defun io-sugar (toks)                ; WRITE ( ios ) items; BLOCK DATA [name] as a subroutine
+;; F77 15.8.4 alternate return (see fhelp altret-p): * dummies, *label actuals, RETURN e
+(defun alt-subst (toks prev d k hdr)  ; at paren depth 1 after ( or , : a * (SUBROUTINE) or *label (CALL) is a name
+  (declare (xargs :guard t :verify-guards nil :measure (len toks)))
+  (if (atom toks) nil
+    (let ((tk (car toks)))
+      (cond ((and (equal tk (op "*")) (equal d 1) (or (equal prev (op "(")) (equal prev (op ","))))
+             (cond ((and (eq hdr :call) (consp (cdr toks)) (label-int-p (cadr toks)))
+                    (let ((nm (kw (concatenate 'string "altlab_" (cadr (cadr toks))))))
+                      (cons nm (alt-subst (cddr toks) nm d k hdr))))
+                   ((eq hdr :sub)
+                    (let ((nm (kw (concatenate 'string "altstar_" (coerce (explode-nonnegative-integer k 10 nil) 'string)))))
+                      (cons nm (alt-subst (cdr toks) nm d (1+ k) hdr))))
+                   (t toks)))
+            (t (cons tk (alt-subst (cdr toks) tk (cond ((equal tk (op "(")) (1+ d)) ((equal tk (op ")")) (if (< 0 d) (1- d) 0)) (t d)) k hdr)))))))
+(defun alt-sugar (toks)
+  (declare (xargs :guard t :verify-guards nil :measure (len toks)))
+  (cond ((and (equal (car toks) (kw "return")) (consp (cdr toks)))
+         (append (list (kw "call") (kw "altret_") (op "(")) (cdr toks) (list (op ")"))))
+        ((and (equal (car toks) (kw "if")) (equal (cadr toks) (op "(")))
+         (let ((n (paren-end (cdr toks) 0)))
+           (if (and (natp n) (< (1+ n) (len toks)))
+               (append (take (1+ n) toks) (alt-sugar (nthcdr (1+ n) toks)))
+             toks)))
+        ((equal (car toks) (kw "call")) (alt-subst toks nil 0 1 :call))
+        ((equal (car toks) (kw "subroutine")) (alt-subst toks nil 0 1 :sub))
+        (t toks)))
+(defun io-sugar (toks0)                ; WRITE ( ios ) items; BLOCK DATA [name] as a subroutine
   (declare (xargs :guard t))
+  (let ((toks (alt-sugar toks0)))
   (if (and (equal (car toks) (kw "block")) (equal (cadr toks) (kw "data")) (atom (cdddr toks)))   ; R1116 (F77 16.2.5): its DATA is me-proc-datas'
       (list (kw "subroutine") (kw (if (and (consp (cddr toks)) (stringp (kadr (caddr toks)))) (concatenate 'string "blockdata_" (kadr (caddr toks))) "blockdata_")))
   (if (and (equal (car toks) (kw "write")) (equal (cadr toks) (op "(")))
@@ -261,7 +288,7 @@
         (if (and n (<= (1+ n) (len toks)))
             (append (take (1+ n) toks) (io-items (nthcdr (1+ n) toks) t 0))
           toks))
-    toks)))
+    toks))))
 
 (defun parse-stmts (ss)              ; each statement parsed whole, or nil
   (declare (xargs :guard t :verify-guards nil))
