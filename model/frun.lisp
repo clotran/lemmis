@@ -330,7 +330,16 @@
   (cond ((atom ss) (reverse cur))
         ((equal (car ss) (list (kw "end"))) (append (entry-unit (reverse (cons (car ss) cur))) (entry-sugar1 (cdr ss) nil)))
         (t (entry-sugar1 (cdr ss) (cons (car ss) cur)))))
-(defun entry-sugar (ss) (declare (xargs :guard t :verify-guards nil)) (entry-sugar1 ss nil))
+;; F77 3.4: a label on a specification statement (12 INTEGER X, 22 DATA ...) names nothing a statement can
+;; use, so it is dropped before parsing (FM200).
+(defun unlabel-specs (ss)           ; a label is a statement of its own, ((:lab d)), before the statement
+  (declare (xargs :guard t))
+  (cond ((atom ss) nil)
+        ((and (consp (car ss)) (label-tok-p (caar ss)) (null (cdar ss)) (consp (cdr ss))
+              (or (spec-stmt-p (cadr ss)) (and (consp (cadr ss)) (equal (kar (caadr ss)) :name) (equal (kadr (caadr ss)) "data"))))
+         (unlabel-specs (cdr ss)))
+        (t (cons (car ss) (unlabel-specs (cdr ss))))))
+(defun entry-sugar (ss) (declare (xargs :guard t :verify-guards nil)) (entry-sugar1 (unlabel-specs ss) nil))
 
 (defun parse-stmts (ss)              ; each statement parsed whole, or nil
   (declare (xargs :guard t :verify-guards nil))

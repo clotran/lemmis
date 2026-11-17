@@ -20,7 +20,6 @@ FCVS re-classification, 2026-11-16, 52 failing programs (128 pass), first stop b
 | program | first stop | construct | F77 rule | size |
 | FM711 | :parse | FMT= a CHARACTER variable/array (also READ(u,fmtvar)) | 12.2.4, 12.8 | small (grammar book: fmt-spec-p, fmt-tok-not need a name case); then runs via internal WRITE |
 | FM903 | :parse | READ(u,A19VK) variable FMT + READ implied-DO | 12.8, 12.8.2.3 | small (as FM711, plus READ implied-DO) |
-| FM509 | :TYPE test 15 | actual CHARACTER array-element substring C1N001(1)(3:10) to an array dummy (ENTRY itself landed: FM517 passes) | 15.9.3 | small (me-bind) |
 | FM500 FM503 | :parse SAVE /b/; :equiv | EQUIVALENCE in a subprogram (also with COMMON members), SAVE /blk/ | 8.10.1 / 15.9.4 | needs storage-sequence (FM506 passes) |
 | FM200 | :parse | blanks inside names/numbers across continuation lines | 3.2.2 | small (lexer) |
 | FM701 | :parse | DIMENSION with lower:upper bounds that are expressions | 5.1.1.2 | small |
