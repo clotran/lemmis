@@ -7,21 +7,21 @@ whole; use the headings below and `grep -n` / `sed -n`.
 
 - SCOPE score: 165 of 208 rules proved, 43 in part, none missing (SCOPE.md, first
   paragraphs).
-- FCVS: 135 of 180 programs print their reference output (SCOPE.md, "Theorem 3:
+- FCVS: 151 of 180 programs print their reference output (SCOPE.md, "Theorem 3:
   checked against the compilers", the FCVS bullet; the passing names are in
   build/fcvs.txt after `make check`).
 - Fuzzer: `make fuzz` (seed 1, 40 programs) agrees under gfortran and flang; seeds 1-5
   clean (same SCOPE section, "The fuzzer").
-- Oracle cases: 7 fsyn cases + 51 whole programs in model/cases/, all agree.
+- Oracle cases: 7 fsyn cases + 53 whole programs in model/cases/, all agree.
 
 ## Next lanes, in order
 
 FCVS re-classification, 2026-11-16, 52 failing programs (128 pass), first stop by fortran-run-form (fixed driver). Internal WRITE landed (095bf6b: a whole CHARACTER scalar/array unit, formatted; element/substring unit and list-directed internal WRITE still :unit); no failing program moved by it, FM711's WRITE(UNIT=CVCOMP,FMT=C1N002) first needs a variable FMT (below). FM829: test 28 passes, the :pd is test 29, REAL((3.495,98.734)*AVC), an inexact single complex product (15.10), same class as 828 830 831: stays :pd. Sizes (52): small 15, needs file store 23, needs printing 2, needs storage-sequence 2, :pd by design 7, other (not isolated) 3.
 | program | first stop | construct | F77 rule | size |
-| FM903 | :parse | FMT= an expression ('(/1X,' // A65VK // ...) or an array element C151K(IVI) (bare names now work), READ implied-DO, T/TL/TR | 12.2.4, 12.8, 12.8.2.3 | medium: the format needs a grammar/AST change (fmt-spec-p holds only * label char-literal; names are token sugar), READ implied-DO needs the :readf all-lone items relaxed |
+| FM903 | :parse | FMT= an expression ('(/1X,' // A65VK // ...) or an array element C151K(IVI) (bare names now work), T/TL/TR (READ implied-DO landed) | 12.2.4, 12.8, 12.8.2.3 | medium: the format needs a grammar/AST change (fmt-spec-p holds only * label char-literal; names are token sugar), READ implied-DO needs the :readf all-lone items relaxed |
 | FM500 FM503 | :parse SAVE /b/; :equiv | EQUIVALENCE in a subprogram (also with COMMON members), SAVE /blk/ | 8.10.1 / 15.9.4 | needs storage-sequence (FM506 passes) |
 | FM200 | :parse | blanks inside names/numbers across continuation lines | 3.2.2 | small (lexer) |
-| FM100-102 FM104-108 FM401 FM402 FM411 | :parse REWIND | REWIND/ENDFILE/BACKSPACE on a unit, unformatted WRITE(u) | 12.10 | needs file store (11) |
+| FM100-102 FM104-108 FM401 FM402 FM411 | passed (FCVS 151) | in-memory sequential file store (fio st-units, default file per unit, empty at start), REWIND/BACKSPACE/ENDFILE token sugar CALL rewind_(u), unformatted READ/WRITE(u) and END= by format-token sugar (frun ctl-sugar), READ implied-DO as rdido_([...]) (me-rido); no grammar change | 12.10 | done |
 | FM407 FM413 FM910 FM912 FM914-917 FM919-922 | :parse ")" | OPEN(ACCESS=,RECL=,FILE=var), INQUIRE, REC= | 12.10.1-3 | needs file store (12) |
 | FM905 FM907 | :stop | list-directed * output of REAL/COMPLEX | 13.10.4 | needs printing |
 | FM302 FM909 | :common / :equiv | COMMON block redeclared; EQUIVALENCE in a subprogram | 15.9.4 | needs storage-sequence |

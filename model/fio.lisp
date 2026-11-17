@@ -512,10 +512,18 @@
           (li-get rs in ty k)))
     (li-get rs in ty k)))
 
+(defun unf-take (vs n ty k acc)      ; n values of type ty, kind k from an unformatted record's: (mv raws rest)
+  (declare (xargs :measure (nfix n)))
+  (cond ((zp n) (mv (reverse acc) vs))
+        ((atom vs) (mv (err :record) nil))                                 ; more items than the record has values
+        ((not (and (equal (scal-ty (car vs)) ty) (equal (scal-k (car vs)) k))) (mv (err :pd) nil))   ; another type's bits
+        (t (unf-take (cdr vs) (1- n) ty k (cons (raw (car vs)) acc)))))
 ; the reader a READ begins with: (mv rs in), or an error
 (defun rd-begin (fmt in)
   (let ((in (in-start in)))
     (cond ((errp in) (mv in in))
+          ((eq fmt :unf) (let ((r (kar (in-recs in)))) (if (eq (kar r) :u) (mv (list :unf (kdr r)) in) (mv (err :form) in))))
+          ((not (stringp (kar (in-recs in)))) (mv (err :form) in))           ; an unformatted record under a format
           ((eq fmt :star) (mv (list :list nil 0 nil nil) in))
           (t (let ((is (parse-format fmt)))
                (mv (list :fmt (fd-expand is) (fd-rev is) (list 0 :bn) (in-pos in) 0) in))))))
@@ -530,10 +538,11 @@
         (mv-let (vs rs in) (rd-take1 rs in (1- n) ty k)
           (if (errp vs) (mv vs rs in) (mv (cons v vs) rs in)))))))
 (defun rd-take (rs in n ty k)        ; n values of type ty, kind k: (mv raws-or-err rs in)
+  (if (eq (kar rs) :unf) (mv-let (vs r) (unf-take (kadr rs) n ty k nil) (mv vs (list :unf r) in))
   (if (and (eq ty :z) (eq (kar rs) :fmt))   ; a complex is two real edit descriptors (13.5.7)
       (mv-let (vs rs in) (rd-take1 rs in (* 2 n) :r k)
         (if (errp vs) (mv vs rs in) (mv (rd-pair vs) rs in)))
-    (rd-take1 rs in n ty k)))
+    (rd-take1 rs in n ty k))))
 (defun rd-end (rs in adv)            ; the READ's end: (mv err in)
   (let ((in (if (eq (kar rs) :fmt) (fi-finish (kadr rs) in) in)))
     (if (errp in) (mv in in) (mv nil (in-done in adv)))))
@@ -555,12 +564,48 @@
       (let ((s (rtrim-blanks (reverse (fi-up (coerce (if (stringp (kadr (kadr a))) (kadr (kadr a)) "") 'list))))))
         (cond ((equal s (coerce "SEY" 'list)) t) ((equal s (coerce "ON" 'list)) nil) (t (err :advance)))))))
 
+; ---- the file store (F77 12.2, 12.3, 12.10): st-units is an alist, a unit's entry (n kind before
+; after eofp): kind :scratch (OPEN STATUS='SCRATCH'), :default (a READ, WRITE or ENDFILE on a unit
+; not connected connects it to its default file, fort.n for both compilers, 12.3.2), or :closed (a
+; :default file CLOSEd and kept; using the unit again leaves the position to the processor, :pd);
+; before the records before the position, nearest first; after the records after it; eofp t when
+; positioned after the endfile record (12.10.4.3). A record is a string (formatted) or (:u . values)
+; (unformatted, 12.1.2). The model's file system starts empty: no file exists before the run (the
+; compilers run in an empty directory). Sequential access only; a file unit is an integer > 0, not
+; 5 or 6 (the unit *). What gfortran and flang do differently is :pd: ENDFILE after the endfile
+; record, a READ after it; ENDFILE on an unconnected unit connects it (kind :efnew) unformatted for
+; gfortran, of no form for flang, so a formatted READ or WRITE on it is :pd.
+(defun fs-entry (n st) (assoc-equal n (alist-fix (st-units st))))
+(defun fs-drop (n us) (cond ((atom us) nil) ((equal (kar (car us)) n) (fs-drop n (cdr us))) (t (cons (car us) (fs-drop n (cdr us))))))
+(defun fs-put (e st) (st-units-set (cons e (fs-drop (kar e) (st-units st))) st))
+(defun file-unit-p (u) (and (ival-scalar u) (< 0 (v-num u)) (not (member-equal (v-num u) '(5 6)))))
+(defun fs-before (e) (true-list-fix (kaddr e)))
+(defun fs-after (e) (true-list-fix (kadddr e)))
+(defun fs-eofp (e) (kar (kdr (kdr (kdr (kdr e))))))
+(defun fs-mk (e before after eofp) (list (kar e) (kadr e) before after eofp))
+(defun fs-get (n st)                 ; the unit's entry, a default file connected when there is none; or an error
+  (let ((e (fs-entry n st)))
+    (cond ((null e) (list n :default nil nil nil)) ((eq (kadr e) :closed) (err :pd)) (t e))))
+(defun fs-pos (op e)                 ; REWIND, BACKSPACE, ENDFILE (F77 12.10.4) on an entry (nil: not connected)
+  (let ((b (fs-before e)) (a (fs-after e)))
+    (case op
+      (:rewind (if e (fs-mk e nil (revappend b a) nil) nil))                ; no effect when not connected
+      (:backspace (cond ((null e) (err :unit))                             ; both compilers stop
+                        ((fs-eofp e) (fs-mk e b a nil))
+                        ((consp b) (fs-mk e (cdr b) (cons (car b) a) nil))
+                        (t e)))                                            ; at the initial point: no effect
+      (otherwise (if (fs-eofp e) (err :pd) (fs-mk e b nil t))))))
+(defun fs-write (e recs)             ; records written at the position: the last records of the file (F77 12.9.4.3)
+  (if (fs-eofp e) (err :eof) (fs-mk e (revappend recs (fs-before e)) nil nil)))
+(defun fs-read (e rest)              ; after a READ: rest the records after it
+  (let ((a (fs-after e))) (fs-mk e (revappend (take (- (len a) (len rest)) a) (fs-before e)) (true-list-fix rest) nil)))
+(defun fs-eof (e) (fs-mk e (revappend (fs-after e) (fs-before e)) nil t))   ; a READ met the end of the file: after the endfile record (F77 12.6)
+
 ; ---- OPEN and CLOSE (R1204, R1208) for the subset: only a scratch file
 ; (STATUS='SCRATCH', no FILE=, sequential formatted) is connected, to a
 ; unit not preconnected (not 5 or 6); a named or default-named file depends
 ; on the file system (an :error :pd); a spec outside this is an :error :open
-; or :close. st-units, the list of connected unit numbers, is the model's
-; record of it; READ and WRITE on such a unit are not in the subset yet.
+; or :close. A CLOSE of a default file keeps it (:closed) unless STATUS='DELETE'.
 (defun io-kwv (nm ios)               ; the spec's value, upper case, trailing blanks dropped; nil when absent
   (cond ((atom ios) nil)
         ((and (eq (kar (car ios)) :kw) (equal (kadr (car ios)) nm))
@@ -568,13 +613,17 @@
            (coerce (reverse (rtrim-blanks (reverse (fi-up (coerce (if (stringp s) s "") 'list))))) 'string)))
         (t (io-kwv nm (cdr ios)))))
 (defun oc-run (k ios u st)           ; k :open or :close; u the unit's value
-  (let ((n (v-num u)) (stt (io-kwv "status" ios)) (e (if (eq k :open) :open :close)))
+  (let* ((n (v-num u)) (stt (io-kwv "status" ios)) (e (if (eq k :open) :open :close))
+         (fe (fs-entry n st)) (conn (and fe (not (eq (kadr fe) :closed)))))
     (cond ((not (and (ival-scalar u) (integerp n) (<= 0 n) (not (member-equal n '(5 6))))) (mv (err :unit) st))
           ((eq k :close)
-           (cond ((or (io-kwv "file" ios) (io-kwv "access" ios) (io-kwv "form" ios) (not (member-equal stt '(nil "DELETE")))) (mv (err e) st))
-                 (t (mv :normal (st-units-set (remove1-equal n (st-units st)) st)))))
-          ((or (member-equal n (st-units st)) (not (member-equal (io-kwv "access" ios) '(nil "SEQUENTIAL")))
+           (cond ((or (io-kwv "file" ios) (io-kwv "access" ios) (io-kwv "form" ios)
+                      (not (member-equal stt (if (and conn (eq (kadr fe) :scratch)) '(nil "DELETE") '(nil "DELETE" "KEEP"))))) (mv (err e) st))
+                 ((not conn) (mv :normal st))                                ; no effect (12.10.2)
+                 ((and (not (eq (kadr fe) :scratch)) (not (equal stt "DELETE"))) (mv :normal (fs-put (cons n (cons :closed (cddr fe))) st)))
+                 (t (mv :normal (st-units-set (fs-drop n (st-units st)) st)))))
+          ((or conn (not (member-equal (io-kwv "access" ios) '(nil "SEQUENTIAL")))
                (not (member-equal (io-kwv "form" ios) '(nil "FORMATTED")))) (mv (err e) st))
           ((io-kwv "file" ios) (mv (err (if (member-equal stt '(nil "UNKNOWN" "OLD" "NEW" "REPLACE")) :pd e)) st))
-          ((equal stt "SCRATCH") (mv :normal (st-units-set (cons n (st-units st)) st)))
+          ((equal stt "SCRATCH") (mv :normal (fs-put (list n :scratch nil nil nil) st)))
           (t (mv (err (if (member-equal stt '(nil "UNKNOWN")) :pd e)) st)))))

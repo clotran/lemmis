@@ -276,16 +276,17 @@
 (defthm len-nthcdr-lt
   (implies (and (posp n) (<= n (len x))) (< (len (nthcdr n x)) (len x)))
   :hints (("Goal" :induct (nthcdr n x))) :rule-classes :linear)
-(defun io-items (toks start d)        ; start: at an item start; d: paren depth
+(defun io-items (toks start d rd)     ; start: at an item start; d: paren depth; rd: a READ's, rdido_([ ... ]) (fmean me-ritems)
   (declare (xargs :guard t :measure (len toks)))
   (let ((n (and start (equal (car toks) (op "(")) (paren-end toks 0))))
     (cond ((atom toks) nil)
           ((and n (posp n) (<= n (len toks)) (eq-at-1 (take n toks) 0)
                 (or (= n (len toks)) (equal (nth n toks) (op ","))))
-           (append (list (op "[")) (take n toks) (list (op "]")) (io-items (nthcdr n toks) nil d)))
+           (append (if rd (list (kw "rdido_") (op "(") (op "[")) (list (op "["))) (take n toks) (if rd (list (op "]") (op ")")) (list (op "]")))
+                   (io-items (nthcdr n toks) nil d rd)))
           (t (cons (car toks)
-                   (io-items (cdr toks) (and (= d 0) (equal (car toks) (op ","))) 
-                             (cond ((equal (car toks) (op "(")) (1+ d)) ((equal (car toks) (op ")")) (if (< 0 d) (1- d) 0)) (t d))))))))
+                   (io-items (cdr toks) (and (= d 0) (equal (car toks) (op ",")))  
+                             (cond ((equal (car toks) (op "(")) (1+ d)) ((equal (car toks) (op ")")) (if (< 0 d) (1- d) 0)) (t d)) rd))))))
 ;; F77 15.8.4 alternate return (see fhelp altret-p): * dummies, *label actuals, RETURN e
 (defun alt-subst (toks prev d k hdr)  ; at paren depth 1 after ( or , : a * (SUBROUTINE) or *label (CALL) is a name
   (declare (xargs :guard t :verify-guards nil :measure (len toks)))
@@ -325,16 +326,51 @@
           (cons (fv-tok (kadr tk)) (fmt-var-sub (cdr toks) prev tk d commas))
         (cons tk (fmt-var-sub (cdr toks) prev tk (cond ((equal tk (op "(")) (1+ d)) ((equal tk (op ")")) (if (< 0 d) (1- d) 0)) (t d))
                               (if (and (equal d 1) (equal tk (op ","))) (1+ commas) commas)))))))
+;; F77 12.10.4 REWIND / BACKSPACE / ENDFILE (END FILE) u, or ( [UNIT =] u ), as CALL rewind_ ( u ) etc. (fmean pos-op)
+(defun pos-sugar (toks)
+  (declare (xargs :guard t :verify-guards nil))
+  (let* ((k (cond ((member-equal (car toks) (list (kw "rewind") (kw "backspace") (kw "endfile"))) 1)
+                  ((and (equal (car toks) (kw "end")) (equal (cadr toks) (kw "file"))) 2)
+                  (t nil)))
+         (nm (if (eql k 2) "endfile" (kadr (car toks))))
+         (r (nthcdr (nfix k) toks))
+         (r (if (and (equal (car r) (op "(")) (equal (paren-end r 0) (len r))) (butlast (cdr r) 1) r))
+         (r (if (and (equal (car r) (kw "unit")) (equal (cadr r) (op "="))) (cddr r) r)))
+    (if (and k (stringp nm) (consp r) (not (member-equal (op "=") r)))
+        (append (list (kw "call") (kw (concatenate 'string nm "_")) (op "(")) r (list (op ")")))
+      toks)))
+;; F77 12.9.5 unformatted READ/WRITE ( u [, END = l] ) and END= with a * or label format, by token sugar (fmean
+;; ef-fmt): the format becomes the token (:char <control-C> l <control-C> f), f U, *, L and the label, or C and the literal's text.
+;; Only a positional unit first; otherwise (and with FMT=) the tokens are left as they are.
+(defun ctl-split (toks d cur)        ; the control list's items at paren depth 0, each a token list
+  (declare (xargs :guard t :verify-guards nil :measure (len toks)))
+  (cond ((atom toks) (list (reverse cur)))
+        ((and (eql d 0) (equal (car toks) (op ","))) (cons (reverse cur) (ctl-split (cdr toks) d nil)))
+        (t (ctl-split (cdr toks) (cond ((equal (car toks) (op "(")) (1+ (nfix d))) ((equal (car toks) (op ")")) (nfix (1- (nfix d)))) (t d)) (cons (car toks) cur)))))
+(defun ctl-join (its) (declare (xargs :guard t :verify-guards nil)) (if (atom its) nil (append (car its) (if (consp (cdr its)) (cons (op ",") (ctl-join (cdr its))) nil))))
+(defun kw-item-p (it) (declare (xargs :guard t)) (and (eq (kar (kar it)) :name) (equal (kadr it) (op "="))))
+(defun kw-item (nm its) (declare (xargs :guard t)) (cond ((atom its) nil) ((and (kw-item-p (car its)) (equal (kar (car its)) (kw nm))) (car its)) (t (kw-item nm (cdr its)))))
+(defun ctl-sugar (toks)
+  (declare (xargs :guard t :verify-guards nil))
+  (let* ((its (ctl-split toks 0 nil)) (fpos (and (consp (cdr its)) (not (kw-item-p (cadr its)))))
+         (rest (if fpos (cddr its) (cdr its))) (en (kw-item "end" rest)) (rest (remove-equal en rest))
+         (f (if fpos (cadr its) nil))
+         (desc (cond ((not fpos) "U") ((equal f (list (op "*"))) "*")
+                     ((and (consp f) (null (cdr f)) (label-int-p (car f))) (concatenate 'string "L" (cadr (car f))))
+                     ((and (consp f) (null (cdr f)) (char-tok-p (car f))) (concatenate 'string "C" (cadr (car f)))) (t nil)))
+         (el (if en (if (and (label-int-p (kaddr en)) (null (cdddr en))) (cadr (kaddr en)) nil) "")))
+    (if (or (kw-item-p (car its)) (kw-item "fmt" rest) (and fpos (null en)) (null desc) (not (stringp el))) toks
+      (ctl-join (list* (car its) (list (list :char (concatenate 'string (coerce (list (code-char 3)) 'string) el (coerce (list (code-char 3)) 'string) desc))) rest)))))
 (defun io-sugar (toks0)                ; WRITE ( ios ) items; BLOCK DATA [name] as a subroutine
   (declare (xargs :guard t))
-  (let ((toks (alt-sugar toks0)))
+  (let ((toks (pos-sugar (alt-sugar toks0))))
   (if (and (equal (car toks) (kw "block")) (equal (cadr toks) (kw "data")) (atom (cdddr toks)))   ; R1116 (F77 16.2.5): its DATA is me-proc-datas'
       (list (kw "subroutine") (kw (if (and (consp (cddr toks)) (stringp (kadr (caddr toks)))) (concatenate 'string "blockdata_" (kadr (caddr toks))) "blockdata_")))
   (if (and (member-equal (car toks) (list (kw "write") (kw "read"))) (equal (cadr toks) (op "(")))
       (let ((n (paren-end (cdr toks) 0)))
         (if (and n (<= (1+ n) (len toks)))
-            (append (list (car toks) (op "(")) (fmt-var-sub (take (1- n) (cddr toks)) nil (op "(") 1 0)
-                    (if (equal (car toks) (kw "write")) (io-items (nthcdr (1+ n) toks) t 0) (nthcdr (1+ n) toks)))
+            (append (list (car toks) (op "(")) (fmt-var-sub (append (ctl-sugar (take (- n 2) (cddr toks))) (list (op ")"))) nil (op "(") 1 0)
+                    (io-items (nthcdr (1+ n) toks) t 0 (equal (car toks) (kw "read"))))
           toks))
     toks))))
 
@@ -415,8 +451,8 @@
 ; one fps read whole (fps-sound), the units fpu read from them (fpu-sound)
 (defthm parse-stmts-sound
   (implies (mv-nth 0 (parse-stmts ss)) (stmts-p (mv-nth 1 (parse-stmts ss))))
-  :hints (("Goal" :induct (parse-stmts ss))
-          ("Subgoal *1/2" :use ((:instance fps-sound (nt :stmt) (toks (io-sugar (car ss))))) :in-theory (disable fps-sound))))
+  :hints (("Goal" :induct (parse-stmts ss) :in-theory (disable io-sugar))
+          ("Subgoal *1/2" :use ((:instance fps-sound (nt :stmt) (toks (io-sugar (car ss))))) :in-theory (disable fps-sound io-sugar))))
 
 ; a label DO rewritten keeps every statement one of the grammar
 (defthm ldo-sugar-stmts

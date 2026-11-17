@@ -82,6 +82,57 @@
                              (mv :normal (st-put loc (if ar (mk-arr :c k (a-lbs a) (a-ubs a) fs) (wrap :c k (car fs)))
                                                  (st-log (list (list :w loc :all)) st)))))))))))))))
 
+;; F77 12.9.5 unformatted READ/WRITE (no format) and 12.7.2 END=, by token sugar (frun ctl-sugar): the
+;; format written as (:char <control-C> label <control-C> f), label END='s ("" when none), f U (unformatted),
+;; *, L and a FORMAT label, or C and a literal format. ponytail: no END= with a variable format, no ERR= or IOSTAT=
+(defun ef-ctl-p (f) (and (stringp (kadr f)) (< 0 (length (kadr f))) (eql (char (kadr f) 0) (code-char 3))))
+(defun ef-parts (cs acc)             ; the characters after the first control-C: (mv label rest)
+  (cond ((atom cs) (mv "" nil)) ((eql (car cs) (code-char 3)) (mv (coerce (reverse acc) 'string) (cdr cs)))
+        (t (ef-parts (cdr cs) (cons (car cs) acc)))))
+(defun ef-end (f)                    ; END='s label, or nil
+  (if (ef-ctl-p f) (mv-let (l r) (ef-parts (cdr (coerce (kadr f) 'list)) nil) (declare (ignore r)) (if (equal l "") nil l)) nil))
+(defun ef-fmt (f)                    ; the format the sugar carries: :unf, :star, a label, or f itself
+  (if (ef-ctl-p f)
+      (mv-let (l r) (ef-parts (cdr (coerce (kadr f) 'list)) nil)
+        (declare (ignore l))
+        (cond ((equal r '(#\U)) :unf) ((equal r '(#\*)) :star) ((eql (car r) #\L) (coerce (cdr r) 'string)) ((eql (car r) #\C) (list :char (coerce (cdr r) 'string))) (t f)))
+    f))
+;; a WRITE on a file unit (fio's file store): its records after the position
+(defun file-write (n fm vs st)
+  (let ((e (fs-get n st)))
+    (cond ((errp e) (mv e st))
+          ((and (eq (kadr e) :efnew) (not (eq fm :unf))) (mv (err :pd) st))
+          ((eq fm :unf) (let ((e2 (fs-write e (list (cons :u (flat-vals vs)))))) (if (errp e2) (mv e2 st) (mv :normal (fs-put e2 st)))))
+          (t (let ((out (st-out st)))
+               (mv-let (r st) (io-write fm vs t (st-out-set nil st))
+                 (let ((recs (out-texts (st-out st) nil)) (st (st-out-set out st)))
+                   (if (errp r) (mv r st)
+                     (let ((e2 (fs-write e recs))) (if (errp e2) (mv e2 st) (mv :normal (fs-put e2 st))))))))))))
+;; a READ's error: the end of the file (F77 12.6) goes to END='s label when there is one; a file READ
+;; leaves the file after its endfile record; oin the input to restore (a file or internal READ)
+(defun rd-fail (e fe endl oin rst st)
+  (let ((st (if rst (st-in-set oin st) st)))
+    (if (equal e (err :end))
+        (mv (if endl (list :goto endl) e) (if fe (fs-put (fs-eof fe) st) st))
+      (mv e st))))
+;; REWIND, BACKSPACE, ENDFILE (F77 12.10.4), by token sugar (frun pos-sugar): CALL rewind_(u) etc.
+(defun pos-op (nm) (cond ((equal nm "rewind_") :rewind) ((equal nm "backspace_") :backspace) ((equal nm "endfile_") :endfile) (t nil)))
+(defun file-pos (op u st)
+  (if (not (file-unit-p u)) (mv (err :unit) st)
+    (let* ((e0 (fs-entry (v-num u) st))
+           (e (cond ((eq (kadr e0) :closed) (err :pd)) ((and (null e0) (eq op :endfile)) (list (v-num u) :efnew nil nil t)) (t (fs-pos op e0)))))
+      (cond ((errp e) (mv e st)) ((null e) (mv :normal st)) (t (mv :normal (fs-put e st)))))))
+
+;; an expression's lone primary, whatever its kind (lone-prim's walk), or nil
+(defun lone-any (e)
+  (let* ((eq1 (kar e)) (or1 (kar eq1)) (and1 (kar or1)) (l4 (kadr and1)) (l3 (kar l4)) (l2 (kar l3)) (add (kadr l2))
+         (mult (kar add)) (prim (kar mult)))
+    (and (null (kadr e)) (null (kadr eq1)) (null (kadr or1)) (null (kar and1))
+         (null (kadr l4)) (null (kadr l3)) (null (kar l2)) (null (kaddr l2)) (null (kadr add)) (null (kadr mult)) prim)))
+(defun rdido-es (e)                  ; an input item rdido_([ ... ]) (frun io-items): the constructor's values, else nil
+  (let ((p (lone-prim e)))
+    (and (eq (kar p) :ref) (equal (tok-name (kadr p)) "rdido_")
+         (let ((q (lone-any (kadr (kar (kaddr p)))))) (and (eq (kar q) :acons) (consp (kadr q)) (true-list-fix (kadr q)))))))
 (me-mutual   ; each defun without a declare: (xargs :guard t :measure (nfix fuel))
 
  (defun me-ev (nt x env st cx fuel)
@@ -798,24 +849,38 @@
               ((st-trace st) (mv (err :pd) st))             ; in an order the processor picks (11.1.7.4.2)
               (t (let* ((ctl (member-eq (kar s) '(:write :read))) (ios (if ctl (kadr s) nil))
                         (u (if ctl (kaddr (io-spec :unit ios)) :star))
-                        (fm0 (io-fmt (if ctl (kaddr (io-spec :fmt ios)) (kadr s)) cx)) (adv (io-adv ios)))
+                        (f0 (if ctl (kaddr (io-spec :fmt ios)) (kadr s))) (endl (ef-end f0)) (f1 (ef-fmt f0))
+                        (fm0 (if (eq f1 :unf) :unf (io-fmt f1 cx))) (adv (io-adv ios)))
                   (with-v (fv st) (if (fv-name fm0) (me-ev :expr (prim-expr nil (list :name (kw (fv-name fm0)))) env st cx (1- fuel)) (mv nil st))
                    (let ((fm (if (fv-name fm0) (fv-text fv) fm0)))
                    (with-v (u st) (if (eq u :star) (mv (vi 4 (if (member-eq (kar s) '(:write :print)) 6 5)) st)
                                     (me-ev :expr u env st cx (1- fuel)))
-                     ; the unit * is OUTPUT_UNIT, 6, or INPUT_UNIT, 5, for both compilers (16.10.2.23, .13)
-                     (cond ((not (or (and (ival-scalar u) (equal (v-num u) (if (member-eq (kar s) '(:write :print)) 6 5)))
-                                      (and (int-file-p u) (member-eq (kar s) '(:read :write))))) (mv (err :unit) st))   ; an internal file: a CHARACTER scalar (12.2.5)
+                     ; the unit * is OUTPUT_UNIT, 6, or INPUT_UNIT, 5, for both compilers (16.10.2.23, .13); another
+                     ; unit number a file (fio's file store); a CHARACTER scalar or array an internal file (12.2.5)
+                     (cond ((not (or (and (ival-scalar u) (equal (v-num u) (if (member-eq (kar s) '(:write :print)) 6 5)) (not (eq fm :unf)))
+                                     (and (file-unit-p u) ctl)
+                                     (and (int-file-p u) ctl (not (eq fm :unf))))) (mv (err :unit) st))
                            ((errp fm) (mv fm st)) ((errp adv) (mv adv st))
+                           ((and (file-unit-p u) (not adv)) (mv (err :unit) st))   ; ponytail: no nonadvancing I/O on a file
                            ((member-eq (kar s) '(:write :print))
-                            (with-v (vs st) (me-list (kaddr s) env st cx (1- fuel)) (if (int-file-p u) (int-write (kaddr (io-spec :unit ios)) fm vs adv env st) (io-write fm vs adv st))))
-                           (t (let* ((oin (st-in st)) (st (if (int-file-p u) (st-in-set (cons (int-recs (flat-vals (list u))) nil) st) st)))   ; its one record, a fresh position each READ
+                            (with-v (vs st) (me-list (kaddr s) env st cx (1- fuel))
+                              (cond ((int-file-p u) (int-write (kaddr (io-spec :unit ios)) fm vs adv env st))
+                                    ((file-unit-p u) (file-write (v-num u) fm vs st))
+                                    (t (io-write fm vs adv st)))))
+                           (t (let* ((oin (st-in st)) (fe (if (file-unit-p u) (fs-get (v-num u) st) nil)) (rst (or fe (int-file-p u))))
+                              (cond ((errp fe) (mv fe st))
+                                    ((and (eq (kadr fe) :efnew) (not (eq fm :unf))) (mv (err :pd) st))
+                                    ((fs-eofp fe) (mv (err :pd) st))   ; a READ after the endfile record: gfortran stops, flang reads the end
+                                    (t (let ((st (cond ((int-file-p u) (st-in-set (cons (int-recs (flat-vals (list u))) nil) st))   ; its one record, a fresh position each READ
+                                                       (fe (st-in-set (cons (fs-after fe) nil) st)) (t st))))
                               (mv-let (rs in) (rd-begin fm (st-in st))
-                                (if (errp rs) (mv rs st)
+                                (if (errp rs) (rd-fail rs fe endl oin rst st)
                                   (mv-let (e rs st) (me-ritems (kaddr s) rs env (st-in-set in st) cx (1- fuel))
-                                    (if (errp e) (mv e st)
+                                    (if (errp e) (rd-fail e fe endl oin rst st)
                                       (mv-let (e in) (rd-end rs (st-in st) adv)
-                                        (if e (mv e st) (mv :normal (st-in-set (if (int-file-p u) oin in) st))))))))))))))))))
+                                        (cond (e (rd-fail e fe endl oin rst st))
+                                              (fe (mv :normal (fs-put (fs-read fe (in-recs in)) (st-in-set oin st))))
+                                              (t (mv :normal (st-in-set (if (int-file-p u) oin in) st))))))))))))))))))))))
        ((:open :close) (let ((e (kaddr (io-spec :unit (kadr s)))))
           (cond ((cx-pure cx) (mv (err :pure) st)) ((or (st-trace st) (eq e :star)) (mv (err (if (eq e :star) :unit :pd)) st))
                 (t (with-v (u st) (me-ev :expr e env st cx (1- fuel)) (oc-run (kar s) (kadr s) u st))))))
@@ -823,7 +888,11 @@
        (:allocate (me-alloc (kadr s) env st cx (1- fuel)))
        (:deallocate (dealloc-all (kadr s) env st cx))
        (:stop (with-v (v st) (me-ev :expr (kadr s) env st cx (1- fuel)) (mv (if (or (ival-scalar v) (cval-p v)) (err :stop) (cond-err v)) st)))   ; R1163
-       (:call (if (equal (tok-name (kadr s)) "altret_")        ; RETURN e (F77 15.8.4), see altret-p
+       (:call (if (pos-op (tok-name (kadr s)))
+                  (cond ((cx-pure cx) (mv (err :pure) st)) ((st-trace st) (mv (err :pd) st))
+                        ((or (atom (kadddr s)) (consp (cdr (kadddr s)))) (mv (err :syntax) st))
+                        (t (with-v (v st) (me-ev :expr (kadr (kar (kadddr s))) env st cx (1- fuel)) (file-pos (pos-op (tok-name (kadr s))) v st))))
+              (if (equal (tok-name (kadr s)) "altret_")        ; RETURN e (F77 15.8.4), see altret-p
                   (if (consp (cdr (kadddr s))) (mv (err :syntax) st)
                     (with-v (v st) (me-ev :expr (kadr (kar (kadddr s))) env st cx (1- fuel))
                       (mv (if (ival-scalar v) (altret-status v) (cond-err v)) st)))
@@ -832,7 +901,7 @@
                   (if (and (eq (kar b) :proc) (eq (kar (unit-hd (kadr b))) :subroutine))
                       (mv-let (r st) (me-call (kadr b) (proc-host (kaddr b) suf cx) (alt-neutral (kadddr s)) env st cx (1- fuel))
                         (mv (altret-target r (kadddr s)) st))
-                    (mv (err (if b :type :undeclared)) st)))))
+                    (mv (err (if b :type :undeclared)) st))))))
        (:if (with-v (v st) (me-ev :expr (kadr s) env st cx (1- fuel))
               (cond ((not (and (lval-p v) (booleanp (v-num v)))) (mv (cond-err v) st))
                     ((v-num v) (me-act (kaddr s) env st cx (1- fuel)))
@@ -852,9 +921,32 @@
  ; READ's input items (12.6.4.5), each in turn: its values read, then
  ; defined; a whole array or a section takes as many values as it has
  ; elements (9.5.3.2); (mv status rs st)
+ ; F77 12.8.2.3 an input implied-DO, by frun io-items: rdido_([ ( list , v = a , b [, c] ) ]) a designator;
+ ; each trip's items read with v a construct entity (as WRITE's, me-ido). ponytail: v itself is not defined
+ ; by the READ (F77 says it is); add when a program reads v after the list
+ (defun me-rido (vals d rs env st cx fuel)
+   (cond ((not (posp fuel)) (mv (err :fuel) rs st))
+         ((atom (kaddr d)) (mv :normal rs st))
+         (t (mv-let (fr locs st) (conc-frame (list (kar d)) (list (kadr d)) (list (car (kaddr d))) st)
+              (declare (ignore locs))
+              (mv-let (e rs st) (me-ritems vals rs (cons fr env) st cx (1- fuel))
+                (if (errp e) (mv e rs st) (me-rido vals (list (kar d) (kadr d) (cdr (kaddr d))) rs env st cx (1- fuel))))))))
+
  (defun me-ritems (items rs env st cx fuel)
    (if (not (posp fuel)) (mv (err :fuel) rs st)
      (if (atom items) (mv :normal rs st)
+      (cond
+       ((eq (kar (car items)) :e) (me-ritems (cons (kadr (car items)) (cdr items)) rs env st cx (1- fuel)))
+       ((rdido-es (car items)) (me-ritems (append (rdido-es (car items)) (cdr items)) rs env st cx (1- fuel)))
+       ((eq (kar (car items)) :ido)
+        (let ((il (cdr (car items))))
+          (mv-let (k st) (if (ido-ts il) (me-kind (ido-ts il) env st cx (1- fuel)) (mv nil st))
+            (if (errp k) (mv k rs st)
+              (mv-let (ds st) (me-conc-lims (list (ido-ix il)) k env st cx (1- fuel))
+                (if (errp ds) (mv ds rs st)
+                  (mv-let (e rs st) (me-rido (ido-vals il) (car ds) rs env st cx (1- fuel))
+                    (if (errp e) (mv e rs st) (me-ritems (cdr items) rs env st cx (1- fuel))))))))))
+       (t
        (let* ((p (lone-prim (car items))) (tk (kadr p)))
          (mv-let (b suf d) (env-lookup (tok-name tk) env)
            (declare (ignore suf))
@@ -888,7 +980,7 @@
                                     (t (let ((n (arr-sets a ts (merge-null vs old))))
                                          (if (errp n) (mv n rs st)
                                            (me-ritems (cdr items) rs env (st-in-set in (st-put loc n (st-log (write-list loc (tuple-offs a ts)) st)))
-                                                      cx (1- fuel))))))))))))))))))
+                                                      cx (1- fuel))))))))))))))))))))
 
  (defun me-assign (s env st cx fuel)
    (if (not (posp fuel)) (mv (err :fuel) st)
@@ -932,5 +1024,5 @@
                                   (if (errp n) (mv n st) (mv :normal (st-put loc n (st-log (write-list loc (tuple-offs a ts)) st))))))))))))))))))))
 )
 ; the interpreter stays closed: a proof about it opens the one case it needs
-(in-theory (disable me-parts me-cput me-cassign me-ev me-fold me-list me-ido me-iargs me-subs me-rng me-ref me-elem me-call me-bind me-kind me-bounds me-decls me-ents me-dummy me-lowers me-blk me-seq me-c me-sels me-ranges me-eifs me-do me-conc me-conc-lims me-conc-iters me-iter me-while me-forever me-act me-alloc me-ritems me-assign))
+(in-theory (disable me-parts me-cput me-cassign me-ev me-fold me-list me-ido me-iargs me-subs me-rng me-ref me-elem me-call me-bind me-kind me-bounds me-decls me-ents me-dummy me-lowers me-blk me-seq me-c me-sels me-ranges me-eifs me-do me-conc me-conc-lims me-conc-iters me-iter me-while me-forever me-act me-alloc me-ritems me-rido me-assign))
 
