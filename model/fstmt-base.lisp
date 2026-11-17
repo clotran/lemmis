@@ -49,7 +49,7 @@
 
 (defun action-kind-p (k)          ; R515, C1143
   (declare (xargs :guard t))
-  (and (member-eq k '(:assign :cassign :simple :stop :call :print :goto :write :read :readf :allocate :deallocate)) t))
+  (and (member-eq k '(:assign :cassign :simple :stop :call :print :goto :cgoto :write :read :readf :allocate :deallocate)) t))
 
 (defun nonzero-digit-p (cs)
   (declare (xargs :guard t))
@@ -96,6 +96,21 @@
     (and (null (kadr e)) (null (kadr eq1)) (null (kadr or1)) (null (kar and1))
          (null (kadr l4)) (null (kadr l3)) (null (kar l2)) (null (kaddr l2)) (null (kadr add)) (null (kadr mult))
          (member-eq (kar prim) '(:name :ref :sref)) prim)))
+(defun lone-lit (e)                  ; the :prim tree of an expression that is a lone literal, or nil
+  (declare (xargs :guard t))
+  (let* ((eq1 (kar e)) (or1 (kar eq1)) (and1 (kar or1)) (l4 (kadr and1)) (l3 (kar l4)) (l2 (kar l3)) (add (kadr l2))
+         (mult (kar add)) (prim (kar mult)))
+    (and (null (kadr e)) (null (kadr eq1)) (null (kadr or1)) (null (kar and1))
+         (null (kadr l4)) (null (kadr l3)) (null (kar l2)) (null (kaddr l2)) (null (kadr add)) (null (kadr mult))
+         (eq (kar prim) :lit) prim)))
+(defun lab-arg-p (a)                 ; an argument that is a label written as a number (R1163 computed GO TO's list)
+  (declare (xargs :guard t))
+  (let ((p (and (eq (kar a) :sub) (lone-lit (kadr a))))) (and p (label-int-p (kadr p)) t)))
+(defun lab-args-p (as) (declare (xargs :guard t)) (if (atom as) (null as) (and (lab-arg-p (car as)) (lab-args-p (cdr as)))))
+(defun lab-args-digits (as)          ; their labels, as digit strings
+  (declare (xargs :guard t))
+  (if (atom as) nil (cons (kadr (kadr (lone-lit (kadr (car as))))) (lab-args-digits (cdr as)))))
+(in-theory (disable lone-lit lab-arg-p lab-args-p lab-args-digits))
 (defun all-lone (es) (declare (xargs :guard t)) (if (atom es) t (and (lone-prim (car es)) (all-lone (cdr es)))))
 ; R935 allocate-shape-spec, [lower-bound-expr :] upper-bound-expr: read as a
 ; subscript (:sub e) or a triplet (:tri lo hi nil) with both bounds

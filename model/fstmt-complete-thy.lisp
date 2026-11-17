@@ -385,7 +385,7 @@
   (:forward-chaining label-int-p-consp) (:rewrite append-assoc-fp) (:rewrite append-cons-fs) (:rewrite append-nil-left) (:rewrite car-append-fp) (:rewrite car-cons) (:rewrite cdr-cons)
   (:rewrite commutativity-2-of-+) (:rewrite commutativity-of-+) (:rewrite consp-append-fp) (:rewrite equal-list3) (:rewrite equal-pair) (:rewrite fgs-cons-open) (:rewrite fgs-var-open)
   (:rewrite fold-consts-in-+) (:rewrite fp-complete) (:rewrite fps-complete-stmt-allocate) (:rewrite fps-complete-stmt-assign) (:rewrite fps-complete-stmt-call) (:rewrite fps-complete-stmt-cassign) (:rewrite fps-complete-stmt-deallocate)
-  (:rewrite fps-complete-stmt-goto) (:rewrite fps-complete-stmt-print) (:rewrite fps-complete-stmt-read) (:rewrite fps-complete-stmt-readf) (:rewrite fps-complete-stmt-simple) (:rewrite fps-complete-stmt-stop) (:rewrite fps-complete-stmt-write)
+  (:rewrite fps-complete-stmt-cgoto) (:rewrite fps-complete-stmt-goto) (:rewrite fps-complete-stmt-print) (:rewrite fps-complete-stmt-read) (:rewrite fps-complete-stmt-readf) (:rewrite fps-complete-stmt-simple) (:rewrite fps-complete-stmt-stop) (:rewrite fps-complete-stmt-write)
   (:rewrite fps-open) (:rewrite fy-first-arg) (:rewrite fys-cons-open) (:rewrite fys-var-open) (:rewrite kadr-etc) (:rewrite kar-kdr-consp) (:rewrite label-int-p-not-int)
   (:rewrite len-append-fp) (:rewrite sfollow-facts) (:rewrite tok-facts) (:rewrite unicity-of-0) (:type-prescription binary-append) (:type-prescription fg) (:type-prescription fgs)
   (:type-prescription fy) (:type-prescription fys) (:type-prescription label-int-p) (:type-prescription name-tok-p) (:type-prescription true-listp-append))

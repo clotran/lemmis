@@ -658,6 +658,12 @@
                   (t nil))))
     (and sg (list :goto (case sg (-1 (kaddr s)) (0 (kadddr s)) (otherwise (kar (kdr (kdr (kdr (kdr s)))))))))))
 
+(defun cgoto-goto (s v)             ; F77 11.2: the label i of the list for an integer i in range, else :normal; nil if v is no integer
+  (declare (xargs :guard t))
+  (and (ival-scalar v)
+       (let ((ls (lab-args-digits (kadr s))) (n (v-num v)))
+         (if (and (integerp n) (<= 1 n) (<= n (len ls))) (list :goto (nth (1- n) ls)) :normal))))
+
 (defun simple-status (k)            ; CYCLE, EXIT, RETURN, CONTINUE, STOP
   (declare (xargs :guard t))
   (cond ((equal k "cycle") :cycle) ((equal k "exit") :exit)
