@@ -554,6 +554,8 @@
   (if (atom x) nil
     (append (cond ((and (eq (car x) :name) (consp (cdr x)) (consp (cadr x)) (eq (car (cadr x)) :name)) (list (kadr (cadr x))))
                   ((and (eq (car x) :assign) (consp (cdr x)) (consp (cddr x)) (null (caddr x))) (list (kadr (cadr x))))
+                  ((and (eq (car x) :alabel) (consp (cdr x)) (consp (cddr x))) (list (kadr (caddr x))))   ; ASSIGN l TO v
+                  ((and (eq (car x) :agoto) (consp (cdr x))) (list (kadr (cadr x))))
                   ((and (eq (car x) :range) (consp (cdr x)) (consp (cddr x))) (list (kadr (caddr x))))
                   (t nil))
             (used-names (car x)) (used-names (cdr x)))))
@@ -657,6 +659,15 @@
                    (cond ((fl-zero-p (v-num v)) 0) ((fl-neg-p (v-num v)) -1) (t 1)))
                   (t nil))))
     (and sg (list :goto (case sg (-1 (kaddr s)) (0 (kadddr s)) (otherwise (kar (kdr (kdr (kdr (kdr s)))))))))))
+
+(defun prim-expr (sign p)            ; the :expr tree of [sign] p (lone-prim's inverse)
+  (declare (xargs :guard t))
+  (list (list (list (list nil (list (list (list sign (list (list p nil) nil) nil) nil) nil)) nil) nil) nil))
+(defun agoto-goto (s v)             ; F77 11.3: the label held in v, which must be in the list when one is written; nil if not
+  (declare (xargs :guard t))
+  (and (ival-scalar v) (natp (v-num v))
+       (let ((d (coerce (explode-nonnegative-integer (v-num v) 10 nil) 'string)))
+         (and (or (null (kaddr s)) (member-equal d (lab-args-digits (kaddr s)))) (list :goto d)))))
 
 (defun cgoto-goto (s v)             ; F77 11.2: the label i of the list for an integer i in range, else :normal; nil if v is no integer
   (declare (xargs :guard t))

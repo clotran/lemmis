@@ -121,6 +121,8 @@
 ;         (:goto l)                 R1159 goto-stmt: GO TO label
 ;         (:cgoto as c e)           R1163-ish computed-goto-stmt (F77 11.2): GO TO ( l, ... ) [,] e; as the :args
 ;                                   tree of its label list (lab-args-p), c whether the optional comma is written
+;         (:alabel l n)             F77 10.3 ASSIGN l TO n (n a name token; stores the label as an integer)
+;         (:agoto n as)             F77 11.3 assigned GO TO: GO TO n [, ( l, ... )]; as the :args tree of the list or nil
 ;         (:aif e l1 l2 l3)         arithmetic IF, a deleted feature (B.1;
 ;                                   Fortran 2008 R853): IF ( expr ) l1, l2, l3
 ;         (:ldo l ctl)              R1121 label-do-stmt: DO label [loop-control]
@@ -307,6 +309,9 @@
             (:case (and (= (len x) 2) (fgs :ranges (cadr x))))
             (:case-default (= (len x) 1))
             ((:label :goto) (and (= (len x) 2) (label-digits-p (cadr x))))
+            (:alabel (and (= (len x) 3) (label-digits-p (cadr x)) (name-tok-p (caddr x))))
+            (:agoto (and (= (len x) 3) (name-tok-p (cadr x))
+                         (or (null (caddr x)) (and (consp (caddr x)) (fg :args (caddr x)) (lab-args-p (caddr x))))))
             (:cgoto (and (= (len x) 4) (consp (cadr x)) (fg :args (cadr x)) (lab-args-p (cadr x)) (booleanp (caddr x)) (fg :expr (cadddr x))))
             (:aif (and (= (len x) 5) (fg :expr (cadr x)) (label-digits-p (caddr x)) (label-digits-p (cadddr x))
                        (label-digits-p (car (cddddr x)))))
@@ -481,6 +486,8 @@
          (:case-default (list (kw "case") (kw "default")))
          (:label (list (list :lab (kadr x))))
          (:goto (list (kw "go") (kw "to") (lab-int (kadr x))))
+         (:alabel (list (kw "assign") (lab-int (kadr x)) (kw "to") (kaddr x)))
+         (:agoto (list* (kw "go") (kw "to") (kadr x) (if (kaddr x) (list* (op ",") (op "(") (fy :args (kaddr x))) nil)))
          (:cgoto (list* (kw "go") (kw "to") (op "(") (append (fy :args (kadr x)) (if (kaddr x) (list (op ",")) nil) (fy :expr (kadddr x)))))
          (:aif (list* (kw "if") (op "(") (append (fy :expr (kadr x))
                                                 (list (op ")") (lab-int (kaddr x)) (op ",") (lab-int (kadddr x)) (op ",")

@@ -388,6 +388,9 @@
       (mv-let (d r2) (lx-digits r)
         (append (list #\d #\o #\Space) d (list #\Space) r2))))
    ((ff-top-eq cs 0 nil nil) cs)                              ; an assignment
+   ((ff-prefix-p '(#\a #\s #\s #\i #\g #\n) cs)        ; ASSIGN label TO v: the label's digits, TO, the rest
+    (mv-let (d r2) (lx-digits (ff-drop 6 cs))
+      (if (ff-prefix-p '(#\t #\o) r2) (append (coerce "assign " 'list) d (coerce " to " 'list) (ff-drop 2 r2)) cs)))
    ((ff-prefix-p '(#\g #\o #\t #\o) cs) (append (coerce "go to " 'list) (ff-drop 4 cs)))
    (t (let ((k (ff-kw cs *ff-keywords*)))
         (if (not k) cs
@@ -415,6 +418,16 @@
 (defthm ff-no-blanks-goto
   (implies (ff-prefix-p '(#\g #\o #\t #\o) cs) (equal (ff-no-blanks cs) (list* #\g #\o #\t #\o (ff-no-blanks (ff-drop 4 cs)))))
   :hints (("Goal" :use (:instance ff-no-blanks-prefix (p '(#\g #\o #\t #\o))) :in-theory (disable ff-no-blanks-prefix))))
+(defthm ff-no-blanks-assign
+  (implies (and (ff-prefix-p '(#\a #\s #\s #\i #\g #\n) cs) (ff-prefix-p '(#\t #\o) (mv-nth 1 (lx-digits (ff-drop 6 cs)))))
+           (equal (ff-no-blanks cs)
+                  (list* #\a #\s #\s #\i #\g #\n
+                         (append (ff-no-blanks (car (lx-digits (ff-drop 6 cs))))
+                                 (list* #\t #\o (ff-no-blanks (ff-drop 2 (mv-nth 1 (lx-digits (ff-drop 6 cs))))))))))
+  :hints (("Goal" :use ((:instance ff-no-blanks-prefix (p '(#\a #\s #\s #\i #\g #\n)))
+                        (:instance ff-no-blanks-digits (cs (ff-drop 6 cs)))
+                        (:instance ff-no-blanks-prefix (p '(#\t #\o)) (cs (mv-nth 1 (lx-digits (ff-drop 6 cs))))))
+           :in-theory (disable ff-no-blanks-prefix ff-no-blanks-digits))))
 (defthm ff-no-blanks-atom (implies (atom x) (equal (ff-no-blanks x) nil)))
 (defthm ff-no-blanks-space (equal (ff-no-blanks (cons #\Space x)) (ff-no-blanks x)))
 (defthm ff-no-blanks-char (implies (not (lx-blank-p c)) (equal (ff-no-blanks (cons c x)) (cons c (ff-no-blanks x)))))

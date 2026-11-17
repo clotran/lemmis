@@ -7,7 +7,7 @@ whole; use the headings below and `grep -n` / `sed -n`.
 
 - SCOPE score: 165 of 208 rules proved, 43 in part, none missing (SCOPE.md, first
   paragraphs).
-- FCVS: 131 of 180 programs print their reference output (SCOPE.md, "Theorem 3:
+- FCVS: 132 of 180 programs print their reference output (SCOPE.md, "Theorem 3:
   checked against the compilers", the FCVS bullet; the passing names are in
   build/fcvs.txt after `make check`).
 - Fuzzer: `make fuzz` (seed 1, 40 programs) agrees under gfortran and flang; seeds 1-5
@@ -18,7 +18,6 @@ whole; use the headings below and `grep -n` / `sed -n`.
 
 FCVS re-classification, 2026-11-16, 52 failing programs (128 pass), first stop by fortran-run-form (fixed driver). Internal WRITE landed (095bf6b: a whole CHARACTER scalar/array unit, formatted; element/substring unit and list-directed internal WRITE still :unit); no failing program moved by it, FM711's WRITE(UNIT=CVCOMP,FMT=C1N002) first needs a variable FMT (below). FM829: test 28 passes, the :pd is test 29, REAL((3.495,98.734)*AVC), an inexact single complex product (15.10), same class as 828 830 831: stays :pd. Sizes (52): small 15, needs file store 23, needs printing 2, needs storage-sequence 2, :pd by design 7, other (not isolated) 3.
 | program | first stop | construct | F77 rule | size |
-| FM013 | :parse ASSIGN | ASSIGN 1263 TO I; GO TO I (assigned) | 11.3, 11.2 | small (grammar book, proofs) |
 | FM711 | :parse | FMT= a CHARACTER variable/array (also READ(u,fmtvar)) | 12.2.4, 12.8 | small (grammar book: fmt-spec-p, fmt-tok-not need a name case); then runs via internal WRITE |
 | FM903 | :parse | READ(u,A19VK) variable FMT + READ implied-DO | 12.8, 12.8.2.3 | small (as FM711, plus READ implied-DO) |
 | FM509 FM514 FM517 | :parse | CALL s(..,*10,*), RETURN i alternate return | 15.8.4 | small (grammar) |
@@ -32,7 +31,7 @@ FCVS re-classification, 2026-11-16, 52 failing programs (128 pass), first stop b
 | FM302 FM909 | :common / :equiv | COMMON block redeclared; EQUIVALENCE in a subprogram | 15.9.4 | needs storage-sequence |
 | FM062 FM357 FM804 FM828 FM829 FM830 FM831 | :pd | 062 5th power inexact; 357 804 MOD +0/-0; 828 830 831 829(t29) inexact complex * / ** | 6.1.2 / 15.10 | :pd by design (a decision, not work) |
 | FM715 FM722 FM906 | :parse | not isolated: CHARACTER/PARAMETER/DATA forms of 715 and 722 and 906's READ(IRVI,*) parse alone, so it is a combination | - | other |
-Next: computed GO TO landed (FM014 FM050 FM258 pass, FCVS 131); next ASSIGN (FM013), then FMT= variable (FM711, FM903), alternate return (3), BLOCK DATA (3). All are grammar-book changes (fstmt-gram/-complete proofs), not model-only.
+Next: computed GO TO (FM014 FM050 FM258) and ASSIGN / assigned GO TO (FM013, kinds :alabel :agoto) landed, FCVS 132; next FMT= variable (FM711, FM903), alternate return (3), BLOCK DATA (3). All are grammar-book changes (fstmt-gram/-complete proofs), not model-only.
 
 FCVS stops classified 2026-11-16 (128 pass; FM403 FM404 passed once the harness fed each program its .reference_input, and a bare "." reads as 0): FM110 passed (a lone sign in a numeric input field reads as 0, as gfortran and flang do); FM900 passed (READ and formatted WRITE of COMPLEX items, 2026-11-16: two real edit descriptors, list-directed (re,im)); FM901 passed (a scalar CHARACTER substring as a READ item, R908); FM405 passed (READ from a scalar CHARACTER internal file, 2026-11-16); FM908 passed (READ from a CHARACTER array internal file, a record per element, 12.2.5, 2026-11-16); FM302 :COMMON = a block redeclared with other types/shapes, needs a storage-sequence model (15.9.4); FM080 passed (an untyped external function's result is typed by its name, 4.1.2); FM829 test 3 fixed (INT and DBLE of a complex), now :PD after test 28; FM905 FM907 list-directed * output of REAL/COMPLEX prints a placeholder (13.10.4), the printing milestone. NEXT: see the table above (internal WRITE done 095bf6b); computed GO TO first.
 FCVS blockers, 2026-11-15 (first stop of each failing program; 122 pass; recount with

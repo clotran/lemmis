@@ -763,6 +763,9 @@
        (:cassign (me-cassign s env st cx (1- fuel)))
        ((:label :format) (mv :normal st))
        (:goto (mv (list :goto (kadr s)) st))
+       (:alabel (me-assign (list :assign (kaddr s) nil nil (prim-expr nil (list :lit (lab-int (kadr s))))) env st cx (1- fuel)))   ; F77 10.3: the label as an integer
+       (:agoto (with-v (v st) (me-ev :expr (prim-expr nil (list :name (kadr s))) env st cx (1- fuel))
+                 (let ((g (agoto-goto s v))) (mv (or g (cond-err v)) st))))
        (:cgoto (with-v (v st) (me-ev :expr (kaddr (kdr s)) env st cx (1- fuel))     ; F77 11.2: label i of the list, else the next statement
                  (let ((g (cgoto-goto s v))) (mv (or g (cond-err v)) st))))
        (:aif (with-v (v st) (me-ev :expr (kadr s) env st cx (1- fuel))

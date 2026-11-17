@@ -658,6 +658,16 @@
            (equal (fps :stmt (binary-append (fys :stmt x) r)) (mv t x r)))
   :hints (("Goal" :expand ((fps :stmt (binary-append (fys :stmt x) r)))
            :in-theory (thy-or fps-complete-stmt-cgoto (enable member-equal)))))
+(defthm fps-complete-stmt-alabel
+  (implies (and (fgs :stmt x) (equal (car x) :alabel) (atom r))
+           (equal (fps :stmt (binary-append (fys :stmt x) r)) (mv t x r)))
+  :hints (("Goal" :expand ((fps :stmt (binary-append (fys :stmt x) r)))
+           :in-theory (thy-or fps-complete-stmt-alabel (enable member-equal)))))
+(defthm fps-complete-stmt-agoto
+  (implies (and (fgs :stmt x) (equal (car x) :agoto) (atom r))
+           (equal (fps :stmt (binary-append (fys :stmt x) r)) (mv t x r)))
+  :hints (("Goal" :expand ((fps :stmt (binary-append (fys :stmt x) r)))
+           :in-theory (thy-or fps-complete-stmt-agoto (enable member-equal)))))
 (fps-complete-kind :ldo)
 (fps-complete-kind :format)
 (fps-complete-kind :write)
@@ -673,7 +683,7 @@
 
 (defconst *stmt-kinds*
   '(:program :module :end :contains :block :implicit-none :else :use :decl :assign :cassign :type :tdecl :if-then :else-if :do :simple :stop :allocate :deallocate :save :dimstmt :parstmt :common :implicit :data :call :print
-    :function :subroutine :if :select :case :case-default :label :goto :cgoto :aif :ldo :format :write :read :readf :open :close :equiv :external :intrinsic))
+    :function :subroutine :if :select :case :case-default :label :goto :cgoto :alabel :agoto :aif :ldo :format :write :read :readf :open :close :equiv :external :intrinsic))
 (defthm fgs-stmt-kinds                ; a statement is of one of the kinds above
   (implies (fgs :stmt x) (member-equal (car x) *stmt-kinds*))
   :rule-classes nil :hints (("Goal" :expand ((fgs :stmt x)) :in-theory (enable member-equal))))

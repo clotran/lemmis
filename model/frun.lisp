@@ -35,9 +35,6 @@
 ; array element, or a whole array's elements in array element order
 ; (9.5.3.2), each as by intrinsic assignment. Not yet in the model: a
 ; data-implied-do, a substring or structure component object (:data).
-(defun prim-expr (sign p)            ; the :expr tree of [sign] p (lone-prim's inverse)
-  (declare (xargs :guard t))
-  (list (list (list (list nil (list (list (list sign (list (list p nil) nil) nil) nil) nil)) nil) nil) nil))
 (defun unit-datas (ds)
   (declare (xargs :guard t))
   (if (atom ds) nil (append (if (eq (kar (car ds)) :data) (true-list-fix (kadr (car ds))) nil) (unit-datas (cdr ds)))))
