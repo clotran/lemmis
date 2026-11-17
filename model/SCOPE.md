@@ -354,7 +354,7 @@ Not a theorem: a test, run by `make check` (exit 1 on any difference).
 | R1210 | read-stmt | proved | both forms |
 | R1211 | write-stmt | proved | |
 | R1212 | print-stmt | proved |  |
-| R1213 | io-control-spec | part | [UNIT=], [FMT=], ADVANCE= (a literal); C1210, C1211, C1218, C1223; a format required (no unformatted I/O) |
+| R1213 | io-control-spec | part | [UNIT=], [FMT=] (a literal, *, a label, or a bare CHARACTER variable name by token sugar; no element or expression format), ADVANCE= (a literal); C1210, C1211, C1218, C1223; a format required (no unformatted I/O) |
 | R1215 | format | part | *, a label, a char-literal-constant; no other default-char-expr |
 | R1216 | input-item | part | variable (a designator, character included; not a substring in the meaning); no io-implied-do |
 | R1217 | output-item | part | expr; no io-implied-do |

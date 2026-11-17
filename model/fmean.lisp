@@ -46,6 +46,12 @@
 ;; an internal file (12.2.5): a CHARACTER scalar, one record, or a CHARACTER array, a record per element
 (defun int-file-p (u) (or (cval-p u) (and (aval-p u) (eq (a-ty u) :c))))
 (defun int-recs (vs) (if (atom vs) nil (cons (lx-str (c-chars (car vs))) (int-recs (cdr vs)))))
+;; F77 12.2.4 FMT= a character variable: frun's io-sugar (fmt-var-sub) writes the name as a format token whose
+;; string is a control-A then the name (no grammar change); here the name's value, an array's elements
+;; concatenated, is the format.  ponytail: a bare name only (no element, substring or expression format)
+(defun fv-name (s) (and (stringp s) (< 1 (length s)) (eql (char s 0) (code-char 1)) (subseq s 1 (length s))))
+(defun fv-cat (rs) (if (atom rs) "" (concatenate 'string (if (stringp (car rs)) (car rs) "") (fv-cat (cdr rs)))))
+(defun fv-text (v) (if (int-file-p v) (fv-cat (int-recs (flat-vals (list v)))) (err :format)))
 
 ;; WRITE to an internal file (12.2.5, 12.8): the records the format makes fill the variable, a record per
 ;; element, each blank-filled; a record longer than the element, or more records than elements, is an error.
@@ -792,7 +798,9 @@
               ((st-trace st) (mv (err :pd) st))             ; in an order the processor picks (11.1.7.4.2)
               (t (let* ((ctl (member-eq (kar s) '(:write :read))) (ios (if ctl (kadr s) nil))
                         (u (if ctl (kaddr (io-spec :unit ios)) :star))
-                        (fm (io-fmt (if ctl (kaddr (io-spec :fmt ios)) (kadr s)) cx)) (adv (io-adv ios)))
+                        (fm0 (io-fmt (if ctl (kaddr (io-spec :fmt ios)) (kadr s)) cx)) (adv (io-adv ios)))
+                  (with-v (fv st) (if (fv-name fm0) (me-ev :expr (prim-expr nil (list :name (kw (fv-name fm0)))) env st cx (1- fuel)) (mv nil st))
+                   (let ((fm (if (fv-name fm0) (fv-text fv) fm0)))
                    (with-v (u st) (if (eq u :star) (mv (vi 4 (if (member-eq (kar s) '(:write :print)) 6 5)) st)
                                     (me-ev :expr u env st cx (1- fuel)))
                      ; the unit * is OUTPUT_UNIT, 6, or INPUT_UNIT, 5, for both compilers (16.10.2.23, .13)
@@ -807,7 +815,7 @@
                                   (mv-let (e rs st) (me-ritems (kaddr s) rs env (st-in-set in st) cx (1- fuel))
                                     (if (errp e) (mv e st)
                                       (mv-let (e in) (rd-end rs (st-in st) adv)
-                                        (if e (mv e st) (mv :normal (st-in-set (if (int-file-p u) oin in) st))))))))))))))))
+                                        (if e (mv e st) (mv :normal (st-in-set (if (int-file-p u) oin in) st))))))))))))))))))
        ((:open :close) (let ((e (kaddr (io-spec :unit (kadr s)))))
           (cond ((cx-pure cx) (mv (err :pure) st)) ((or (st-trace st) (eq e :star)) (mv (err (if (eq e :star) :unit :pd)) st))
                 (t (with-v (u st) (me-ev :expr e env st cx (1- fuel)) (oc-run (kar s) (kadr s) u st))))))

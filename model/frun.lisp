@@ -312,15 +312,29 @@
         ((equal (car toks) (kw "call")) (alt-subst toks nil 0 1 :call))
         ((equal (car toks) (kw "subroutine")) (alt-subst toks nil 0 1 :sub))
         (t toks)))
+;; F77 12.2.4 FMT= a character variable, by token sugar (see fmean fv-name): in READ/WRITE ( ... ), a name that is
+;; the second positional control item or follows FMT= becomes the format token (:char <control-A> name)
+(defun fv-tok (nm) (list :char (concatenate 'string (coerce (list (code-char 1)) 'string) nm)))
+(defun fmt-var-sub (toks pp prev d commas)   ; toks from just after the "(" (d: paren depth, 1 inside the control list)
+  (declare (xargs :guard t :verify-guards nil :measure (len toks)))
+  (if (atom toks) nil
+    (let ((tk (car toks)))
+      (if (and (equal d 1) (eq (kar tk) :name) (stringp (kadr tk)) (consp (cdr toks))
+               (member-equal (cadr toks) (list (op ",") (op ")")))
+               (or (and (equal prev (op ",")) (equal commas 1)) (and (equal prev (op "=")) (equal pp (kw "fmt")))))
+          (cons (fv-tok (kadr tk)) (fmt-var-sub (cdr toks) prev tk d commas))
+        (cons tk (fmt-var-sub (cdr toks) prev tk (cond ((equal tk (op "(")) (1+ d)) ((equal tk (op ")")) (if (< 0 d) (1- d) 0)) (t d))
+                              (if (and (equal d 1) (equal tk (op ","))) (1+ commas) commas)))))))
 (defun io-sugar (toks0)                ; WRITE ( ios ) items; BLOCK DATA [name] as a subroutine
   (declare (xargs :guard t))
   (let ((toks (alt-sugar toks0)))
   (if (and (equal (car toks) (kw "block")) (equal (cadr toks) (kw "data")) (atom (cdddr toks)))   ; R1116 (F77 16.2.5): its DATA is me-proc-datas'
       (list (kw "subroutine") (kw (if (and (consp (cddr toks)) (stringp (kadr (caddr toks)))) (concatenate 'string "blockdata_" (kadr (caddr toks))) "blockdata_")))
-  (if (and (equal (car toks) (kw "write")) (equal (cadr toks) (op "(")))
+  (if (and (member-equal (car toks) (list (kw "write") (kw "read"))) (equal (cadr toks) (op "(")))
       (let ((n (paren-end (cdr toks) 0)))
         (if (and n (<= (1+ n) (len toks)))
-            (append (take (1+ n) toks) (io-items (nthcdr (1+ n) toks) t 0))
+            (append (list (car toks) (op "(")) (fmt-var-sub (take (1- n) (cddr toks)) nil (op "(") 1 0)
+                    (if (equal (car toks) (kw "write")) (io-items (nthcdr (1+ n) toks) t 0) (nthcdr (1+ n) toks)))
           toks))
     toks))))
 

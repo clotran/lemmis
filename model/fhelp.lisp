@@ -183,7 +183,7 @@
   (let* ((s (kaddr u)) (ds0 (par-decls (clen-decls (kaddr s)) nil (kadr s) (unit-rules u))) (dims (dim-specs ds0))
          (ds1 (if dims (append (dim-decls ds0 dims) (if (kadr s) nil (dim-implicit dims (decl-names ds0) (unit-rules u)))) ds0))
          (coms (com-number (com-all ds1) nil))
-         (ds (if coms (com-decls (append ds1 (if (kadr s) nil (com-implicit coms (decl-names ds1) (unit-rules u)))) coms) ds1)))
+         (ds (if coms (com-decls (append (if (kadr s) nil (com-implicit coms (decl-names ds1) (unit-rules u))) ds1) coms) ds1)))
     (list (kar s) (kadr s) (if (or (save-all-p ds) (save-names ds) (data-save-names ds)) (save-decls ds (save-all-p ds) (append (save-names ds) (data-save-names ds))) ds))))
 (defun unit-exec (u) (declare (xargs :guard t)) (if (eq (kar u) :module) nil (kadddr u)))
 (defun unit-int (u) (declare (xargs :guard t)) (if (eq (kar u) :module) (kadddr u) (kar (kdr (kdr (kdr (kdr u)))))))
