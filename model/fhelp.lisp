@@ -337,6 +337,7 @@
            (es (if (aval-p v) (a-es v) (list (raw v))))
            (new (case (kar tg)
                   (:tuples (arr-sets old (kaddr tg) es))
+                  (:seq old)                      ; a substring's character sequence: read only
                   ; an element actual to an array dummy: the dummy's elements from offset (kaddr tg)
                   (:from (mk-arr (a-ty old) (a-k old) (a-lbs old) (a-ubs old)
                                  (append (take (kaddr tg) (a-es old)) es (nthcdr (+ (kaddr tg) (len es)) (a-es old)))))
@@ -638,12 +639,29 @@
 ; an array element actual (the copy c: (:tuples loc (tuple))) to an explicit-shape
 ; array dummy n of bounds ls, us: sequence association (F77 15.9.3.3), the
 ; dummy the storage sequence from that element, written back from offset off
-(defun dummy-elem (n attrs int c ls us fr copies st)   ; (mv err fr copies st)
+(defun char-seq (es k)               ; the characters of character elements es of length k
+  (declare (xargs :guard t))
+  (if (atom es) nil (append (c-str (wrap :c k (car es))) (char-seq (cdr es) k))))
+(defun chunk-strs (cs k n)           ; n elements of k characters from cs, :u when one is undefined
+  (declare (xargs :guard (and (natp k) (natp n))))
+  (if (zp n) nil
+    (cons (let ((c (take k cs))) (if (member (code-char 0) c) :u (coerce c 'string)))
+          (chunk-strs (nthcdr k cs) k (1- n)))))
+(defun dummy-elem (n attrs int c ls us dk fr copies st)   ; (mv err fr copies st)
   (declare (xargs :guard t))
   (let* ((loc (kadr (kaddr c))) (arr (st-get loc st)) (need (prod (extents ls us))))
     (cond
      ((errp ls) (mv ls nil nil st))
      ((not (aval-p arr)) (mv (err :type) nil nil st))
+     ((eq (kar (kaddr c)) :seq)   ; a character substring actual (15.9.3.3): its characters on, read only
+      (let* ((off (arr-offset (kar (kaddr (kaddr c))) (a-lbs arr) (a-ubs arr)))
+             (lo (kadddr (kaddr c)))
+             (cs (and (natp off) (posp lo) (nthcdr (1- lo) (char-seq (nthcdr off (a-es arr)) (a-k arr)))))
+             (cs (append cs (make-list (nfix (- (* need (nfix dk)) (len cs))) :initial-element (code-char 0)))))   ; the elements past the actual's end are undefined, an error only if referenced
+        (if (not (and (eq (a-ty arr) :c) (natp (a-k arr)) (natp dk) (natp off) (posp lo)))
+            (mv (err :shape) nil nil st)
+          (mv-let (l2 st) (st-new (mk-arr :c dk ls us (chunk-strs cs dk need)) st)
+            (mv nil (cons (cons n (list :var l2 :in)) fr) (drop-copies n copies) st)))))
      (t
       (let ((off (arr-offset (kar (kaddr (kaddr c))) (a-lbs arr) (a-ubs arr))))
         (if (or (not (natp off)) (< (len (a-es arr)) (+ off need)))
