@@ -290,6 +290,48 @@
           toks))
     toks))))
 
+;; F77 15.7 ENTRY, by statement-list sugar before parsing (like alt-sugar): each ENTRY e(args) becomes its own
+;; unit: the header with e and args, the unit's specification statements, then the statements after the ENTRY.
+;; ponytail: copies share no locals with the original unit (FCVS keeps shared state in COMMON), and the
+;; entry's result takes the header's type prefix; add SAVEd-local sharing if a test needs it.
+(defun entry-split (st)              ; ENTRY statement -> (name . rest), else nil
+  (declare (xargs :guard t))
+  (let* ((s (kadr (car st))) (e (and (consp st) (equal (kar (car st)) :name) (stringp s)
+          (cond ((and (equal s "entry") (consp (cdr st)) (equal (kar (cadr st)) :name) (stringp (kadr (cadr st)))) (cons (kadr (cadr st)) (cddr st)))
+                ((and (< 5 (length s)) (equal (subseq s 0 5) "entry")) (cons (subseq s 5 (length s)) (cdr st)))))))
+    (and e (or (null (cdr e)) (and (equal (cadr e) (op "(")) (true-listp (cdr e)) (equal (car (last (cdr e))) (op ")")) (not (member-equal (op "=") (cdr e))))) e)))
+(defun spec-stmt-p (st)
+  (declare (xargs :guard t))
+  (and (consp st) (equal (kar (car st)) :name)
+       (member-equal (kadr (car st)) '("integer" "real" "double" "complex" "logical" "character" "dimension" "common" "equivalence" "external" "intrinsic" "implicit" "parameter" "save")) t))
+(defun drop-entries (ss) (declare (xargs :guard t)) (if (atom ss) nil (if (entry-split (car ss)) (drop-entries (cdr ss)) (cons (car ss) (drop-entries (cdr ss))))))
+(defun drop-specs (ss) (declare (xargs :guard t)) (if (atom ss) nil (if (spec-stmt-p (car ss)) (drop-specs (cdr ss)) (cons (car ss) (drop-specs (cdr ss))))))
+(defun keep-specs (ss) (declare (xargs :guard t)) (if (atom ss) nil (if (spec-stmt-p (car ss)) (cons (car ss) (keep-specs (cdr ss))) (keep-specs (cdr ss)))))
+(defun take-to-function (hdr) (declare (xargs :guard t)) (if (or (atom hdr) (equal (car hdr) (kw "function"))) nil (cons (car hdr) (take-to-function (cdr hdr)))))
+(defun entry-hdr (hdr e)             ; hdr's kind (type prefix kept) with the entry's name and arguments
+  (declare (xargs :guard t))
+  (if (equal (car hdr) (kw "subroutine")) (list* (kw "subroutine") (kw (car e)) (cdr e))
+    (append (take-to-function hdr) (list (kw "function") (kw (car e))) (cdr e))))
+(defun entry-units (hdr spec body)   ; one unit per ENTRY in body (body ends with the END)
+  (declare (xargs :guard t))
+  (if (atom body) nil
+    (let ((e (entry-split (car body))))
+      (if e (append (list (entry-hdr hdr e)) spec (drop-specs (drop-entries (cdr body))) (entry-units hdr spec (cdr body)))
+        (entry-units hdr spec (cdr body))))))
+(defun entry-unit (us)               ; us: the unit's statements through its END
+  (declare (xargs :guard t))
+  (let ((hdr (car us)) (body (cdr us)))
+    (if (and (or (equal (car hdr) (kw "subroutine")) (member-equal (kw "function") hdr))
+             (not (equal (drop-entries body) body)))
+        (append (list hdr) (drop-entries body) (entry-units hdr (keep-specs body) body))
+      us)))
+(defun entry-sugar1 (ss cur)
+  (declare (xargs :guard t :verify-guards nil :measure (len ss)))
+  (cond ((atom ss) (reverse cur))
+        ((equal (car ss) (list (kw "end"))) (append (entry-unit (reverse (cons (car ss) cur))) (entry-sugar1 (cdr ss) nil)))
+        (t (entry-sugar1 (cdr ss) (cons (car ss) cur)))))
+(defun entry-sugar (ss) (declare (xargs :guard t :verify-guards nil)) (entry-sugar1 ss nil))
+
 (defun parse-stmts (ss)              ; each statement parsed whole, or nil
   (declare (xargs :guard t :verify-guards nil))
   (if (atom ss) (mv t nil)
@@ -299,7 +341,7 @@
 
 (defun fortran-parse (text fixed)    ; (mv ok units-or-the-bad-statement); fixed: fixed source form
   (declare (xargs :guard (stringp text) :verify-guards nil))
-  (mv-let (ok ss) (parse-stmts (if fixed (flex-fixed text) (flex text)))
+  (mv-let (ok ss) (parse-stmts (entry-sugar (if fixed (flex-fixed text) (flex text))))
     (if (not ok) (mv nil ss)
       (mv-let (ok2 us r) (fpu :program (ldo-sugar ss nil nil))
         (if (and ok2 (null r)) (mv t us) (mv nil (kar r)))))))
@@ -327,5 +369,5 @@
 (defthm fortran-parse-sound
   (implies (mv-nth 0 (fortran-parse text fixed)) (fgu :program (mv-nth 1 (fortran-parse text fixed))))
   :hints (("Goal" :use ((:instance fpu-sound (nt :program)
-                                     (toks (ldo-sugar (mv-nth 1 (parse-stmts (if fixed (flex-fixed text) (flex text)))) nil nil))))
-           :in-theory (disable fpu-sound flex flex-fixed parse-stmts ldo-sugar fpu))))
+                                     (toks (ldo-sugar (mv-nth 1 (parse-stmts (entry-sugar (if fixed (flex-fixed text) (flex text))))) nil nil))))
+           :in-theory (disable fpu-sound flex flex-fixed parse-stmts ldo-sugar fpu entry-sugar))))
