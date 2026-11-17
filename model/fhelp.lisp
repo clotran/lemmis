@@ -250,6 +250,19 @@
   (declare (xargs :guard t))
   (if (atom ss) nil (cons (kadr (car ss)) (shapes-lower (cdr ss)))))
 (defun all-assumed (ss) (declare (xargs :guard t)) (if (atom ss) t (and (eq (kar (car ss)) :as) (all-assumed (cdr ss)))))
+; assumed size (5.1.1.1): the last explicit shape's upper bound is `*` (hi nil)
+(defun assumed-size-p (ss)
+  (declare (xargs :guard t))
+  (and (consp ss) (if (atom (cdr ss)) (and (eq (kar (car ss)) :ex) (null (kaddr (car ss)))) (assumed-size-p (cdr ss)))))
+(defun lead-shapes (ss)              ; ss without its last shape
+  (declare (xargs :guard t))
+  (if (or (atom ss) (atom (cdr ss))) nil (cons (car ss) (lead-shapes (cdr ss)))))
+(defun last-shape (ss) (declare (xargs :guard t)) (if (atom (cdr ss)) (car ss) (last-shape (cdr ss))))
+; the dummy's bounds from its leading ones ls us, its last lower bound lo and the actual's n elements
+(defun size-bounds (ls us lo n)
+  (declare (xargs :guard t))
+  (let ((p (prod (extents ls us))) (lo (ifix lo)))
+    (mv (append ls (list lo)) (append us (list (+ lo -1 (if (zp p) 0 (floor (nfix n) p))))))))
 
 (defun st-dovars-del (loc st) (declare (xargs :guard t)) (st-dovars-set (remove-equal loc (true-list-fix (st-dovars st))) st))
 

@@ -244,7 +244,7 @@ Not a theorem: a test, run by `make check` (exit 1 on any difference).
 | R814 | array-spec | proved | explicit-shape-spec-list, assumed-shape-spec-list, deferred-shape-spec-list |
 | R815 | explicit-shape-spec | proved |  |
 | R816 | lower-bound | proved |  |
-| R817 | upper-bound | proved |  |
+| R817 | upper-bound | proved | `*` as the last bound (assumed-size, F77 5.1.1.1) is (:ex lo nil), any position in the grammar; the meaning of a dummy takes the last extent as the actual's size / the leading extents' product |
 | R820 | assumed-shape-spec | proved |  |
 | R822 | deferred-shape-spec | proved | `:`, read as an assumed-shape-spec without a lower bound; an ALLOCATABLE entity's in the meaning |
 | R828 | intent-spec | proved | IN, OUT, INOUT, IN OUT |

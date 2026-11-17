@@ -178,7 +178,9 @@
 ;                                   explicit-shape-spec-list or an
 ;                                   assumed-shape-spec-list, not mixed
 ;  :shape (:ex lo hi)               R815 explicit-shape-spec: [lower-bound :]
-;                                   upper-bound (R816, R817)
+;                                   upper-bound (R816, R817); hi nil is `*`,
+;                                   R822 assumed-size-spec [explicit-shape-spec ,]
+;                                   [lower-bound :] * (the meaning wants it last)
 ;         (:as lo)                  R820 assumed-shape-spec: [lower-bound] :
 ;  :ents  (ent ...) nonempty        entity-decl-list
 ;  :ent   (n shapes init [l])       R803 entity-decl: object-name (R804)
@@ -354,7 +356,7 @@
     (:shapes* (and (consp x) (fgs :shape (car x)) (or (null (cdr x)) (fgs :shapes* (cdr x)))))
     (:shape (and (true-listp x)
                  (case (car x)
-                   (:ex (and (= (len x) 3) (or (null (cadr x)) (fg :expr (cadr x))) (fg :expr (caddr x))))
+                   (:ex (and (= (len x) 3) (or (null (cadr x)) (fg :expr (cadr x))) (or (null (caddr x)) (fg :expr (caddr x)))))
                    (:as (and (= (len x) 2) (or (null (cadr x)) (fg :expr (cadr x)))))
                    (otherwise nil))))
     (:ranges (and (consp x) (fgs :range (car x)) (or (null (cdr x)) (fgs :ranges (cdr x)))))
@@ -525,7 +527,7 @@
       (:shapes (fys :shapes* x))
       (:shapes* (append (fys :shape (car x)) (if (consp (cdr x)) (cons (op ",") (fys :shapes* (cdr x))) (list (op ")")))))
       (:shape (if (eq (car x) :ex)
-                  (append (if (kadr x) (append (fy :expr (kadr x)) (list (op ":"))) nil) (fy :expr (kaddr x)))
+                  (append (if (kadr x) (append (fy :expr (kadr x)) (list (op ":"))) nil) (if (kaddr x) (fy :expr (kaddr x)) (list (op "*"))))
                 (append (if (kadr x) (fy :expr (kadr x)) nil) (list (op ":")))))
       (:ranges (append (fys :range (car x)) (if (consp (cdr x)) (cons (op ",") (fys :ranges (cdr x))) (list (op ")")))))
       (:ixs (append (fys :ix (car x)) (if (consp (cdr x)) (cons (op ",") (fys :ixs (cdr x))) (list (op ")")))))

@@ -464,7 +464,7 @@
    (cond ((not (posp fuel)) (mv (err :fuel) nil st))
          ((atom ss) (mv nil nil st))
          (t (mv-let (lo st) (if (kadr (car ss)) (me-ev :expr (kadr (car ss)) env st cx (1- fuel)) (mv (vi 4 1) st))
-              (mv-let (hi st) (me-ev :expr (kaddr (car ss)) env st cx (1- fuel))
+              (mv-let (hi st) (if (kaddr (car ss)) (me-ev :expr (kaddr (car ss)) env st cx (1- fuel)) (mv (err :syntax) st))   ; `*` only as a dummy's last bound
                 (cond ((errp lo) (mv lo nil st)) ((errp hi) (mv hi nil st))
                       ((not (and (ival-scalar lo) (ival-scalar hi))) (mv (err :type) nil st))
                       (t (mv-let (ls us st) (me-bounds (cdr ss) env st cx (1- fuel))
@@ -557,7 +557,7 @@
        (cond
         ((and (not short) (not (ty-match ty k v)))
          (mv (err :type) nil nil st))
-        ((and ss (not (all-assumed ss)) (not (aval-p v))     ; an element actual: sequence association (F77 15.9.3.3)
+        ((and ss (not (all-assumed ss)) (not (assumed-size-p ss)) (not (aval-p v))     ; an element actual: sequence association (F77 15.9.3.3)
               (let ((c (assoc-equal n copies))) (and c (member-eq (kar (kaddr c)) '(:tuples :seq)) (not (cdr (kaddr (kaddr c)))))))
          (mv-let (ls us st) (me-bounds ss env st cx (1- fuel))
            (dummy-elem n attrs int (assoc-equal n copies) ls us k fr copies st)))
@@ -567,6 +567,12 @@
         (t
          (mv-let (ls us st)
            (cond ((not ss) (mv nil nil st))
+                 ((assumed-size-p ss)             ; the last extent from the actual's size; indexing past it is undefined
+                  (mv-let (ls0 us0 st) (me-bounds (lead-shapes ss) env st cx (1- fuel))
+                    (mv-let (lo st) (me-lowers (list (kadr (last-shape ss))) env st cx (1- fuel))
+                      (cond ((errp ls0) (mv ls0 nil st))
+                            ((errp lo) (mv lo nil st))
+                            (t (mv-let (ls us) (size-bounds ls0 us0 (car lo) (prod (extents (a-lbs v) (a-ubs v)))) (mv ls us st)))))))
                  ((all-assumed ss)
                   (mv-let (los st) (me-lowers (shapes-lower ss) env st cx (1- fuel))
                     (mv los (if (errp los) nil (uppers los (extents (a-lbs v) (a-ubs v)))) st)))
