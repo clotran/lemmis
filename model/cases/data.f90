@@ -3,7 +3,7 @@
 ! signed constant, sets with and without a comma between them, values
 ! converted as in intrinsic assignment (a character's to its length)
 program datas
-  integer :: i, j, k(3), m(2, 2)
+  integer :: i, j, k(3), m(2, 2), n(3, 3), q, r
   real :: x, y(4)
   logical :: l
   character(len=3) :: c, cs(2)
@@ -12,8 +12,11 @@ program datas
   data y(2), y(4) /1.5, -0.5/
   data l /.true./ c /'abcde'/
   data cs /2*'xy'/
+  data (n(1, q), q = 1, 3) /-47, 198, -217/
+  data ((n(q, r), r = 2, 3), q = 2, 3) /1, 2, 3, 4/
   y(1) = 0.0
   y(3) = m(2, 1)
   print *, i, j, k, m
+  print *, n(1, 1), n(1, 2), n(1, 3), n(2, 2), n(2, 3), n(3, 2), n(3, 3)
   print *, x, y, l, c, '|', cs(1), '|', cs(2), '|'
 end program datas

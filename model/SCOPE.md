@@ -251,7 +251,7 @@ Not a theorem: a test, run by `make check` (exit 1 on any difference).
 | R840 | data-stmt | proved | DATA data-stmt-set [[,] data-stmt-set]..., a declaration-construct (fps :dsets); in the meaning a main program's DATA statements initialize its variables before its first statement (8.6.7), each value as by intrinsic assignment; a subprogram's are not in the meaning yet |
 | R841 | data-stmt-set | proved | data-stmt-object-list / data-stmt-value-list / |
 | R842 | data-stmt-object | proved | a variable (a primary: name, array element, substring or structure component, kept whole) or a data-implied-do; in the meaning a scalar, a whole array in array element order, or an array element |
-| R843 | data-implied-do | part | read as an io-implied-do's list (fp :ilist), a superset; not in the meaning |
+| R843 | data-implied-do | part | read as an io-implied-do's list (fp :ilist), a superset; in the meaning (frun data-flat, nested, expression subscripts; no PARAMETER-only bound check, C-rules on the DO variable not enforced) |
 | R846 | data-stmt-value | proved | [data-stmt-repeat *] data-stmt-constant |
 | R847 | data-stmt-repeat | proved | an int-literal-constant or a named constant; in the meaning nonnegative (C882) |
 | R848 | data-stmt-constant | part | a literal, a named constant, a complex literal, [sign] an int or real literal; no structure-constructor or NULL() |
