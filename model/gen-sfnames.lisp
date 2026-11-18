@@ -5,11 +5,22 @@
 (include-book "gen-stnames")
 (include-book "gen-sfcall")
 
+(local (in-theory (disable svs-names-svfl)))
+
+; any call's first three arguments (if, implies, the-check, whatever its length)
+(defthm sfc-ok-args-any
+  (implies (and (consp x) (member-eq (car x) '(if implies the-check)) (sfc-ok :term x sigs st))
+           (and (sfc-ok :term (cadr x) sigs st) (sfc-ok :term (caddr x) sigs st) (sfc-ok :term (cadddr x) sigs st)))
+  :hints (("Goal" :expand ((sfc-ok :term x sigs st) (sfc-ok :list (cdr x) sigs st)
+                           (sfc-ok :list (cddr x) sigs st) (sfc-ok :list (cdddr x) sigs st)))))
+
 (defun sx-fr-f (ss fr heap) (mv-let (st fr2 h2) (sxf-list ss fr heap) (declare (ignore st h2)) fr2))
 
 (defun a-sv-f (x env s st defs n) (mv-let (e v) (a-sxf x env s st defs n) (declare (ignore e)) v))
 
 (defun a-svs-f (xs env s st defs n) (mv-let (e vs) (a-sxf-list xs env s st defs n) (declare (ignore e)) vs))
+
+(set-irrelevant-formals-ok t)
 
 (defun sn-ind-f (flag x vars em cnt locs sigs fnames st env s defs n fr heap)
   (declare (xargs :measure (acl2-count x) :verify-guards nil
@@ -305,7 +316,7 @@
   :hints (("Goal" :induct (sn-ind-f flag x vars em cnt locs sigs fnames st env s defs n fr heap) :do-not-induct t
            :in-theory (disable sn-ok-f sna-ok-f snv-ok g-sexpr g-sargs g-svals no-calls sfc-ok g-st-free g-mvnth g-role
                                gs-ifp gs-impp gs-lamp gs-primp sn-ok-use-f sna-ok-use-f g-fresh sx-fr-f a-svs-f))
-          (and stable-under-simplificationp '(:in-theory (e/d (gs-ifp gs-impp gs-lamp gs-primp)
+          (and stable-under-simplificationp '(:cases ((consp (lkp (car x) sigs))) :in-theory (e/d (gs-ifp gs-impp gs-lamp gs-primp)
                                                               (sn-ok-f sna-ok-f snv-ok g-sexpr g-sargs g-svals no-calls sfc-ok g-st-free
                                                                g-mvnth g-role sn-ok-use-f sna-ok-use-f g-fresh sx-fr-f a-svs-f))))))
 
