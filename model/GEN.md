@@ -785,6 +785,19 @@ Two findings from acl2-fortran's `stmt` (both fixed now, see above):
    (3), the calls/mv/tail loops for stobjs
    (sx cases for :do and :call, f-invoke on a subroutine with a
    heap-aware oracle like f-call-val), is deferred until after Stage A.
+   **gen-stcall.lisp** ((4a), first piece): `sxc`/`sxc-list`, sx plus a
+   `:call` case answered by an unconstrained oracle `(s-call-val name args
+   fr heap)` => (mv err fr' heap'), as f-call-val is for fv. A new
+   evaluator, not a case added to sx, so no earlier theorem gains a
+   hypothesis. **`sxc-list-is-sx-list`**: wherever sx-list answers no
+   error, sxc-list is sx-list (every gs-sem/gst-sem fact carries over).
+   **`sxc-ok-is-f-ex-list`**: under **`p-sorc procs b`** (wherever
+   s-call-val answers without error, f-ex of the CALL at any fuel past
+   b + its acl2-count answers :normal with s-call-val's frame and heap),
+   natp b, wherever sxc-list answers a non-error status, f-ex-list at fuel
+   past b + the statements' acl2-count is sxc-list. `:do` is left out of
+   sxc on purpose: the tail loop's DO is reasoned on f-ex directly, as
+   g-fn-sem-loop does (4b). 260 s, the flag induction most of it.
    Left of 4, restated (2026-11-18): (4a) sx's `:do` and `:call` cases and
    f-invoke of a generated subroutine under a heap-aware oracle (as
    f-call-val is for functions), then gst-sem for g-callst and the mv lambda
