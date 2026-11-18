@@ -55,6 +55,7 @@
 (defthm lx-alnums-len (<= (len (mv-nth 1 (lx-alnums cs))) (len cs)) :rule-classes :linear)
 (defthm lx-digits-len (<= (len (mv-nth 1 (lx-digits cs))) (len cs)) :rule-classes :linear)
 (defthm lx-digits-true-listp (true-listp (mv-nth 0 (lx-digits cs))))   ; for the guards that append them
+(defthm lx-digits-true-listp-car (true-listp (car (lx-digits cs))) :hints (("Goal" :use lx-digits-true-listp)))
 (defthm lx-letters-len (<= (len (mv-nth 1 (lx-letters cs))) (len cs)) :rule-classes :linear)
 
 (defthm lx-len-cdr (implies (consp x) (equal (len (cdr x)) (+ -1 (len x)))))
@@ -353,8 +354,14 @@
 (defun ff-labels-p (cs) (declare (xargs :guard t))   ; digits and commas: an arithmetic IF's labels
   (and (consp cs) (if (atom cs) t (and (or (lx-digit-p (kar cs)) (eql (kar cs) #\,)) (or (atom (kdr cs)) (ff-labels-p (kdr cs)))))))
 
+(defun ff-clen (r)                   ; a parenthesized length, CHARACTER*(len): (mv its characters rest)
+  (declare (xargs :guard t))
+  (let ((n (if (eql (kar r) #\() (ff-close (kdr r) 1 nil 0) nil))) (if (natp n) (mv (ff-take (+ 1 n) r) (ff-drop (+ 1 n) r)) (mv nil r))))
+(defun ff-fn-sp (r)                  ; FUNCTION then a blank
+  (declare (xargs :guard t))
+  (if (ff-prefix-p (coerce "function" 'list) r) (append (coerce "function" 'list) (cons #\Space (ff-drop 8 r))) r))
 (defconst *ff-keywords*              ; a statement's first word, longest first where one begins another
-  '("blockdata" "doubleprecisionfunction" "integerfunction" "logicalfunction" "realfunction" "doubleprecision" "implicitnone" "endprogram" "endsubroutine" "endfunction" "endmodule" "subroutine" "dimension"
+  '("blockdata" "doubleprecisionfunction" "integerfunction" "logicalfunction" "realfunction" "complexfunction" "doubleprecision" "implicitnone" "endprogram" "endsubroutine" "endfunction" "endmodule" "subroutine" "dimension"
     "continue" "function" "implicit" "integer" "logical" "program" "contains" "elseif" "endif" "enddo" "return"
     "format" "write" "print" "read" "character" "complex" "real" "call" "stop" "else" "then" "rewind" "backspace" "endfile" "end" "data" "common" "external" "intrinsic" "save"))
 (defun ff-kw (cs ks)                 ; the keyword cs begins with
@@ -363,7 +370,7 @@
         ((and (stringp (kar ks)) (ff-prefix-p (coerce (kar ks) 'list) cs)) (kar ks))
         (t (ff-kw cs (kdr ks)))))
 (defconst *ff-spaced*                ; a keyword written as two words in free form
-  '(("blockdata" . "block data") ("doubleprecisionfunction" . "double precision function") ("integerfunction" . "integer function") ("logicalfunction" . "logical function") ("realfunction" . "real function") ("doubleprecision" . "double precision") ("implicitnone" . "implicit none") ("endprogram" . "end program")
+  '(("blockdata" . "block data") ("doubleprecisionfunction" . "double precision function") ("integerfunction" . "integer function") ("logicalfunction" . "logical function") ("realfunction" . "real function") ("complexfunction" . "complex function") ("doubleprecision" . "double precision") ("implicitnone" . "implicit none") ("endprogram" . "end program")
     ("endsubroutine" . "end subroutine") ("endfunction" . "end function") ("endmodule" . "end module")
     ("elseif" . "else if") ("endif" . "end if") ("enddo" . "end do")))
 
@@ -393,8 +400,9 @@
       (if (ff-prefix-p '(#\t #\o) r2) (append (coerce "assign " 'list) d (coerce " to " 'list) (ff-drop 2 r2)) cs)))
    ((ff-prefix-p '(#\g #\o #\t #\o) cs) (append (coerce "go to " 'list) (ff-drop 4 cs)))
    ((ff-prefix-p '(#\c #\h #\a #\r #\a #\c #\t #\e #\r #\*) cs)   ; CHARACTER*n name: the length's digits, a blank (so 2 D2XVK is not the real 2D2)
-    (mv-let (d r2) (lx-digits (ff-drop 10 cs))
-      (append (coerce "character*" 'list) d (cons #\Space r2))))
+    (mv-let (d r2) (lx-digits (ff-drop 10 cs))   ; or CHARACTER*(len); then FUNCTION name a function's header, as for INTEGER FUNCTION
+      (mv-let (ln r3) (if (consp d) (mv d r2) (ff-clen r2))
+        (append (coerce "character*" 'list) ln (cons #\Space (ff-fn-sp r3))))))
    (t (let ((k (ff-kw cs *ff-keywords*)))
         (if (not k) cs
           (let ((sp (kdr (assoc-equal k *ff-spaced*))))
@@ -455,11 +463,19 @@
 (defthm ff-spaced-ok-assoc
   (implies (and (ff-spaced-ok al) (cdr (assoc-equal k al)))
            (equal (ff-no-blanks (coerce (cdr (assoc-equal k al)) 'list)) (ff-no-blanks (coerce k 'list)))))
+(defthm ff-no-blanks-fn-sp (equal (ff-no-blanks (ff-fn-sp r)) (ff-no-blanks r))
+  :hints (("Goal" :use (:instance ff-no-blanks-prefix (p (coerce "function" 'list)) (cs r)) :in-theory (disable ff-no-blanks-prefix))))
+(defthm ff-no-blanks-clen (equal (append (ff-no-blanks (car (ff-clen r))) (ff-no-blanks (mv-nth 1 (ff-clen r)))) (ff-no-blanks r)))
+(defthm lx-digits-none (implies (not (consp (car (lx-digits x)))) (equal (mv-nth 1 (lx-digits x)) x)))
+(defthm ff-app-assoc (equal (append (append a b) c) (append a (append b c))))
+(defthm ff-no-blanks-clen-2 (equal (append (ff-no-blanks (car (ff-clen r))) (ff-no-blanks (mv-nth 1 (ff-clen r))) x) (append (ff-no-blanks r) x))
+  :hints (("Goal" :use (ff-no-blanks-clen (:instance ff-app-assoc (a (ff-no-blanks (car (ff-clen r)))) (b (ff-no-blanks (mv-nth 1 (ff-clen r)))) (c x)))
+                  :in-theory (disable ff-no-blanks-clen ff-clen ff-app-assoc))))
 (defthm ff-stmt-no-blanks (equal (ff-no-blanks (ff-stmt cs)) (ff-no-blanks cs))
-  :hints (("Goal" :induct (ff-stmt cs) :in-theory (disable ff-kw ff-top-eq ff-top-comma-p ff-labels-p ff-close assoc-equal ff-spaced-ok ff-prefix-p ff-no-blanks-prefix ff-take ff-drop ff-no-blanks))))
+  :hints (("Goal" :induct (ff-stmt cs) :in-theory (disable ff-clen ff-fn-sp ff-kw ff-top-eq ff-top-comma-p ff-labels-p ff-close assoc-equal ff-spaced-ok ff-prefix-p ff-no-blanks-prefix ff-take ff-drop ff-no-blanks))))
 ; and it reads a blank-free COMPLEX declaration (R704, 6.3.3.2) as one: the keyword, a blank, the rest
 (defthm ff-stmt-complex
-  (implies (and (ff-prefix-p (coerce "complex" 'list) cs) (not (ff-top-eq cs 0 nil nil)))
+  (implies (and (ff-prefix-p (coerce "complex" 'list) cs) (not (ff-prefix-p (coerce "complexfunction" 'list) cs)) (not (ff-top-eq cs 0 nil nil)))
            (equal (ff-stmt cs) (append (coerce "complex " 'list) (ff-drop 7 cs))))
   :hints (("Goal" :in-theory (disable ff-top-eq))))
 (in-theory (disable ff-stmt))
