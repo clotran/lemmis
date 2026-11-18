@@ -427,6 +427,26 @@
              (not (equal (drop-entries body) body)))
         (append (list hdr) (drop-entries body) (entry-units hdr (keep-specs body) body))
       us)))
+;; F77 9.1: a DATA statement may follow the statement functions and the executable statements; its values are
+;; the initial ones wherever it stands, so each unit's DATA statements are moved to the end of its specifications
+(defun data-stmt-p (st) (declare (xargs :guard t)) (and (consp st) (equal (car st) (kw "data")) (equal (car (last st)) (op "/"))))
+(defun spec-run (ss n)               ; how many statements lead ss that are specifications or DATA, plus n
+  (declare (xargs :guard (natp n)))
+  (if (and (consp ss) (or (spec-stmt-p (car ss)) (data-stmt-p (car ss)))) (spec-run (cdr ss) (1+ n)) n))
+(defun data-only (ss) (declare (xargs :guard t)) (if (atom ss) nil (if (data-stmt-p (car ss)) (cons (car ss) (data-only (cdr ss))) (data-only (cdr ss)))))
+(defun no-data (ss) (declare (xargs :guard t)) (if (atom ss) nil (if (data-stmt-p (car ss)) (no-data (cdr ss)) (cons (car ss) (no-data (cdr ss))))))
+(defun data-hoist (u)                ; a unit's statements, its header first (kept in place)
+  (declare (xargs :guard t :verify-guards nil))
+  (if (atom u) u (let ((n (spec-run (cdr u) 1))) (append (take n u) (data-only (nthcdr n u)) (no-data (nthcdr n u))))))
+(defun unit-end-p (st)              ; END, END PROGRAM, END SUBROUTINE, ... (not END IF, END DO)
+  (declare (xargs :guard t))
+  (and (consp st) (equal (car st) (kw "end"))
+       (or (atom (cdr st)) (member-equal (cadr st) (list (kw "program") (kw "subroutine") (kw "function") (kw "block") (kw "module")))) t))
+(defun hoist-units (ss cur)
+  (declare (xargs :guard t :verify-guards nil :measure (len ss)))
+  (cond ((atom ss) (data-hoist (reverse cur)))
+        ((unit-end-p (car ss)) (append (data-hoist (reverse (cons (car ss) cur))) (hoist-units (cdr ss) nil)))
+        (t (hoist-units (cdr ss) (cons (car ss) cur)))))
 (defun entry-sugar1 (ss cur)
   (declare (xargs :guard t :verify-guards nil :measure (len ss)))
   (cond ((atom ss) (reverse cur))
@@ -441,7 +461,7 @@
               (or (spec-stmt-p (cadr ss)) (and (consp (cadr ss)) (equal (kar (caadr ss)) :name) (equal (kadr (caadr ss)) "data"))))
          (unlabel-specs (cdr ss)))
         (t (cons (car ss) (unlabel-specs (cdr ss))))))
-(defun entry-sugar (ss) (declare (xargs :guard t :verify-guards nil)) (entry-sugar1 (unlabel-specs ss) nil))
+(defun entry-sugar (ss) (declare (xargs :guard t :verify-guards nil)) (entry-sugar1 (hoist-units (unlabel-specs ss) nil) nil))
 
 (defun parse-stmts (ss)              ; each statement parsed whole, or nil
   (declare (xargs :guard t :verify-guards nil))

@@ -48,7 +48,7 @@ Not a theorem: a test, run by `make check` (exit 1 on any difference).
   another for MOD): MOD now takes A's sign, as gfortran, flang and
   flang-new do (`cases/modzero.f90`); MODULO's zero stays processor dependent.
 - **FCVS**: scored, not failed, and only when `fcvs/` is fetched
-  (`bb fetch-fcvs.bb`; not committed): 152 of 180 programs print their
+  (`bb fetch-fcvs.bb`; not committed): 155 of 180 programs print their
   reference output exactly (build/fcvs.txt lists them; the names below are the earlier 75) (FM002-010, 012, 016-021, 025, 026, 030-045,
   060, 061, 097, 098, 109, 201-205, 251, 254, 256, 301, 306, 352-355,
   359-362, 368-370, 372-374, 718, 801, 803, 805-807, 812, 814, 816, 819, 821, 822). Of the rest, most stop at a statement outside the
@@ -248,7 +248,7 @@ Not a theorem: a test, run by `make check` (exit 1 on any difference).
 | R820 | assumed-shape-spec | proved |  |
 | R822 | deferred-shape-spec | proved | `:`, read as an assumed-shape-spec without a lower bound; an ALLOCATABLE entity's in the meaning |
 | R828 | intent-spec | proved | IN, OUT, INOUT, IN OUT |
-| R840 | data-stmt | proved | DATA data-stmt-set [[,] data-stmt-set]..., a declaration-construct (fps :dsets); in the meaning a main program's DATA statements initialize its variables before its first statement (8.6.7), each value as by intrinsic assignment; a subprogram's are not in the meaning yet |
+| R840 | data-stmt | proved | DATA data-stmt-set [[,] data-stmt-set]..., a declaration-construct (fps :dsets); a DATA statement after the statement functions or among the executable statements (F77 9.1) is moved, by statement-list sugar (frun hoist-units), to the end of its unit's specifications; in the meaning a main program's DATA statements initialize its variables before its first statement (8.6.7), each value as by intrinsic assignment; a subprogram's are not in the meaning yet |
 | R841 | data-stmt-set | proved | data-stmt-object-list / data-stmt-value-list / |
 | R842 | data-stmt-object | proved | a variable (a primary: name, array element, substring or structure component, kept whole) or a data-implied-do; in the meaning a scalar, a whole array in array element order, or an array element |
 | R843 | data-implied-do | part | read as an io-implied-do's list (fp :ilist), a superset; in the meaning (frun data-flat, nested, expression subscripts; no PARAMETER-only bound check, C-rules on the DO variable not enforced) |
@@ -376,7 +376,7 @@ Not a theorem: a test, run by `make check` (exit 1 on any difference).
 | R1523 | actual-arg-spec | proved | |
 | R1524 | actual-arg | part | expr (a variable is an expr's designator) |
 | R1529 | prefix | proved |  |
-| R1530 | prefix-spec | proved | type-spec, ELEMENTAL, IMPURE, NON_RECURSIVE, PURE, RECURSIVE |
+| R1530 | prefix-spec | proved | type-spec, ELEMENTAL, IMPURE, NON_RECURSIVE, PURE, RECURSIVE; in fixed form (flex ff-stmt, blanks optional) INTEGER/REAL/LOGICAL/DOUBLE PRECISION/COMPLEX FUNCTION and CHARACTER*n / CHARACTER*(len) FUNCTION |
 | R1532 | function-subprogram | proved |  |
 | R1533 | function-stmt | proved |  |
 | R1534 | dummy-arg-name | proved |  |
