@@ -335,7 +335,9 @@ extension starts before Stage A is done.
    Fuel monotonicity of a-ev/a-sx (gen-stmono); a-stc's call case is
    a-stcall (gen-stccall). 4b begun: g-sret against a-sx, call-free
    (gen-stret's `gsr-sem-thm`), the FUNCTION (gen-stretfn's
-   `g-sret-fn-sem`), a-sx with calls (gen-stsxf).
+   `g-sret-fn-sem`), a-sx with calls (gen-stsxf), its fuel monotonicity
+   (gen-sfmono); the code side of calls given the stobj under p-sforc
+   (gen-sfx) and gs-sem with the call case in model/wip/ (uncertified).
    Left, in order: the rest of stobj calls and mv (4a: updates, dests, the
    mv lambda on sxc), tail loops in subroutines and
    the value functions reading a stobj, with the other five checked

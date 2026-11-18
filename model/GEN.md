@@ -942,6 +942,47 @@ Two findings from acl2-fortran's `stmt` (both fixed now, see above):
    stobj terms (f's body on the arguments' values, S unchanged: a-ev's call
    case), a new evaluator; **`a-sxf-is-a-sx`** (and the list form): under
    no-prim-defs, wherever a-sx answers no error, a-sxf is a-sx.
+   **gen-sfmono.lisp**: **`a-sxf-mono`**, **`a-sxf-list-mono`** -- a-sxf's
+   fuel monotonicity (as gen-stmono's a-sx-mono; the defs-call case added).
+   **wip/gen-sfx.lisp** (WIP, the code side of calls given the stobj; every
+   event up to and including `svf-fcall-f-ev` certifies, ~8 min, most in
+   `sxf-is-sx-flag`; `svf-ok-is-f-ev` fails in its :fcall case, the goal
+   holding `(not (consp (svf e fr heap)))`: s-fn-val's result need not be a
+   cons. Fix to try first: have svf's :fcall branch answer
+   `(mv-let (err v) (s-fn-val ...) (mv err v))`, so svf always answers a
+   pair, then rerun): `svf`/`svlf`,
+   sv plus `(:fcall f ((:var ob) . cs))` answered by an oracle `s-fn-val` on
+   f, the heap entry of ob's object and the codes' values by svf (svlf);
+   `sxf`/`sxf-list`, sx on svf (gen-stx's events copied by
+   model/wip/clone.py). On cs-expr/cs-stmts svf is sv and sxf sx
+   (`svf-is-sv`, `sxf-list-is-sx-list`). **`svf-ok-is-f-ev`**,
+   **`sxf-ok-is-f-ex-list`**: under **`p-sforc procs b`** (wherever svf
+   answers no error on an :fcall, f-ev at any fuel past b + its size answers
+   the same -- the oracle is what the procedures answer, as p-sorc is for
+   CALL), wherever svf (sxf-list) answers no error, f-ev (f-ex-list) at fuel
+   past b + the size is svf (sxf-list). New hypothesis: p-sforc, discharged
+   later from g-sret-fn-sem (step 3 below). Neither theorem is proved yet.
+   **WIP, model/wip/ (not certified, not in `make model`)**: gs-sem on svf
+   against a-sxf. gen-sfexp/gen-sfnames/gen-sflam/gen-sfthm are gen-stexp/
+   -stnames/-stlam/-stthm copied by clone.py (events reading sv/sx/a-sx
+   kept with every name they define suffixed -f, the rest dropped since the
+   originals are included; map in wip/ren.json; fin.py then puts `sfc-ok` in
+   place of `(no-calls F X sigs nil)`). gs-sem-f adds the hypothesis
+   **`sf-orc sigs defs st o`** (for f in sigs and defs, S with st-ok, int64
+   ks: wherever a-sxf of f's body on `sf-vals` -- nil at the stobj formal,
+   ks in order -- answers v, `s-fn-val (g-sym f) S ks` answers v, of the
+   sig's type) and `sfc-ok` (no-calls, except a call of a sigs function
+   given the stobj: exactly one stobj formal, not a primitive; st-free
+   subterms call-free). gen-sfcall: `g-scall-args-nil-t` (upd nil, no error:
+   the upd-t answer, stobj arguments their formals), `acall-vals` (the
+   arguments' values are sf-vals of the value arguments', at any larger fuel,
+   by a-sxf-mono), `gs-call-f` (the call case: g-sargs on g-cvals by the
+   induction's gsa-sem-f, then the oracle by sf-orc), `sn-call-f` (names).
+   sn-ind-f's last branch also recurses on g-cvals; gs-rest-f takes the call
+   case by gs-call-f. None of these has been run yet: next, move them back to
+   model/ one at a time (gen-sfexp first) and certify; expect hint repairs
+   where the original proofs leaned on no-calls lemmas (sfc-ok analogues are
+   in gen-sfexp/gen-sfcall) or on a-sx's prim case (a-sxf's defs case).
    Left for hpg-next-tail/hpg-seq-op: calls of value functions given the
    stobj, `f(hs, args)`, in the code -- a heap-aware value oracle for sv's
    `:fcall` (svf/sxf, as s-call-val is for CALL), its bridge to f-ev under a
@@ -953,7 +994,11 @@ Two findings from acl2-fortran's `stmt` (both fixed now, see above):
    oracle hypothesis of each instance.
    **Hypotheses still to discharge** (milestone 2, stobj layer): the oracle
    hypotheses p-sorc/c-sorc/a-call-ok of gst-callst (discharged by tab-ok in
-   gst-callst-h); tab-ok, `(not (g-role nil st))`, o not a formal's name, o
+   gst-callst-h); p-sforc (sxf-ok-is-f-ex-list) and sf-orc (gs-sem-f, WIP),
+   to be discharged together from g-sret-fn-sem on a table, as gen-stdisch
+   did for CALL (the :fcall's arguments are svf codes, so that discharge is
+   an induction on the code, f-ev of the arguments svf's by the hypothesis
+   at smaller codes); tab-ok, `(not (g-role nil st))`, o not a formal's name, o
    not "r" -- each a ground fact decided on a given table/configuration;
    per heapgn instance, its callees' correctness while they read `hp_*`.
    Left of 4, restated (2026-11-18): (4a) sx's `:do` and `:call` cases and
