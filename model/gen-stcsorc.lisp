@@ -15,6 +15,10 @@
 
 (defthm int64-listp-int64s (implies (int64-listp ks) (int64s ks)))
 
+(defthm stc-len-count (<= (len x) (acl2-count x)) :rule-classes :linear)
+
+(defthm svs-is-len (implies (svs-is cs ks fr heap) (equal (len ks) (len cs))) :rule-classes :forward-chaining)
+
 ; f-bind of the value dummies on codes answering ks
 (defun fbc (vs cs ks fr fuel)
   (if (atom vs) (list cs ks fr fuel)
@@ -22,10 +26,10 @@
 
 (defthm f-bind-g-dummies-codes
   (implies (and (svs-is cs ks caller heap) (int64s ks) (equal (len ks) (len vs))
-                (integerp fuel) (< (+ 1 (len vs) (acl2-count cs)) fuel))
+                (integerp fuel) (< (+ 1 (acl2-count cs)) fuel))
            (equal (f-bind (g-dummies vs) cs caller callee outs heap procs fuel)
                   (mv nil (fb vs ks callee) outs)))
-  :hints (("Goal" :induct (fbc vs cs ks callee fuel) :in-theory (disable f-ev put g-formal sv)
+  :hints (("Goal" :induct (fbc vs cs ks callee fuel) :in-theory (disable f-ev put g-formal sv stc-len-count svs-is-len)
            :expand ((f-bind (g-dummies vs) cs caller callee outs heap procs fuel) (fb vs ks callee) (svs-is cs ks caller heap)))))
 
 ; f-invoke of a subroutine depends on its arguments only through f-bind
@@ -40,7 +44,7 @@
 
 (defthm f-bind-cons-codes
   (implies (and (svs-is cs ks caller heap) (int64-listp ks) (equal (len ks) (len vs))
-                (integerp fuel) (< (+ 6 (len vs) (acl2-count cs)) fuel))
+                (integerp fuel) (< (+ 6 (acl2-count cs)) fuel))
            (equal (f-bind (cons d (g-dummies vs)) (cons a cs) caller callee outs heap procs fuel)
                   (f-bind (cons d (g-dummies vs)) (cons a (g-lits ks)) caller callee outs heap procs fuel)))
   :hints (("Goal" :in-theory (disable f-ev obj-of put g-dummies g-lits fb svs-is)
@@ -50,7 +54,7 @@
 (defthm f-invoke-st-codes
   (implies (and (equal (kar p) :subroutine) (equal (nth 3 (true-list-fix p)) (cons d (g-dummies vs)))
                 (svs-is cs ks caller heap) (int64-listp ks) (equal (len ks) (len vs))
-                (integerp fuel) (< (+ 8 (len vs) (acl2-count cs)) fuel))
+                (integerp fuel) (< (+ 8 (acl2-count cs)) fuel))
            (equal (f-invoke p (cons a cs) caller heap procs fuel)
                   (f-invoke p (cons a (g-lits ks)) caller heap procs fuel)))
   :rule-classes nil
@@ -69,24 +73,25 @@
                                       g-locals g-em g-formals g-st-vals g-role g-sym)
            :use g-st-fn-shape)))
 
-; the CALL statement, from any caller frame
+; the CALL statement xc = CALL fname(ob, cs), from any caller frame
 (defthm g-st-fn-call
   (let ((vs (g-st-vals formals st)) (outs (list sv)))
     (implies (and (not (mv-nth 0 (gfn))) sv (eq (g-role sv st) :stobj) (tself-ok fn st)
                   (equal (g-st-dummies formals outs st) (list (list o :inout c)))
                   (stfn-hyps0)
+                  (equal (kar xc) :call) (equal (kadr xc) fname) (equal (kaddr xc) (cons (list :var ob) cs))
                   (equal (find-proc fname procs) (mv-nth 1 (gfn)))
                   (equal (cdr (lkp ob caller)) (list* :obj :inout key))
                   (svs-is cs ks caller heap)
-                  (integerp fuel) (< (+ 9 (len ks) (acl2-count cs) (acl2-count (gbody (gsf 1)))) fuel))
-             (equal (f-ex (list :call fname (cons (list :var ob) cs)) caller heap procs fuel)
+                  (integerp fuel) (< (+ 9 (acl2-count cs) (acl2-count (gbody (gsf 1)))) fuel))
+             (equal (f-ex xc caller heap procs fuel)
                     (mv :normal caller (put key (mv-nth 1 (a-st x (pairlis$ vs ks) s st defs n)) heap)))))
   :hints (("Goal" :do-not-induct t
            :in-theory (disable g-st-fn g-stmt g-st-dummies g-dummies g-st-vals g-role g-lits f-invoke f-ex-list a-st
                                st-plain no-calls st-ok st-wf svs-is g-st-fn-sem g-st-fn-shape g-has find-proc lkp put
                                g-reaches g-called g-fcalls g-ccalls g-locals g-em g-formals g-sym tself-ok lf-ok
                                g-st-fn-err stfn-run stl-holds stfn-body f-bind no-prim-defs int64-listp g-mvnth)
-           :expand ((f-ex (list :call fname (cons (list :var ob) cs)) caller heap procs fuel))
+           :expand ((f-ex xc caller heap procs fuel))
            :use ((:instance g-st-fn-sem (fuel (1- fuel)))
                  gfn-sub-shape
                  (:instance f-invoke-st-codes (p (mv-nth 1 (gfn))) (d (list o :inout c)) (vs (g-st-vals formals st))
