@@ -55,7 +55,7 @@
 
 ;; WRITE to an internal file (12.2.5, 12.8): the records the format makes fill the variable, a record per
 ;; element, each blank-filled; a record longer than the element, or more records than elements, is an error.
-;; ponytail: a whole CHARACTER variable or array only, formatted (not list-directed); an element or substring unit is :unit
+;; ponytail: formatted only (not list-directed); an array element or substring unit is one record, assigned by me-act through me-assign
 (defun int-fill (recs k n)
   (cond ((atom recs) (make-list n :initial-element (int-pad "" k)))
         ((zp n) :bad)
@@ -63,6 +63,25 @@
 (defun out-texts (out acc)           ; st-out's lines, oldest first, each line's text after its "~F"
   (if (atom out) acc
     (let ((s (kar (car out)))) (out-texts (cdr out) (cons (if (stringp s) (coerce (nthcdr 2 (coerce s 'list)) 'string) "") acc)))))
+(defun all-subs (as) (if (atom as) t (and (eq (kar (car as)) :sub) (all-subs (cdr as)))))
+(defun int-unit-val (e env st)      ; a WRITE's internal file, whole or an array element: its value (a blank element), defined or not (12.2.5 needs none)
+  (let ((p (lone-prim e)))
+    (and (member-eq (kar p) '(:name :ref))
+         (mv-let (b suf d) (env-lookup (tok-name (kadr p)) env)
+           (declare (ignore suf d))
+           (and (eq (kar b) :var)
+                (let ((v (st-get (kadr b) st)))
+                  (cond ((eq (kar p) :ref)
+                         (and (aval-p v) (eq (a-ty v) :c) (all-subs (kaddr p)) (equal (len (kaddr p)) (len (a-lbs v))) (c-fit (a-k v) (vc ""))))
+                        ((aval-p v) (and (eq (a-ty v) :c) v))
+                        ((eq (scal-ty v) :c) (if (cval-p v) v (c-fit (c-len v) (vc ""))))
+                        (t nil))))))))
+(defun int-text (fm vs k st)        ; (mv text-or-err st): the one record of length k the format makes
+  (let ((out (st-out st)))
+    (mv-let (e st) (io-write fm vs t (st-out-set nil st))
+      (let ((recs (out-texts (st-out st) nil)) (st (st-out-set out st)))
+        (if (errp e) (mv e st)
+          (let ((fs (int-fill recs k 1))) (if (eq fs :bad) (mv (err :record) st) (mv (car fs) st))))))))
 (defun int-write (e fm vs adv env st)
   (let* ((p (lone-prim e)) (tk (kadr p)))
     (mv-let (b suf d) (env-lookup (tok-name tk) env)
@@ -933,6 +952,7 @@
                    (let ((fm (if (fv-name fm0) (fv-text fv) fm0)))
                    (with-v (uv st) (cond ((eq u :star) (mv (list (vi 4 (if (member-eq (kar s) '(:write :print)) 6 5))) st))
                                          (rc (me-list rc env st cx (1- fuel)))
+                                         ((and (eq (kar s) :write) (int-unit-val u env st)) (mv (list (int-unit-val u env st)) st))
                                          (t (with-v (v st) (me-ev :expr u env st cx (1- fuel)) (mv (list v) st))))
                     (let ((u (kar uv)) (r (kadr uv)))
                      ; the unit * is OUTPUT_UNIT, 6, or INPUT_UNIT, 5, for both compilers (16.10.2.23, .13); another
@@ -946,7 +966,13 @@
                            ((and rc (member-eq fm '(:unf :star))) (mv (err (if (eq fm :unf) :pd :format)) st))   ; F77 12.8.1: no list-directed direct access
                            ((member-eq (kar s) '(:write :print))
                             (with-v (vs st) (me-list (kaddr s) env st cx (1- fuel))
-                              (cond ((int-file-p u) (int-write (kaddr (io-spec :unit ios)) fm vs adv env st))
+                              (cond ((and (int-file-p u) (eq (kar (lone-prim (kaddr (io-spec :unit ios)))) :ref))   ; an element or substring
+                                     (let ((p (lone-prim (kaddr (io-spec :unit ios)))))
+                                       (if (or (not (cval-p u)) (eq fm :star) (not adv)) (mv (err :unit) st)
+                                         (mv-let (r st) (int-text fm vs (c-len u) st)
+                                           (if (errp r) (mv r st)
+                                             (me-assign (list :assign (kadr p) t (kaddr p) (prim-expr nil (list :lit (list :char r)))) env st cx (1- fuel)))))))
+                                    ((int-file-p u) (int-write (kaddr (io-spec :unit ios)) fm vs adv env st))
                                     ((and (file-unit-p u) rc) (file-dwrite u r fm vs st))
                                     ((file-unit-p u) (file-write (v-num u) fm vs st))
                                     (t (io-write fm vs adv st)))))

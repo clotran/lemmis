@@ -817,7 +817,7 @@
 ;; set start together (8.10.1.2), sets with a variable in common are one
 ;; group. Outside the subset, an :error :equiv: a type other than integer,
 ;; real, logical, complex, character; kinds not all default unless one type
-;; and kind (C8110; a character's kind its length); objects that cannot share
+;; and kind (C8110), or all character; objects that cannot share
 ;; storage so. A member already defined (in COMMON, or SAVE'd) gives its
 ;; units to the others (19.6.5).
 (defun unit-equivs (ds)
@@ -849,7 +849,7 @@
           ((not (and (eq (kar p) :ref) (aval-p v))) (mv (err :equiv) nil vs))
           (t (mv-let (ok idx vs) (eqv-take (len (kaddr p)) vs)
                (let ((off (and ok (arr-offset idx (a-lbs v) (a-ubs v)))))
-                 (if (natp off) (mv nil (cons loc (* off (if (eq (a-ty v) :z) 2 1))) vs) (mv (err :equiv) nil vs))))))))
+                 (if (natp off) (mv nil (cons loc (* off (case (a-ty v) (:z 2) (:c (nfix (a-k v))) (otherwise 1)))) vs) (mv (err :equiv) nil vs))))))))
 (defun eqv-union (a b)               ; (mv ok alist): a's (loc . start)s with b's, a loc at one start
   (declare (xargs :guard t))
   (if (atom a) (mv t b)
@@ -876,7 +876,8 @@
 (defun eqv-kinds-ok (tks)            ; C8110: numeric or logical all of default kind, or one type and kind
   (declare (xargs :guard t))
   (or (and (subsetp-equal (strip-cars-safe tks) '(:i :r :l :z)) (subsetp-equal (strip-cadrs-safe tks) '(4)))
-      (and (consp tks) (subsetp-equal tks (list (car tks))))))
+      (and (consp tks) (subsetp-equal tks (list (car tks))))
+      (and (consp tks) (subsetp-equal (strip-cars-safe tks) '(:c)))))   ; character of any lengths (F77 17.1.2)
 (defun eqv-all-undef (us) (declare (xargs :guard t)) (if (atom us) t (and (eq (kaddr (car us)) :u) (eqv-all-undef (cdr us)))))
 (defun eqv-install (g ms st)         ; each member's key (:eqv loc) to the group g
   (declare (xargs :guard t))

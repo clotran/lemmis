@@ -11,7 +11,7 @@
 ; makes that element undefined (19.6.6 (1)); a complex takes its two parts
 ; from two default real units (19.6.5 (1)). Subset (me-equiv checks it):
 ; integer, real, logical and complex objects all of default kind, or all
-; of one type and kind (a character's element then one unit); no
+; of one type and kind, or all character (a character's unit one character); no
 ; substring or derived type; a main program's.
 ; ponytail: a DO CONCURRENT trace logs the write, not its associates'.
 
@@ -20,11 +20,14 @@
 (include-book "fval")
 (set-verify-guards-eagerness 0)   ; as fval
 
-(defun eqv-elt-units (ty k e)        ; one element's units
+(defun eqv-char-units (cs) (declare (xargs :guard t)) (if (atom cs) nil (cons (list :c 1 (car cs)) (eqv-char-units (cdr cs)))))
+(defun eqv-elt-units (ty k e)        ; one element's units: a character of length k, k units of one character each
   (declare (xargs :guard t))
+  (if (eq ty :c)
+      (if (stringp e) (eqv-char-units (coerce e 'list)) (make-list (nfix k) :initial-element (list :c 1 e)))
   (if (eq ty :z)
       (if (consp e) (list (list :r k (car e)) (list :r k (cdr e))) (list (list :r k e) (list :r k e)))   ; e :u or :pd
-    (list (list ty k e))))
+    (list (list ty k e)))))
 (defun eqv-elts-units (ty k es)
   (declare (xargs :guard t))
   (if (atom es) nil (append (eqv-elt-units ty k (car es)) (eqv-elts-units ty k (cdr es)))))
@@ -35,15 +38,24 @@
 (defun eqv-unit (ty k u)             ; a unit's raw as an element of type ty k, else :u
   (declare (xargs :guard t))
   (if (and (eq (kar u) ty) (equal (kadr u) k)) (kaddr u) :u))
+(defun eqv-chars (n us)              ; n characters from the units us, :u (or :pd) if one is not a character
+  (declare (xargs :guard t :measure (nfix n)))
+  (if (zp n) nil
+    (let ((c (eqv-unit :c 1 (kar us))) (r (eqv-chars (1- n) (kdr us))))
+      (cond ((characterp c) (if (listp r) (cons c r) r))
+            ((and (eq c :pd) (or (eq r :pd) (equal n 1))) :pd)
+            (t :u)))))
 (defun eqv-elt (ty k us)             ; (mv raw rest): an element of type ty k from the units us
   (declare (xargs :guard t))
+  (if (eq ty :c)
+      (let ((cs (eqv-chars k us))) (mv (if (listp cs) (coerce cs 'string) cs) (nthcdr (nfix k) us)))
   (if (eq ty :z)
       (let ((a (eqv-unit :r k (kar us))) (b (eqv-unit :r k (kadr us))))
         (mv (cond ((and (eq a :pd) (eq b :pd)) :pd)
                   ((or (member-eq a '(:u :pd)) (member-eq b '(:u :pd))) :u)
                   (t (cons a b)))
             (kdr (kdr us))))
-    (mv (eqv-unit ty k (kar us)) (kdr us))))
+    (mv (eqv-unit ty k (kar us)) (kdr us)))))
 (defun eqv-elts (ty k n us)
   (declare (xargs :guard t :measure (nfix n)))
   (if (zp n) nil (mv-let (e r) (eqv-elt ty k us) (cons e (eqv-elts ty k (1- n) r)))))
