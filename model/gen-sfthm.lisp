@@ -6,10 +6,10 @@
 (include-book "gen-sflam")
 
 (defthm a-sx-the-check-f
-  (implies (and (not-leaf) (eq (car x) 'the-check) (= (len x) 4) (not (car (a-sxf x env s st defs n))))
+  (implies (and (not-leaf) (eq (car x) 'the-check) (= (len x) 4) (no-prim-defs defs) (not (car (a-sxf x env s st defs n))))
            (and (not (car (a-sxf (cadddr x) env s st defs (- n 4))))
                 (equal (mv-nth 1 (a-sxf x env s st defs n)) (mv-nth 1 (a-sxf (cadddr x) env s st defs (- n 4))))))
-  :hints (("Goal" :in-theory (e/d (kaddr kdr kar) (g-st-free g-role a-ev a-sxf g-mvnth))
+  :hints (("Goal" :in-theory (e/d (kaddr kdr kar) (g-st-free g-role a-ev a-sxf g-mvnth no-prim-defs))
            :expand ((a-sxf x env s st defs n) (a-sxf-list (cdr x) env s st defs (1- n))
                     (a-sxf-list (cddr x) env s st defs (+ -2 n)) (a-sxf-list (cdddr x) env s st defs (+ -3 n))
                     (a-sxf-list (cddddr x) env s st defs (+ -4 n)) (len x) (len (cdr x)) (len (cddr x))
@@ -26,13 +26,13 @@
            :use ((:instance gs-sem-use-f (x (cadddr x)) (n (- n 4)))))))
 
 (defthm a-sx-imp-f
-  (implies (and (gs-impp x st) (not (car (a-sxf x env s st defs n))))
+  (implies (and (gs-impp x st) (no-prim-defs defs) (not (car (a-sxf x env s st defs n))))
            (and (not (car (a-sxf (cadr x) env s st defs (- n 2))))
                 (not (car (a-sxf (caddr x) env s st defs (- n 3))))
                 (equal (mv-nth 1 (a-sxf x env s st defs n))
                        (implies (mv-nth 1 (a-sxf (cadr x) env s st defs (- n 2)))
                                 (mv-nth 1 (a-sxf (caddr x) env s st defs (- n 3)))))))
-  :hints (("Goal" :in-theory (e/d (kaddr kdr kar) (g-st-free g-role a-ev a-sxf g-mvnth))
+  :hints (("Goal" :in-theory (e/d (kaddr kdr kar) (g-st-free g-role a-ev a-sxf g-mvnth no-prim-defs))
            :expand ((a-sxf x env s st defs n) (a-sxf-list (cdr x) env s st defs (1- n))
                     (a-sxf-list (cddr x) env s st defs (+ -2 n)) (a-sxf-list (cdddr x) env s st defs (+ -3 n))
                     (len x) (len (cdr x)) (len (cddr x)) (len (cdddr x))))))
@@ -53,7 +53,7 @@
                    (not (mv-nth 1 (a-sxf (cadr x) env s st defs (- n 2)))))
            :in-theory (disable g-sexpr a-sxf sxf-list sxf svf no-calls sfc-ok em-ok scalar-ok st-ok obj-is gs-impp
                                g-sexpr-imp if-stmts g-tmp nfix dty decl-ok-subset sif-glue-f sv-is-fv-f fv
-                               sx-list-is-fx-list-f fx-list)
+                               sx-list-is-fx-list-f fx-list sxf-sx-list-cons svf-is-sv sxf-list-is-sx-list)
            :do-not (quote (eliminate-destructors generalize))
            :use ((:instance decl-ok-subset (a (j1 5)) (b (j2 5)))))))
 

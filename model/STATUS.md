@@ -80,9 +80,11 @@ oracles made concrete from a table with p-sorc/c-sorc/a-call-ok proved from `tab
 only tab-ok, no oracle hypothesis (gen-stinst). 4b begun: `gsr-sem-thm`, g-sret (value
 functions reading a stobj) against a-sx, call-free (gen-stret); `g-sret-fn-sem`, f-invoke of
 the emitted FUNCTION answers a-sx's value (gen-stretfn); `a-sxf` (a-sx with calls) = a-sx
-(gen-stsxf); a-sxf-mono (gen-sfmono). WIP in model/wip/ (uncertified, GEN.md): svf/sxf (sv/sx with
-`f(hs, args)` by an oracle) and their f-ev bridge under p-sforc (gen-sfx, one lemma failing),
-gs-sem on svf against a-sxf with the call case. Left, ~6 lanes: rest of 4a (updates/dests/mv
+(gen-stsxf); a-sxf-mono (gen-sfmono); svf/sxf (sv/sx with `f(hs, args)` by an oracle
+s-fn-val) = f-ev/f-ex-list under p-sforc (gen-sfx); gs-sem on svf against a-sxf with the call
+case, `gs-sem-holds-f` under sf-orc (gen-sfexp, -sfcall, -sfnames, -sflam, -sfthm). NEXT:
+discharge p-sforc and sf-orc on a table (design in GEN.md "Next (step 3)"), then
+hpg-next-tail-fortran-correct. Left, ~6 lanes: rest of 4a (updates/dests/mv
 lambda on sxc; a-stc's call = a-stcall done, gen-stccall; GEN.md), subroutine tail loops + the other 5 heapgn instances (4b), `hp_*`
 externs (4c), values/runtime shims (2), acl2-fortran printing g-module's output (1).
 

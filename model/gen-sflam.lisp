@@ -10,7 +10,7 @@
     (declare (ignore cnt2))
     (mv-let (ae vs) (a-sxf-list xs env s st defs n)
       (implies (and (not e) (not ae) (sfc-ok :list xs sigs st) (em-ok em env fr) (decl-ok locs2 fr)
-                    (no-prim-defs defs) (not (consp (lkp 'mv-nth defs))) (not (g-role 'mv-nth st)) (not (g-role 'mv st))
+                    (no-prim-defs defs) (sf-orc sigs defs st o) (not (consp (lkp 'mv-nth defs))) (not (g-role 'mv-nth st)) (not (g-role 'mv st))
                     (st-ok st o s) (obj-is o s fr heap) (sn-hyps) (em-nostobj em st)
                     (symbol-listp vars) (no-duplicatesp-equal vars) (equal (len vars) (len xs))
                     (not (member-equal 'mv vars)) (g-st-ident vars xs st))
@@ -22,7 +22,7 @@
 (defthm gsb-sem-use-f
   (implies (and (gsb-sem-f vars xs em cnt locs sigs fnames st env s defs n fr heap o)
                 (not (gsv 0)) (not (car (a-sxf-list xs env s st defs n))) (sfc-ok :list xs sigs st) (em-ok em env fr)
-                (decl-ok (gsv 4) fr) (no-prim-defs defs) (not (consp (lkp 'mv-nth defs)))
+                (decl-ok (gsv 4) fr) (no-prim-defs defs) (sf-orc sigs defs st o) (not (consp (lkp 'mv-nth defs)))
                 (not (g-role 'mv-nth st)) (not (g-role 'mv st)) (st-ok st o s) (obj-is o s fr heap) (sn-hyps)
                 (em-nostobj em st) (symbol-listp vars) (no-duplicatesp-equal vars) (equal (len vars) (len xs))
                 (not (member-equal 'mv vars)) (g-st-ident vars xs st))
@@ -34,7 +34,7 @@
                 (em-ok (append (gsv 2) em) (pairlis$ vars (mv-nth 1 (a-sxf-list xs env s st defs n)))
                        (mv-nth 1 (sxf-list (gsv 1) fr heap)))))
   :hints (("Goal" :do-not-induct t
-           :in-theory (e/d (gsb-sem-f) (g-svals a-sxf-list sxf-list no-calls sfc-ok em-ok decl-ok st-ok obj-is g-role)))))
+           :in-theory (e/d (gsb-sem-f) (g-svals a-sxf-list sxf-list no-calls sfc-ok em-ok decl-ok st-ok obj-is g-role sf-orc)))))
 
 (in-theory (disable gsb-sem-f))
 

@@ -337,7 +337,9 @@ extension starts before Stage A is done.
    (gen-stret's `gsr-sem-thm`), the FUNCTION (gen-stretfn's
    `g-sret-fn-sem`), a-sx with calls (gen-stsxf), its fuel monotonicity
    (gen-sfmono); the code side of calls given the stobj under p-sforc
-   (gen-sfx) and gs-sem with the call case in model/wip/ (uncertified).
+   (gen-sfx: svf-ok-is-f-ev, sxf-ok-is-f-ex-list) and gs-sem with the call case
+   (gen-sfexp..gen-sfthm: gs-sem-holds-f, under sf-orc); next the discharge of
+   p-sforc and sf-orc on a table (GEN.md).
    Left, in order: the rest of stobj calls and mv (4a: updates, dests, the
    mv lambda on sxc), tail loops in subroutines and
    the value functions reading a stobj, with the other five checked

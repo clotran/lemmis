@@ -944,30 +944,33 @@ Two findings from acl2-fortran's `stmt` (both fixed now, see above):
    no-prim-defs, wherever a-sx answers no error, a-sxf is a-sx.
    **gen-sfmono.lisp**: **`a-sxf-mono`**, **`a-sxf-list-mono`** -- a-sxf's
    fuel monotonicity (as gen-stmono's a-sx-mono; the defs-call case added).
-   **wip/gen-sfx.lisp** (WIP, the code side of calls given the stobj; every
-   event up to and including `svf-fcall-f-ev` certifies, ~8 min, most in
-   `sxf-is-sx-flag`; `svf-ok-is-f-ev` fails in its :fcall case, the goal
-   holding `(not (consp (svf e fr heap)))`: s-fn-val's result need not be a
-   cons. Fix to try first: have svf's :fcall branch answer
-   `(mv-let (err v) (s-fn-val ...) (mv err v))`, so svf always answers a
-   pair, then rerun): `svf`/`svlf`,
+   **gen-sfx.lisp** (the code side of calls given the stobj): `svf`/`svlf`,
    sv plus `(:fcall f ((:var ob) . cs))` answered by an oracle `s-fn-val` on
    f, the heap entry of ob's object and the codes' values by svf (svlf);
-   `sxf`/`sxf-list`, sx on svf (gen-stx's events copied by
-   model/wip/clone.py). On cs-expr/cs-stmts svf is sv and sxf sx
+   the :fcall branch answers `(mv-let (err v) (s-fn-val ...) (mv err v))`,
+   so svf always answers a pair (s-fn-val's result need not be one);
+   `sxf`/`sxf-list`, sx on svf. On cs-expr/cs-stmts svf is sv and sxf sx
    (`svf-is-sv`, `sxf-list-is-sx-list`). **`svf-ok-is-f-ev`**,
-   **`sxf-ok-is-f-ex-list`**: under **`p-sforc procs b`** (wherever svf
+   **`sxf-ok-is-f-ex-list`** (proved): under **`p-sforc procs b`** (wherever svf
    answers no error on an :fcall, f-ev at any fuel past b + its size answers
    the same -- the oracle is what the procedures answer, as p-sorc is for
    CALL), wherever svf (sxf-list) answers no error, f-ev (f-ex-list) at fuel
-   past b + the size is svf (sxf-list). New hypothesis: p-sforc, discharged
-   later from g-sret-fn-sem (step 3 below). Neither theorem is proved yet.
-   **WIP, model/wip/ (not certified, not in `make model`)**: gs-sem on svf
-   against a-sxf. gen-sfexp/gen-sfnames/gen-sflam/gen-sfthm are gen-stexp/
-   -stnames/-stlam/-stthm copied by clone.py (events reading sv/sx/a-sx
-   kept with every name they define suffixed -f, the rest dropped since the
-   originals are included; map in wip/ren.json; fin.py then puts `sfc-ok` in
-   place of `(no-calls F X sigs nil)`). gs-sem-f adds the hypothesis
+   past b + the size is svf (sxf-list). The statement induction chains step
+   lemmas over named claims (`sxs-ok`/`sxl-ok`, defun-nx; `sxs-if-step`,
+   `sxs-select-step`, `sxs-other-step`, `sxl-step`) in the minimal theory;
+   the f-ev/svf openers are minimal-theory proofs. New hypothesis: p-sforc,
+   discharged later from g-sret-fn-sem (below).
+   **gen-sfexp, gen-sfcall, gen-sfnames, gen-sflam, gen-sfthm** (all certified):
+   gs-sem on svf against a-sxf, **`gs-sem-holds-f`** / `gs-sem-thm-f`.
+   gen-sfexp/-sfnames/-sflam/-sfthm are gen-stexp/-stnames/-stlam/-stthm on
+   svf/sxf-list/a-sxf (events suffixed -f; the originals are included), with
+   `sfc-ok` in place of `(no-calls F X sigs nil)`. Repairs on the way in:
+   svf-ind stops at atoms; comp-of/obj-of frame agreement by :use (as rewrite
+   rules they loop); a-sxf of a primitive needs `(member (car x) *g-prims*)`
+   (a-sxf's defs case; g-sexpr gives it by g-unop-prim/g-binop-prim) and the
+   the-check/implies lemmas `no-prim-defs`; gsb-sem-f now carries sf-orc (the
+   copy had lost it); the sv-bridge rules (svf-is-sv, sxf-sx-list-cons,
+   sxf-list-is-sx-list) disabled where they split. gs-sem-f adds the hypothesis
    **`sf-orc sigs defs st o`** (for f in sigs and defs, S with st-ok, int64
    ks: wherever a-sxf of f's body on `sf-vals` -- nil at the stobj formal,
    ks in order -- answers v, `s-fn-val (g-sym f) S ks` answers v, of the
@@ -976,25 +979,37 @@ Two findings from acl2-fortran's `stmt` (both fixed now, see above):
    subterms call-free). gen-sfcall: `g-scall-args-nil-t` (upd nil, no error:
    the upd-t answer, stobj arguments their formals), `acall-vals` (the
    arguments' values are sf-vals of the value arguments', at any larger fuel,
-   by a-sxf-mono), `gs-call-f` (the call case: g-sargs on g-cvals by the
-   induction's gsa-sem-f, then the oracle by sf-orc), `sn-call-f` (names).
+   by a-sxf-mono), `gs-call-f` (the call case, by `gs-call-shape` (the code:
+   g-sargs on g-cvals, the call on the object), `gs-call-run` (its run:
+   gsa-sem-f, then the oracle on S and the values), `gs-call-src-args`/
+   `gs-call-src` (a-sxf's call: the body on sf-vals, which sf-orc answers),
+   joined in `gs-call-core` in the minimal theory), `sn-call-f` (names).
    sn-ind-f's last branch also recurses on g-cvals; gs-rest-f takes the call
-   case by gs-call-f. None of these has been run yet: next, move them back to
-   model/ one at a time (gen-sfexp first) and certify; expect hint repairs
-   where the original proofs leaned on no-calls lemmas (sfc-ok analogues are
-   in gen-sfexp/gen-sfcall) or on a-sx's prim case (a-sxf's defs case).
-   Left for hpg-next-tail/hpg-seq-op: calls of value functions given the
-   stobj, `f(hs, args)`, in the code -- a heap-aware value oracle for sv's
-   `:fcall` (svf/sxf, as s-call-val is for CALL), its bridge to f-ev under a
-   p-sorc-like hypothesis, gs-sem on svf against a-sxf with the call case
-   (the oracle answering a-sxf of f's body), discharged from g-sret-fn-sem
-   from any caller frame with argument codes (gen-stcsorc's pattern); then
-   the instances, whose callees (hpg-ot, hpg-or, hpg-obj-at, hpg-okd,
-   hpg-oi) read `hp_*` externs: until 4c their correctness is a named
-   oracle hypothesis of each instance.
+   case by gs-call-f.
+   **Next (step 3): discharge p-sforc and sf-orc on a table**, as gen-stdisch/
+   gen-stinst did for CALL. Design: a table `ftab` of value functions
+   `(fn formals (nil) t x)` (one stobj formal, x call-free), `ftab-ok`
+   decidable (each entry translates by g-st-fn, its procedure is procs',
+   its sig/def agree with sigs/defs, g-sret-fn-sem's side conditions);
+   the concrete oracle `s-fn-val-h name s ks` = a-sx of the entry's body on
+   ks at a fuel chosen (defchoose) where a-sx answers no error, else :orc
+   (sf-orc quantifies over every n; a-sx-mono makes all non-error fuels
+   agree). sf-orc-h: by a-sxf-is-a-sx (call-free body) and the env with nil
+   at the stobj formal vs g-st-vals' env (a-sx ignores the stobj binding --
+   a lemma). p-sforc-h: by induction on the call code's size -- a bounded
+   p-sforc (codes below m) gives f-ev of the argument codes = svlf by a
+   bounded svf-ok-is-f-ev, then f-ev of the :fcall is f-invoke of the
+   generated FUNCTION on codes, which a codes form of g-sret-fn-sem answers
+   (f-invoke-same-bind for :function, as gen-stcsorc did for subroutines).
+   Then the functional instance of sxf-ok-is-f-ex-list and gs-sem-thm-f
+   with s-fn-val := s-fn-val-h (every function defined from s-fn-val --
+   svf, svlf, sxf, sxf-list, the -f predicates, p-sforc, sf-orc --
+   replaced; stinst-hint's pattern). Then hpg-next-tail: its callees
+   (hpg-ot, hpg-or, hpg-obj-at, hpg-okd, hpg-oi) read `hp_*` externs, so
+   until 4c their correctness is a named oracle hypothesis of the instance.
    **Hypotheses still to discharge** (milestone 2, stobj layer): the oracle
    hypotheses p-sorc/c-sorc/a-call-ok of gst-callst (discharged by tab-ok in
-   gst-callst-h); p-sforc (sxf-ok-is-f-ex-list) and sf-orc (gs-sem-f, WIP),
+   gst-callst-h); p-sforc (sxf-ok-is-f-ex-list) and sf-orc (gs-sem-holds-f),
    to be discharged together from g-sret-fn-sem on a table, as gen-stdisch
    did for CALL (the :fcall's arguments are svf codes, so that discharge is
    an induction on the code, f-ev of the arguments svf's by the hypothesis
