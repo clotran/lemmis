@@ -542,8 +542,8 @@ Two findings from acl2-fortran's `stmt` (both fixed now, see above):
    `intent(out)` results. fsyn has them already. Two lanes. Translation
    started (gen-st.lisp, above; hpg-spush checked and proved).
    **Status: the stobj layer is done for the st-plain subset** (g-st-fn-sem,
-   gen-stfn.lisp; hpg-spush-fortran-correct its instance), up to the three
-   output side conditions named in (a) step (4) below. Calls of stobj
+   gen-stfn.lisp; hpg-spush-fortran-correct its instance), with no side
+   condition on the translator's output (gen-stlf, gen-stok: step (4) below). Calls of stobj
    subroutines, mv and tail loops in subroutines are deferred until after
    Stage A. Left:
    (a) [semantics done: gen-stsem.lisp's `a-sx`/`a-st`, stobj terms
@@ -725,16 +725,24 @@ Two findings from acl2-fortran's `stmt` (both fixed now, see above):
    x st-plain and call-free, `(tself-ok fn st)` (fn not a :set/:seti role
    nor `if`), o not a value formal's name, int64 ks, the caller's `ob`
    bound to `(:obj :inout . key)`, the heap's key to S with st-ok/st-wf,
-   a-st answering no error, and fuel past 6 + (len ks) + the body's
-   acl2-count: f-invoke of the subroutine on `((:var ob) . (g-lits ks))`
-   answers `(mv nil caller (put key S' heap))`, S' a-st's. Three
-   side conditions on the translator's output are still hypotheses,
-   evaluated per instance (for hpg-spush by computation): `(lf-ok locs
-   fnames)` of g-stmt's temporaries, `(cs-stmts stmts)`, and `(not (g-has
-   '(:cycle) stmts))`. **Left: prove them**, one induction over sn-ind
-   (g-sexpr: lf-ok kept, statements cs and CYCLE-free, code cs-expr)
-   and gst-ind (g-stmt on st-plain), as stn-ok-thm was; then drop them
-   from g-st-fn-sem. How (i)-(v) below were settled: (i) as proposed,
+   a-st answering no error, and fuel past 6 + (len ks) + the emitted
+   body's acl2-count: f-invoke of the subroutine on `((:var ob) . (g-lits ks))`
+   answers `(mv nil caller (put key S' heap))`, S' a-st's. **No side
+   condition on the translator's output is left**: the three that were
+   hypotheses are proved or made unnecessary. `(lf-ok locs fnames)` of
+   g-stmt's temporaries: gen-stlf.lisp, `sl-ok-thm` (g-sexpr, g-sargs,
+   g-svals keep lf-ok, by sn-ind, call-free) and `stl-ok-thm` (g-stmt and
+   g-sacts on st-plain, by gst-ind; `stl-holds`). `(cs-stmts stmts)`:
+   gen-stok.lisp's **`sx-ok-is-f-ex-list`**: wherever sx-list answers a
+   status that is not an error, f-ex-list at fuel past the statements'
+   size is sx-list, cs or not (sv answers :syntax outside cs-expr --
+   `sv-ok-cs`; an assignment sx runs without error is a cs-stmt; an if or
+   select runs only the branch taken, by both). `(not (g-has '(:cycle)
+   stmts))`: when g-has finds one, g-st-fn emits `do; stmts; exit; end do`,
+   and `f-ex-list-do-exit` shows that answers what stmts answer when sx-list
+   of stmts answers :normal (no CYCLE is run). The fuel bound is now on the
+   body as emitted (`gbody`: the DO adds 5), so hpg-spush's bound (196) is
+   unchanged. How (i)-(v) below were settled: (i) as proposed,
    g-st-fn passes `(append fnames (st-objs st))` (st-objs moved to
    gen-st; a :sub entry's formal list in it is harmless, g-fresh compares
    strings; check-gen unchanged); (ii) `tsx-plain`/`g-stmt-tself`: a
@@ -777,9 +785,17 @@ Two findings from acl2-fortran's `stmt` (both fixed now, see above):
    (3), the calls/mv/tail loops for stobjs
    (sx cases for :do and :call, f-invoke on a subroutine with a
    heap-aware oracle like f-call-val), is deferred until after Stage A.
+   Left of 4, restated (2026-11-18): (4a) sx's `:do` and `:call` cases and
+   f-invoke of a generated subroutine under a heap-aware oracle (as
+   f-call-val is for functions), then gst-sem for g-callst and the mv lambda
+   (one lane); (4b) the tail self-call in subroutines (g-stail, the DO
+   around the body, as g-fn-sem-loop) and g-sret's value functions reading a
+   stobj, then the instances hpg-drain, hpg-run-from-batch, hpg-run-take,
+   hpg-next-tail, hpg-seq-op (one lane); (4c) the `hp_*` extern
+   fields/arrays (fsyn's externs first), for the rest of heapgn (one lane).
 5. Values and the runtime shims (`type(value)`, `rt_*`): fsyn/fsem first need
    an abstract runtime. Two lanes.
 6. Switch acl2-fortran to print g-module's output, and fix or confirm the
    lambda scoping. One lane.
 
-Total: about 8 lanes.
+Total: about 6 lanes (4a, 4b, 4c, 5 twice, 6).

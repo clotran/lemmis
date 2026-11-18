@@ -69,6 +69,11 @@ PLAN.md, "Milestones, in order" (James, 2026-11-01 and 2026-11-11): Stage A to t
 end first, then the rest of milestone 2 (values, runtime shims, acl2-fortran printing
 g-module's output); no extension starts before Stage A is done. The gates and what
 each theorem means: PLAN.md "Verification".
+Milestone 2 now (model/GEN.md "What remains"): 12/12 checked functions have
+`<fn>-fortran-correct`; `g-st-fn-sem` (st-plain stobj subroutines) has no side
+condition on the translator's output (gen-stlf, gen-stok). Left, ~6 lanes: stobj
+calls/mv (4a), subroutine tail loops + the other 5 heapgn instances (4b), `hp_*`
+externs (4c), values/runtime shims (2), acl2-fortran printing g-module's output (1).
 
 ## Traps
 

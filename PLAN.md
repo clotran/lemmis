@@ -319,13 +319,17 @@ extension starts before Stage A is done.
    tail-recursive function's DO loop answers a-ev's value, at any fuel
    past n * (size + 2), n a-ev's fuel (the source's self-calls only in
    tail position, `tail-only`; the function not named `if`).
-   Left, in order: hpg-size-class instantiated and discharged with
-   g-fn-sem-loop; calls (g-expr's run with :fcall, the cross-function
-   induction), then hpg-class-len;
-   stobjs (fields, arrays and the bounds error, subroutines, mv);
-   values and the runtime shims; then acl2-fortran prints g-module's
-   output (and its lambda scoping, which leaks a binding to later
-   siblings, fixed or shown harmless). About 8-9 lanes.
+   Done since: all 12 checked functions have `<fn>-fortran-correct`
+   (hpg-size-class by g-fn-sem-loop, hpg-class-len with calls); stobjs
+   for the st-plain subset (fields, arrays and the bounds error, if,
+   let): `g-st-fn-sem` with no side condition on the translator's
+   output, hpg-spush-fortran-correct its instance (model/GEN.md).
+   Left, in order: stobj calls and mv (4a), tail loops in subroutines and
+   the value functions reading a stobj, with the other five checked
+   heapgn procedures (4b), the `hp_*` externs (4c); values and the
+   runtime shims (two lanes); then acl2-fortran prints g-module's output
+   (and its lambda scoping, which leaks a binding to later siblings,
+   fixed or shown harmless). About 6 lanes.
 3. Theorem 4, the extended grammar's conservativity: every program the
    Fortran grammar accepts parses identically under Lemmis's. This is
    "any Fortran program is valid Lemmis", proved, not tested.

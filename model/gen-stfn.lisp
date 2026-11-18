@@ -8,12 +8,17 @@
 ; results' r) does not matter on st-plain statements (tsx-plain); f-bind
 ; of the object dummy, then the value dummies (gen-fn's fb); the
 ; temporaries declared over them (lf-ok); gst-sem-holds at that frame; the
-; sx-list run is f-ex-list's (sx-list-is-f-ex-list).
+; sx-list run is f-ex-list's (gen-stok's sx-ok-is-f-ex-list: no cs-stmts
+; needed; f-ex-list-do-exit for the DO around a body with a CYCLE). The
+; temporaries' lf-ok is gen-stlf's stl-holds, so g-st-fn-sem has no side
+; condition on the translator's output.
 
 (in-package "ACL2")
 
 (include-book "gen-stopen")
 (include-book "gen-fresh")
+(include-book "gen-stlf")
+(include-book "gen-stok")
 
 ; ---- from gen-fn (whose gen-ret macros clash with gen-stlst's)
 ; ---- the arguments: literals, bound to the dummies
@@ -262,20 +267,44 @@
 
 (defmacro gfn () '(g-st-fn (list fn formals (list sv) t x) gdefs sigs st))
 
+; the body as g-st-fn emits it: in a DO when it has a CYCLE (none is run)
+(defmacro gbody (ss) `(if (g-has '(:cycle) ,ss) (list (list :do (append ,ss '((:exit))))) ,ss))
+
+(defthm stfn-body
+  (implies (and (equal (mv-nth 0 (sx-list ss fr heap)) :normal) (integerp k) (< (acl2-count (gbody ss)) k))
+           (and (equal (mv-nth 0 (f-ex-list (gbody ss) fr heap procs k)) :normal)
+                (equal (mv-nth 1 (f-ex-list (gbody ss) fr heap procs k)) (mv-nth 1 (sx-list ss fr heap)))
+                (equal (mv-nth 2 (f-ex-list (gbody ss) fr heap procs k)) (mv-nth 2 (sx-list ss fr heap)))))
+  :hints (("Goal" :in-theory (disable f-ex-list sx-list g-has f-ex-list-do-exit sx-ok-is-f-ex-list)
+           :use (f-ex-list-do-exit sx-ok-is-f-ex-list))))
+
+(defthm acl2-count-do1 (equal (acl2-count (list (list :do a))) (+ 3 (acl2-count a))))
+
+(defthm lf-ok-nil-stfn (lf-ok nil f) :hints (("Goal" :in-theory (enable lf-ok))))
+
+(defmacro stfn-hyps0 ()
+  '(and (st-plain :term x nil st) (no-calls :term x sigs nil)
+        (not (g-role 'if st)) (not (g-role 'implies st)) (not (g-role 'mv-nth st)) (not (g-role 'mv st))
+        (no-prim-defs defs) (not (consp (lkp 'mv-nth defs))) (not (member-equal o (g-formals vs)))
+        (int64-listp ks) (equal (len ks) (len vs)) (equal (lkp key heap) (cons key s))
+        (st-ok st o s) (st-wf st s) (not (car (a-st x (pairlis$ vs ks) s st defs n)))))
+
 (defthm g-st-fn-sem
   (let ((vs (g-st-vals formals st)) (outs (list sv)))
     (implies (and (not (mv-nth 0 (gfn))) sv (eq (g-role sv st) :stobj) (tself-ok fn st)
                   (equal (g-st-dummies formals outs st) (list (list o :inout c)))
-                  (stfn-hyps) (cs-stmts (gsf 1)) (not (g-has '(:cycle) (gsf 1)))
+                  (stfn-hyps0)
                   (equal (cdr (lkp ob caller)) (list* :obj :inout key))
-                  (integerp fuel) (< (+ 6 (len ks) (acl2-count (gsf 1))) fuel))
+                  (integerp fuel) (< (+ 6 (len ks) (acl2-count (gbody (gsf 1)))) fuel))
              (equal (f-invoke (mv-nth 1 (gfn)) (cons (list :var ob) (g-lits ks)) caller heap procs fuel)
                     (mv nil caller (put key (mv-nth 1 (a-st x (pairlis$ vs ks) s st defs n)) heap)))))
   :hints (("Goal" :do-not-induct t
            :in-theory (disable g-st-fn g-stmt g-reaches g-called g-fcalls g-ccalls g-has g-st-dummies g-dummies g-locals g-em
                                g-formals g-st-vals g-role g-lits f-bind f-ex-list sx-list a-st undef-locals fb stfn-run
-                               st-plain no-calls lf-ok st-ok st-wf g-st-fn-err)
+                               st-plain no-calls lf-ok st-ok st-wf g-st-fn-err stl-holds f-ex-list-open stfn-body sx-list-is-f-ex-list)
            :expand ((:free (p) (f-invoke p (cons (list :var ob) (g-lits ks)) caller heap procs fuel)))
            :use (g-st-fn-err (:instance stfn-run (vs (g-st-vals formals st)) (outs (list sv)))
+                 (:instance stl-holds (em (g-em (g-st-vals formals st))) (cnt 0) (locs nil)
+                            (fnames (append (g-formals (g-st-vals formals st)) (st-objs st))) (outs (list sv)))
                  (:instance st-ok-necc (x sv))
                  (:instance g-obj-st-objs (x sv))))))
