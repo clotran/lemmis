@@ -26,11 +26,6 @@
 
 (defun all-int64-ty (ts) (if (atom ts) t (and (eq (car ts) :int64) (all-int64-ty (cdr ts)))))
 
-; the source's meaning of the call
-(defun a-stcall (x env s st defs n)
-  (mv-let (e ks) (a-sx-list (g-cvals (g-obj (car x) st) (cdr x) st) env s st defs n)
-    (if e (mv e s nil) (a-call-val (car x) ks s))))
-
 ; ---- g-scall-args (upd t) is g-sargs on the value arguments
 
 (defun gsc-ind (formals xs em cnt locs sigs fnames st)
@@ -104,6 +99,15 @@
            (equal (a-sxf x env s st defs n) (mv nil nil)))
   :hints (("Goal" :expand ((a-sxf x env s st defs n) (g-st-free x st)))))
 
+(defthm g-role-stobj-symbolp
+  (implies (equal (g-role x st) :stobj) (symbolp x))
+  :rule-classes :forward-chaining)
+
+(defthm a-sxf-stobj-val
+  (implies (and (equal (g-role x st) :stobj) (not (mv-nth 0 (a-sxf x env s st defs n))))
+           (equal (mv-nth 1 (a-sxf x env s st defs n)) nil))
+  :hints (("Goal" :in-theory (disable g-role) :cases ((zp n)) :expand ((a-sxf x env s st defs n)))))
+
 (defthm acall-vals
   (implies (and (not (mv-nth 0 (a-sxf-list xs env s st defs n))) (sf-stargs formals xs st) (equal (len formals) (len xs))
                 (integerp m) (<= n m))
@@ -112,7 +116,8 @@
                        (sf-vals formals (mv-nth 1 (a-sxf-list (g-cvals formals xs st) env s st defs m)) st))))
   :hints (("Goal" :induct (acv-ind formals xs st n m) :in-theory (disable a-sxf g-role)
            :expand ((a-sxf-list xs env s st defs n) (a-sxf-list (g-cvals formals xs st) env s st defs m)
-                    (g-cvals formals xs st) (a-sxf-list nil env s st defs m)))
+                    (g-cvals formals xs st) (a-sxf-list nil env s st defs m)
+                    (:free (a b) (a-sxf-list (cons a b) env s st defs m))))
           (and stable-under-simplificationp
                '(:use ((:instance a-sxf-mono (x (car xs)) (n (1- n)) (m (1- m)))
                        (:instance a-sxf-list-mono (x (g-cvals (cdr formals) (cdr xs) st)) (n (1- m)) (m m)))))))
@@ -128,9 +133,11 @@
   (implies (and (svs-ok-f cs ts vs fr heap) (all-int64-ty ts) (true-listp vs)) (int64-listp vs))
   :hints (("Goal" :induct (svs-ok-f cs ts vs fr heap) :in-theory (disable svf))))
 
+(defun nl-ind (xs n) (if (atom xs) n (nl-ind (cdr xs) (1- n))))
+
 (defthm a-sxf-list-true
   (true-listp (mv-nth 1 (a-sxf-list xs env s st defs n)))
-  :hints (("Goal" :induct (len xs) :in-theory (disable a-sxf) :expand ((a-sxf-list xs env s st defs n)))))
+  :hints (("Goal" :induct (nl-ind xs n) :in-theory (disable a-sxf) :expand ((a-sxf-list xs env s st defs n)))))
 
 (defun sf-stobj (formals st)
   (cond ((atom formals) nil)
@@ -210,29 +217,128 @@
 (defmacro ga (k) `(mv-nth ,k (g-sargs (gcv) em cnt locs sigs fnames st)))
 (defmacro fks () '(mv-nth 1 (a-sxf-list (gcv) env s st defs (1- n))))
 
+(defmacro gx (k) `(mv-nth ,k (g-sexpr x em cnt locs sigs fnames st)))
+(defmacro sfob () '(g-obj (sf-stobj (kar (fsig)) st) st))
+
+; the code's shape: g-sargs on the value arguments, the call on the object and their codes
+(defthm gs-call-shape
+  (implies (and (sf-call-hyps) (one-stobj (kar (fsig)) st) (not (gx 0)))
+           (and (not (ga 0)) (equal (gx 1) (ga 1)) (equal (gx 3) (kadr (fsig))) (equal (gx 5) (ga 5))
+                (equal (gx 2) (list :fcall (g-sym (car x) nil) (cons (list :var (sfob)) (ga 2))))
+                (all-int64-ty (ga 3)) (equal (len (kar (fsig))) (len (cdr x)))
+                (sf-stargs (kar (fsig)) (cdr x) st)
+                (eq (g-role (sf-stobj (kar (fsig)) st) st) :stobj)))
+  :rule-classes nil
+  :hints (("Goal" :do-not-induct t
+           :in-theory (disable g-sexpr g-sargs g-scall-args g-st-free g-mvnth g-role g-obj g-sym g-flat
+                               g-scall-args-is-g-sargs g-scall-args-nil-t g-scs-one)
+           :use ((:instance g-scall-args-nil-t (formals (kar (fsig))) (xs (cdr x)))
+                 (:instance g-scall-args-is-g-sargs (formals (kar (fsig))) (xs (cdr x)))
+                 (:instance g-scs-one (formals (kar (fsig))) (xs (cdr x)))))))
+
+; the code's run: the value arguments' statements, then the oracle on S and their values
+(defthm gs-call-run
+  (implies (and (gsa-sem-f (gcv) em cnt locs sigs fnames st env s defs (1- n) fr heap o)
+                (not (ga 0)) (not (car (a-sxf-list (gcv) env s st defs (1- n)))) (sfc-ok :list (gcv) sigs st)
+                (em-ok em env fr) (decl-ok (ga 5) fr) (no-prim-defs defs) (sf-orc sigs defs st o)
+                (not (consp (lkp 'mv-nth defs))) (not (g-role 'mv-nth st)) (not (g-role 'mv st))
+                (st-ok st o s) (obj-is o s fr heap) (all-int64-ty (ga 3)))
+           (and (equal (car (sxf-list (ga 1) fr heap)) :normal)
+                (equal (mv-nth 2 (sxf-list (ga 1) fr heap)) heap)
+                (int64-listp (fks))
+                (equal (svf (list :fcall name (cons (list :var o) (ga 2))) (mv-nth 1 (sxf-list (ga 1) fr heap)) heap)
+                       (mv-let (e v) (s-fn-val name s (fks)) (mv e v)))))
+  :rule-classes nil
+  :hints (("Goal" :do-not-induct t
+           :in-theory (disable g-sargs a-sxf-list sxf-list svf svlf svs-ok-f sfc-ok em-ok decl-ok st-ok obj-is
+                               gsa-sem-f gsa-sem-use-f g-role)
+           :use ((:instance gsa-sem-use-f (xs (gcv)) (n (1- n)))
+                 (:instance svs-ok-int64 (cs (ga 2)) (ts (ga 3)) (vs (fks)) (fr (mv-nth 1 (sxf-list (ga 1) fr heap))))
+                 (:instance svs-ok-svlf (cs (ga 2)) (ts (ga 3)) (vs (fks)) (fr (mv-nth 1 (sxf-list (ga 1) fr heap))))
+                 (:instance obj-is-after-sx-f (ss (ga 1)))
+                 (:instance obj-is-obj-of (fr (mv-nth 1 (sxf-list (ga 1) fr heap))))))))
+
+(defthm a-sxf-zp (implies (zp n) (equal (a-sxf x env s st defs n) (mv :fuel nil)))
+  :hints (("Goal" :expand ((a-sxf x env s st defs n)))))
+
+; the source's value arguments answer (no int64 needed: gs-call-run then gives it)
+(defthm gs-call-src-args
+  (implies (and (sf-call-hyps) (sfc-ok :term x sigs st) (not (car (a-sxf x env s st defs n)))
+                (no-prim-defs defs) (equal (len (kar (fsig))) (len (cdr x))) (sf-stargs (kar (fsig)) (cdr x) st))
+           (not (car (a-sxf-list (gcv) env s st defs (1- n)))))
+  :rule-classes nil
+  :hints (("Goal" :do-not-induct t
+           :in-theory (disable a-sxf a-sxf-list g-st-free g-role sfc-ok acall-vals a-prim g-mvnth no-prim-defs)
+           :cases ((zp n) (and (not (zp n)) (consp (lkp (car x) defs))) (and (not (zp n)) (not (consp (lkp (car x) defs)))))
+           :use ((:instance sfc-ok-call)
+                 (:instance acall-vals (formals (kar (fsig))) (xs (cdr x)) (n (1- n)) (m (1- n)))
+                 (:instance a-prim-not-prim (f (car x)) (vs (mv-nth 1 (a-sxf-list (cdr x) env s st defs (1- n)))))))))
+
+; the source: the arguments' values, then f's body, which the oracle answers (sf-orc)
+(defthm gs-call-src
+  (implies (and (sf-call-hyps) (sfc-ok :term x sigs st) (not (car (a-sxf x env s st defs n)))
+                (no-prim-defs defs) (sf-orc sigs defs st o) (st-ok st o s) (int64-listp (fks))
+                (equal (len (kar (fsig))) (len (cdr x))) (sf-stargs (kar (fsig)) (cdr x) st))
+           (and (not (car (a-sxf-list (gcv) env s st defs (1- n))))
+                (equal (s-fn-val (g-sym (car x) nil) s (fks)) (list nil (mv-nth 1 (a-sxf x env s st defs n))))
+                (scalar-ok (kadr (fsig)) (mv-nth 1 (a-sxf x env s st defs n)))))
+  :rule-classes nil
+  :hints (("Goal" :do-not-induct t
+           :in-theory (disable a-sxf a-sxf-list g-st-free g-role sfc-ok sf-orc-necc acall-vals st-ok a-prim
+                               g-mvnth no-prim-defs)
+           :cases ((zp n) (and (not (zp n)) (consp (lkp (car x) defs))) (and (not (zp n)) (not (consp (lkp (car x) defs)))))
+           :use ((:instance sfc-ok-call)
+                 (:instance acall-vals (formals (kar (fsig))) (xs (cdr x)) (n (1- n)) (m (1- n)))
+                 (:instance sf-orc-necc (f (car x)) (ks (fks)) (n (1- n)))
+                 (:instance a-prim-not-prim (f (car x)) (vs (mv-nth 1 (a-sxf-list (cdr x) env s st defs (1- n)))))))))
+
+(defthm gst-not-quote
+  (implies (and (consp x) (not (g-st-free x st))) (not (equal (car x) 'quote)))
+  :rule-classes nil
+  :hints (("Goal" :expand ((g-st-free x st)))))
+
 ; the call: its value arguments by gsa-sem-f (the induction's), then the oracle
+(defthm sfc-mv-nth-cons
+  (and (equal (mv-nth 0 (cons a b)) a) (equal (mv-nth 1 (cons a b)) (car b))))
+
+(defthm gs-call-core
+  (implies (and (sf-call-hyps)
+                (gsa-sem-f (gcv) em cnt locs sigs fnames st env s defs (1- n) fr heap o)
+                (sfc-ok :term x sigs st) (not (gx 0)) (not (car (a-sxf x env s st defs n)))
+                (em-ok em env fr) (decl-ok (gx 5) fr) (no-prim-defs defs) (sf-orc sigs defs st o)
+                (not (consp (lkp 'mv-nth defs))) (not (g-role 'mv-nth st)) (not (g-role 'mv st))
+                (st-ok st o s) (obj-is o s fr heap))
+           (and (equal (car (sxf-list (gx 1) fr heap)) :normal)
+                (equal (mv-nth 2 (sxf-list (gx 1) fr heap)) heap)
+                (not (car (svf (gx 2) (mv-nth 1 (sxf-list (gx 1) fr heap)) heap)))
+                (equal (mv-nth 1 (svf (gx 2) (mv-nth 1 (sxf-list (gx 1) fr heap)) heap))
+                       (mv-nth 1 (a-sxf x env s st defs n)))
+                (scalar-ok (gx 3) (mv-nth 1 (a-sxf x env s st defs n)))))
+  :rule-classes nil
+  :hints (("Goal" :do-not-induct t
+           :in-theory (set-difference-theories (union-theories '(sfc-mv-nth-cons car-cons cdr-cons (:executable-counterpart member-equal)
+                                        (:executable-counterpart equal) (:executable-counterpart not)
+                                        (:executable-counterpart zp) (:executable-counterpart binary-+)
+                                        (:executable-counterpart unary--) (:executable-counterpart eq))
+                                      (theory 'minimal-theory)) '(mv-nth))
+           :use ((:instance gst-not-quote)
+                 (:instance sfc-ok-call)
+                 (:instance sfc-ok-call-cvals)
+                 gs-call-shape
+                 (:instance st-ok-necc (x (sf-stobj (kar (fsig)) st)))
+                 (:instance gs-call-run (name (g-sym (car x) nil)))
+                 gs-call-src-args gs-call-src))))
+
 (defthm gs-call-f
   (implies (and (sf-call-hyps)
                 (gsa-sem-f (gcv) em cnt locs sigs fnames st env s defs (1- n) fr heap o))
            (gs-sem-f x em cnt locs sigs fnames st env s defs n fr heap o))
   :hints (("Goal" :do-not-induct t
-           :cases ((and (sfc-ok :term x sigs st) (not (mv-nth 0 (a-sxf x env s st defs n)))
-                        (not (mv-nth 0 (g-scall-args (kar (fsig)) (cdr x) nil em cnt locs sigs fnames st)))
-                        (equal (len (kar (fsig))) (len (cdr x)))))
-           :in-theory (e/d (gs-sem-f gsa-sem-f)
+           :in-theory (e/d (gs-sem-f)
                            (g-sexpr g-sargs g-scall-args a-sxf a-sxf-list sxf-list svf svlf g-st-free g-mvnth g-role g-obj g-sym
-                            sfc-ok no-calls sf-orc-necc st-ok-necc acall-vals g-scall-args-is-g-sargs g-scall-args-nil-t
-                            g-scs-one obj-is em-ok decl-ok st-ok scalar-ok a-prim))
-           :use ((:instance sfc-ok-call)
-                 (:instance g-scall-args-nil-t (formals (kar (fsig))) (xs (cdr x)))
-                 (:instance g-scall-args-is-g-sargs (formals (kar (fsig))) (xs (cdr x)))
-                 (:instance g-scs-one (formals (kar (fsig))) (xs (cdr x)))
-                 (:instance st-ok-necc (x (sf-stobj (kar (fsig)) st)))
-                 (:instance acall-vals (formals (kar (fsig))) (xs (cdr x)) (n (1- n)) (m (1- n)))
-                 (:instance sf-orc-necc (f (car x)) (ks (fks)) (n (1- n)))
-                 (:instance a-prim-not-prim (f (car x)) (vs (mv-nth 1 (a-sxf-list (cdr x) env s st defs (1- n)))))
-                 (:instance svs-ok-int64 (cs (ga 2)) (ts (ga 3)) (vs (fks))
-                            (fr (mv-nth 1 (sxf-list (ga 1) fr heap))))))))
+                            sfc-ok no-calls sf-orc-necc st-ok-necc obj-is em-ok decl-ok st-ok scalar-ok a-prim gsa-sem-f
+                            sf-orc no-prim-defs g-sexpr-call a-sxf-call svf-fcall-open))
+           :use gs-call-core)))
 
 ; ---- names: the object and the value codes' names
 
