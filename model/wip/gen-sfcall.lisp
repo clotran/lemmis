@@ -190,7 +190,8 @@
            (declare (ignore intent))
            (if err (mv err nil)
              (mv-let (err ks) (svlf cs fr heap)
-               (if err (mv err nil) (s-fn-val name (cdr (lkp key heap)) ks))))))
+               (if err (mv err nil)
+                 (mv-let (err v) (s-fn-val name (cdr (lkp key heap)) ks) (mv err v)))))))
   :hints (("Goal" :expand ((svf (list :fcall name (cons (list :var ob) cs)) fr heap)))))
 
 (defthm obj-is-obj-of

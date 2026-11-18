@@ -51,7 +51,8 @@
                 (cond ((not (eq (kar (kar a)) :var)) (mv :syntax nil))
                       (err (mv err nil))
                       (t (mv-let (err ks) (svlf (kdr a) fr heap)
-                           (if err (mv err nil) (s-fn-val (kadr e) (cdr (lkp key heap)) ks))))))))
+                           (if err (mv err nil)
+                             (mv-let (err v) (s-fn-val (kadr e) (cdr (lkp key heap)) ks) (mv err v)))))))))
     (otherwise (mv :syntax nil))))
  ; the codes' values
  (defun svlf (cs fr heap)
@@ -246,7 +247,7 @@
                                ((eq (kar e) :neg) (arith :sub 0 a))
                                ((booleanp a) (mv nil (not a)))
                                (t (mv :type nil)))))))
-  :hints (("Goal" :in-theory (disable arith) :expand ((f-ev e fr heap procs k) (svf e fr heap)))))
+  :hints (("Goal" :in-theory (union-theories (quote (member-equal eql posp)) (theory (quote minimal-theory))) :expand ((f-ev e fr heap procs k) (svf e fr heap)))))
 
 (defthm f-ev-svf-bin
   (implies (and (posp k) (member-eq (kar e) '(:add :sub :mul :eq :lt :le :ge :max)))
@@ -260,7 +261,7 @@
                          (if err (mv err nil)
                            (mv-let (err b) (svf (kaddr e) fr heap)
                              (if err (mv err nil) (binop (kar e) a b))))))))
-  :hints (("Goal" :in-theory (disable binop) :expand ((f-ev e fr heap procs k) (svf e fr heap)))))
+  :hints (("Goal" :in-theory (union-theories (quote (member-equal eql posp)) (theory (quote minimal-theory))) :expand ((f-ev e fr heap procs k) (svf e fr heap)))))
 
 (defthm f-ev-svf-elem
   (implies (and (posp k) (eq (kar e) :elem))
@@ -274,7 +275,7 @@
                          (if err (mv err nil)
                            (mv-let (err v) (comp-of (kadr e) (kaddr e) fr heap)
                              (if err (mv err nil) (read-elem v i))))))))
-  :hints (("Goal" :in-theory (disable comp-of read-elem) :expand ((f-ev e fr heap procs k) (svf e fr heap)))))
+  :hints (("Goal" :in-theory (union-theories (quote (member-equal eql posp)) (theory (quote minimal-theory))) :expand ((f-ev e fr heap procs k) (svf e fr heap)))))
 
 (defthm svf-other-err
   (implies (not (member-eq (kar e) '(:int :true :false :huge :var :comp :size :neg :not :add :sub :mul :eq :lt :le :ge :max
@@ -302,7 +303,8 @@
   (implies (and (p-sforc procs b) (natp b) (not (mv-nth 0 (svf e fr heap))) (integerp k) (< (+ b (acl2-count e)) k))
            (equal (f-ev e fr heap procs k) (svf e fr heap)))
   :hints (("Goal" :induct (sv-ind e k) :do-not-induct t
-           :in-theory (disable p-sforc-necc binop arith read-elem comp-of obj-of f-ev svf f-invoke find-proc))
+           :in-theory (disable p-sforc-necc binop arith read-elem comp-of obj-of f-ev svf f-invoke find-proc
+                               svf-is-sv sv-is-fv-f cs-expr cf-expr fv int-lit-p))
           (and stable-under-simplificationp
                '(:cases ((member-eq (kar e) '(:int :true :false :huge :var :comp :size)) (member-eq (kar e) '(:neg :not))
                          (member-eq (kar e) '(:add :sub :mul :eq :lt :le :ge :max)) (eq (kar e) :elem) (eq (kar e) :fcall))
@@ -315,21 +317,90 @@
   :hints (("Goal" :in-theory (disable f-ev f-ex-assign-obj svf obj-of comp-of)
            :expand ((f-ex s fr heap procs k) (sxf s fr heap)))))
 
+; sxf's :if/:select and other cases, one opener each, so the flag proof never expands sxf
+(defthm sxf-ctl-open
+  (implies (member-eq (kar s) '(:if :select))
+           (equal (sxf s fr heap)
+                  (mv-let (err v) (svf (kadr s) fr heap)
+                    (cond (err (mv (errst err) fr heap))
+                          ((eq (kar s) :if)
+                           (cond ((not (booleanp v)) (mv (errst :type) fr heap))
+                                 (v (sxf-list (kaddr s) fr heap))
+                                 (t (sxf-list (kadddr s) fr heap))))
+                          ((not (integerp v)) (mv (errst :type) fr heap))
+                          (t (sxf-list (if (lkp v (kaddr s)) (kadr (lkp v (kaddr s))) (kadddr s)) fr heap))))))
+  :hints (("Goal" :in-theory (disable svf) :expand ((sxf s fr heap)))))
+
+(defthm sxf-other-open
+  (implies (not (member-eq (kar s) '(:assign :if :select :cycle :exit :return)))
+           (equal (sxf s fr heap) (mv (errst :syntax) fr heap)))
+  :hints (("Goal" :in-theory (disable svf) :expand ((sxf s fr heap)))))
+
+; the statement and list claims, named, so the induction below only chains step lemmas
+(defun-nx sxs-ok (s fr heap procs k)
+  (implies (and (not (equal (kar s) :assign)) (not (errstp (mv-nth 0 (sxf s fr heap)))))
+           (equal (f-ex s fr heap procs k) (sxf s fr heap))))
+
+(defun-nx sxl-ok (ss fr heap procs k)
+  (implies (not (errstp (mv-nth 0 (sxf-list ss fr heap))))
+           (equal (f-ex-list ss fr heap procs k) (sxf-list ss fr heap))))
+
+(defmacro sxs-thy ()
+  '(disable f-ex f-ex-list f-ex-return svf sv-ok-is-f-ev sxf-list-is-sx-list sx-list-is-fx-list-f svf-is-sv
+            sv-is-fv-f sxf-assign-sx sxf-sx-ctl sx-ctl cs-stmt cs-stmts cf-stmt cf-stmts sxf-list sxf))
+
+(defthm sxs-if-step
+  (implies (and (p-sforc procs b) (natp b) (integerp k) (< (+ b (acl2-count s)) k) (eq (kar s) :if)
+                (sxl-ok (kaddr s) fr heap procs (1- k)) (sxl-ok (kadddr s) fr heap procs (1- k)))
+           (sxs-ok s fr heap procs k))
+  :hints (("Goal" :do-not-induct t :in-theory (sxs-thy))))
+
+(defthm sxs-select-step
+  (implies (and (p-sforc procs b) (natp b) (integerp k) (< (+ b (acl2-count s)) k) (eq (kar s) :select)
+                (sxl-ok (kadr (lkp (mv-nth 1 (svf (kadr s) fr heap)) (kaddr s))) fr heap procs (1- k))
+                (sxl-ok (kadddr s) fr heap procs (1- k)))
+           (sxs-ok s fr heap procs k))
+  :hints (("Goal" :do-not-induct t :in-theory (sxs-thy))))
+
+(defthm sxs-other-step
+  (implies (and (integerp k) (< 0 k) (not (member-eq (kar s) '(:if :select))))
+           (sxs-ok s fr heap procs k))
+  :hints (("Goal" :do-not-induct t :in-theory (sxs-thy) :cases ((member-eq (kar s) (quote (:cycle :exit :return)))))))
+
+(defthm sxl-step
+  (implies (and (p-sforc procs b) (natp b) (integerp k) (< (+ b (acl2-count ss)) k)
+                (implies (consp ss)
+                         (and (sxs-ok (car ss) fr heap procs (1- k))
+                              (sxl-ok (cdr ss) (mv-nth 1 (sxf (car ss) fr heap)) (mv-nth 2 (sxf (car ss) fr heap))
+                                      procs (1- k)))))
+           (sxl-ok ss fr heap procs k))
+  :hints (("Goal" :do-not-induct t :in-theory (sxs-thy)
+           :cases ((and (consp ss) (equal (kar (car ss)) :assign))))))
+
+(in-theory (disable sxs-ok sxl-ok))
+
+(defthm sfx-count-parts
+  (implies (consp s)
+           (and (< (acl2-count (car s)) (acl2-count s)) (< (acl2-count (cdr s)) (acl2-count s))
+                (< (acl2-count (kaddr s)) (acl2-count s)) (< (acl2-count (kadddr s)) (acl2-count s))))
+  :rule-classes :linear)
+
+(defthm sfx-count-arm
+  (<= (acl2-count (kadr (lkp v arms))) (acl2-count arms))
+  :rule-classes :linear)
+
 (defthm sxf-ok-is-f-ex-flag
   (implies (and (p-sforc procs b) (natp b) (integerp k) (< (+ b (acl2-count s)) k))
-           (if (eq flag :stmt)
-               (implies (and (not (equal (kar s) :assign)) (not (errstp (mv-nth 0 (sxf s fr heap)))))
-                        (equal (f-ex s fr heap procs k) (sxf s fr heap)))
-             (implies (not (errstp (mv-nth 0 (sxf-list s fr heap))))
-                      (equal (f-ex-list s fr heap procs k) (sxf-list s fr heap)))))
+           (if (eq flag :stmt) (sxs-ok s fr heap procs k) (sxl-ok s fr heap procs k)))
   :rule-classes nil
   :hints (("Goal" :induct (sx-ind-f flag s fr heap k) :do-not-induct t
-           :in-theory (disable f-ex f-ex-list f-ex-return svf sv-ok-is-f-ev))
-          (and stable-under-simplificationp
-               '(:expand ((sxf s fr heap) (sxf-list s fr heap))))))
+           :in-theory (union-theories '((:induction sx-ind-f) sxs-if-step sxs-select-step sxs-other-step sxl-step natp zp atom
+                                        eq member-equal kar-atom sfx-count-parts sfx-count-arm (:type-prescription acl2-count))
+                                      (theory 'minimal-theory)))
+          (and stable-under-simplificationp '(:cases ((eq (kar s) :if) (eq (kar s) :select))))))
 
 (defthm sxf-ok-is-f-ex-list
   (implies (and (p-sforc procs b) (natp b) (not (errstp (mv-nth 0 (sxf-list ss fr heap))))
                 (integerp k) (< (+ b (acl2-count ss)) k))
            (equal (f-ex-list ss fr heap procs k) (sxf-list ss fr heap)))
-  :hints (("Goal" :use (:instance sxf-ok-is-f-ex-flag (flag :list) (s ss)))))
+  :hints (("Goal" :in-theory (enable sxl-ok) :use (:instance sxf-ok-is-f-ex-flag (flag :list) (s ss)))))
