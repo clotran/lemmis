@@ -256,17 +256,31 @@
 (defun svf-ind (flag e)
   (declare (xargs :measure (acl2-count e)))
   (cond ((eq flag :list) (if (atom e) nil (list (svf-ind :one (car e)) (svf-ind :list (cdr e)))))
+        ((atom e) nil)
         ((eq (kar e) :fcall) (svf-ind :list (kdr (kaddr e))))
         (t (list (svf-ind :one (kadr e)) (svf-ind :one (kaddr e)) (svf-ind :one (kadddr e))))))
+
+(defthm comp-of-agree
+  (implies (equal (lkp o fr) (lkp o fr2)) (equal (comp-of o c fr2 heap) (comp-of o c fr heap)))
+  :rule-classes nil
+  :hints (("Goal" :in-theory (enable comp-of obj-of))))
+
+(defthm obj-of-agree
+  (implies (equal (lkp o fr) (lkp o fr2)) (equal (obj-of o fr2) (obj-of o fr)))
+  :rule-classes nil
+  :hints (("Goal" :in-theory (enable obj-of))))
 
 (defthm sv-agree-flag-f
   (if (eq flag :list)
       (implies (lkp-agree (svfl-names e) fr fr2) (equal (svlf e fr2 heap) (svlf e fr heap)))
     (implies (lkp-agree (svf-names e) fr fr2) (equal (svf e fr2 heap) (svf e fr heap))))
   :rule-classes nil
-  :hints (("Goal" :induct (svf-ind flag e) :in-theory (disable binop arith read-elem)
+  :hints (("Goal" :induct (svf-ind flag e) :in-theory (disable binop arith read-elem svf-is-sv sv-is-fv-f cs-expr cf-expr comp-of)
            :expand ((svf e fr heap) (svf e fr2 heap) (svf-names e) (svlf e fr heap) (svlf e fr2 heap) (svfl-names e)
-                    (lkp-agree (cons (cadr (car (caddr e))) (svfl-names (cdr (caddr e)))) fr fr2)))))
+                    (lkp-agree (cons (cadr (car (caddr e))) (svfl-names (cdr (caddr e)))) fr fr2)))
+          (and stable-under-simplificationp
+               '(:use ((:instance comp-of-agree (o (kadr e)) (c (kaddr e)))
+                       (:instance obj-of-agree (o (kadr (kar (kaddr e))))))))))
 
 (defthm sv-agree-f
   (implies (lkp-agree (svf-names e) fr fr2) (equal (svf e fr2 heap) (svf e fr heap)))
@@ -309,7 +323,7 @@
 (defthm gs-field-f
   (implies (and (consp x) (eq (g-role (car x) st) :field))
            (gs-sem-f x em cnt locs sigs fnames st env s defs n fr heap o))
-  :hints (("Goal" :do-not-induct t :in-theory (disable g-obj g-comp g-role)
+  :hints (("Goal" :do-not-induct t :in-theory (disable g-obj g-comp g-role svf-is-sv)
            :expand ((g-sexpr x em cnt locs sigs fnames st) (a-sxf x env s st defs n) (g-st-free x st)
                     (svf (list :comp (g-obj (car x) st) (g-comp (car x) st)) fr heap) (sxf-list nil fr heap))
            :use ((:instance st-ok-necc (x (car x)))))))
@@ -317,7 +331,7 @@
 (defthm gs-size-f
   (implies (and (consp x) (eq (g-role (car x) st) :size))
            (gs-sem-f x em cnt locs sigs fnames st env s defs n fr heap o))
-  :hints (("Goal" :do-not-induct t :in-theory (disable g-obj g-comp g-role)
+  :hints (("Goal" :do-not-induct t :in-theory (disable g-obj g-comp g-role svf-is-sv)
            :expand ((g-sexpr x em cnt locs sigs fnames st) (a-sxf x env s st defs n) (g-st-free x st)
                     (svf (list :size (g-obj (car x) st) (g-comp (car x) st)) fr heap) (sxf-list nil fr heap))
            :use ((:instance st-ok-necc (x (car x)))))))
@@ -326,7 +340,7 @@
   (implies (and (consp x) (eq (g-role (car x) st) :elem)
                 (gs-sem-f (cadr x) em cnt locs sigs fnames st env s defs (1- n) fr heap o))
            (gs-sem-f x em cnt locs sigs fnames st env s defs n fr heap o))
-  :hints (("Goal" :do-not-induct t :in-theory (disable g-sexpr a-sxf sxf-list read-elem g-obj g-comp g-role)
+  :hints (("Goal" :do-not-induct t :in-theory (disable g-sexpr a-sxf sxf-list read-elem g-obj g-comp g-role svf-is-sv)
            :expand ((g-sexpr x em cnt locs sigs fnames st) (a-sxf x env s st defs n) (g-st-free x st)
                     (:free (c fr) (svf (list :elem (g-obj (car x) st) (g-comp (car x) st) c) fr heap)))
            :use ((:instance st-ok-necc (x (car x)))))))
@@ -392,8 +406,9 @@
                   (and (consp vs) (not (car (svf (car cs) fr heap))) (equal (mv-nth 1 (svf (car cs) fr heap)) (car vs))
                        (scalar-ok (car ts) (car vs)) (svs-ok-f (cdr cs) (cdr ts) (cdr vs) fr heap)))))
 
+; a primitive call only (g-unop-prim/g-binop-prim give it where g-sexpr answers)
 (defthm a-sx-prim-f
-  (implies (and (gs-primp x sigs st) (no-prim-defs defs))
+  (implies (and (gs-primp x sigs st) (no-prim-defs defs) (member-equal (car x) *g-prims*))
            (equal (a-sxf x env s st defs n)
                   (if (zp n) (mv :fuel nil)
                     (mv-let (e vs) (a-sxf-list (cdr x) env s st defs (1- n))
@@ -479,7 +494,7 @@
 
 (defthm gsa-nil-f
   (implies (atom xs) (gsa-sem-f xs em cnt locs sigs fnames st env s defs n fr heap o))
-  :hints (("Goal" :in-theory (enable gsa-sem-f) :expand ((g-sargs xs em cnt locs sigs fnames st) (sxf-list nil fr heap)))))
+  :hints (("Goal" :in-theory (enable gsa-sem-f) :expand ((g-sargs xs em cnt locs sigs fnames st) (sxf-list nil fr heap) (a-sxf-list xs env s st defs n)))))
 
 (defthm gsa-cons-f
   (implies (and (consp xs)
@@ -562,7 +577,7 @@
                   (not (car (svf (list :var tmp) (mv-nth 1 (sxf-list (if-stmts sc cc sa ca sb cb tmp) fr heap)) heap)))
                   (equal (mv-nth 1 (svf (list :var tmp) (mv-nth 1 (sxf-list (if-stmts sc cc sa ca sb cb tmp) fr heap)) heap))
                          (mv-nth 1 (svf ca (mv-nth 1 (sxf-list sa fr1-f heap)) heap))))))
-  :hints (("Goal" :do-not-induct t :in-theory (disable sxf svf sxf-list sif-glue-f if-stmts)
+  :hints (("Goal" :do-not-induct t :in-theory (disable sxf svf sxf-list sif-glue-f if-stmts svf-is-sv sv-is-fv-f sxf-sx-list-cons sxf-list-is-sx-list sx-list-is-fx-list-f)
            :use (:instance sif-glue-f (ta (car (dty tmp fr))) (c t)
                            (v (mv-nth 1 (svf ca (mv-nth 1 (sxf-list sa (mv-nth 1 (sxf-list sc fr heap)) heap)) heap)))))))
 
@@ -579,7 +594,7 @@
                   (not (car (svf (list :var tmp) (mv-nth 1 (sxf-list (if-stmts sc cc sa ca sb cb tmp) fr heap)) heap)))
                   (equal (mv-nth 1 (svf (list :var tmp) (mv-nth 1 (sxf-list (if-stmts sc cc sa ca sb cb tmp) fr heap)) heap))
                          (mv-nth 1 (svf cb (mv-nth 1 (sxf-list sb fr1-f heap)) heap))))))
-  :hints (("Goal" :do-not-induct t :in-theory (disable sxf svf sxf-list sif-glue-f if-stmts)
+  :hints (("Goal" :do-not-induct t :in-theory (disable sxf svf sxf-list sif-glue-f if-stmts svf-is-sv sv-is-fv-f sxf-sx-list-cons sxf-list-is-sx-list sx-list-is-fx-list-f)
            :use (:instance sif-glue-f (ta (car (dty tmp fr))) (c nil)
                            (v (mv-nth 1 (svf cb (mv-nth 1 (sxf-list sb (mv-nth 1 (sxf-list sc fr heap)) heap)) heap)))))))
 
@@ -610,7 +625,7 @@
            :cases ((mv-nth 1 (a-sxf (cadr x) env s st defs (1- n))))
            :in-theory (disable g-sexpr a-sxf sxf-list sxf svf no-calls sfc-ok em-ok scalar-ok st-ok obj-is gs-ifp
                                g-sexpr-if if-stmts g-tmp nfix dty decl-ok-subset sif-glue-f sv-is-fv-f fv
-                               sx-list-is-fx-list-f fx-list)
+                               sx-list-is-fx-list-f fx-list sxf-sx-list-cons svf-is-sv sxf-list-is-sx-list)
            :do-not (quote (eliminate-destructors generalize))
            :use ((:instance decl-ok-subset (a (j1 5)) (b (j2 5)))
                  (:instance decl-ok-subset (a (j2 5)) (b (j3 5)))))))
