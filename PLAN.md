@@ -327,8 +327,13 @@ extension starts before Stage A is done.
    4a begun: gen-stcall's sxc (CALL by an oracle, `sxc-ok-is-f-ex-list`
    under p-sorc) and gen-stcallst's `gst-callst` (a direct CALL, no stobj
    argument an update, under c-sorc and a-call-ok).
-   Left, in order: the rest of stobj calls and mv (4a: a-stc, updates,
-   dests, the mv lambda, c-sorc discharged), tail loops in subroutines and
+   4a continued: `g-st-fn-call` (the CALL from any caller frame and
+   argument codes), `a-stc` (a-st with calls and the mv lambda, a-st on
+   st-plain), p-sorc/c-sorc/a-call-ok proved for concrete oracles from a
+   decidable `tab-ok` (gen-stdisch).
+   Left, in order: the rest of stobj calls and mv (4a: the functional
+   instance dropping the oracle hypotheses, updates, dests, the mv lambda
+   on sxc), tail loops in subroutines and
    the value functions reading a stobj, with the other five checked
    heapgn procedures (4b), the `hp_*` externs (4c); values and the
    runtime shims (two lanes); then acl2-fortran prints g-module's output

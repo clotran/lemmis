@@ -73,8 +73,11 @@ Milestone 2 now (model/GEN.md "What remains"): 12/12 checked functions have
 `<fn>-fortran-correct`; `g-st-fn-sem` (st-plain stobj subroutines) has no side
 condition on the translator's output (gen-stlf, gen-stok). 4a begun: sxc (sx with CALL
 by an oracle) bridged to f-ex under p-sorc (gen-stcall), gst-callst (g-callst's CALL,
-no stobj argument an update, under c-sorc/a-call-ok; gen-stcallst). Left, ~6 lanes: rest of
-4a (a-stc with calls and mv, updates/dests/mv lambda, c-sorc discharge; GEN.md), subroutine tail loops + the other 5 heapgn instances (4b), `hp_*`
+no stobj argument an update, under c-sorc/a-call-ok; gen-stcallst); `g-st-fn-call` (the CALL
+from any caller frame, codes cs; gen-stcsorc), `a-stc` = a-st on st-plain (gen-stc), and the
+oracles made concrete from a table with p-sorc/c-sorc/a-call-ok proved from `tab-ok` alone
+(gen-stdisch). Left, ~6 lanes: rest of 4a (the functional instance dropping the oracle
+hypotheses; updates/dests/mv lambda on sxc; GEN.md), subroutine tail loops + the other 5 heapgn instances (4b), `hp_*`
 externs (4c), values/runtime shims (2), acl2-fortran printing g-module's output (1).
 
 ## Traps

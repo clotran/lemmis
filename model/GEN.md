@@ -833,6 +833,40 @@ Two findings from acl2-fortran's `stmt` (both fixed now, see above):
    The proof splits badly when g-callst-ok/-noupd/-is-g-sargs are `:use`d
    together (30k subgoals): each step is its own `rule-classes nil` lemma.
    (4a) remaining, restated: (i) `a-stc`, a-st with a :sub-call case (the call's value arguments by a-sx on S, stobj arguments threaded, then a-call-val) and the mv lambda (a-call-val's value results bound to mv), with `a-stc = a-st` on st-plain; (ii) gst-sem on sxc-list for g-callst with stobj arguments that are updates (g-settle's temporaries, then g-sacts' gsc-sem) and with dests (the OUT results: c-sorc's frame then puts the dests), then the mv lambda (g-mvtmps' `mv_k` temporaries, gst-lam's pattern), and their st-plain induction extended (gst-ind with :sub calls); (iii) discharging c-sorc and p-sorc for a generated subroutine: g-st-fn-sem generalized to any caller frame, argument codes (gen-callarg's f-invoke-args for objects and values) and OUT results (copy-out), and a-call-ok from a-call-val's definition through defs (a-orc's pattern). Then the instances need (4b).
+   **This lane (4a, continued)**: **`g-st-fn-call`** (gen-stcsorc.lisp):
+   g-st-fn-sem from the caller's side -- for any CALL statement xc =
+   `CALL fname(ob, cs)` (kar, kadr, kaddr), any caller frame with ob an
+   INOUT object at key, codes cs answering int64 ks by sv (`svs-is`), and
+   fname's procedure in procs the generated one: f-ex of xc at fuel past
+   9 + cs's and the emitted body's acl2-count answers :normal, the caller
+   unchanged, the heap's key put to a-st's S' (`f-bind-g-dummies-codes`,
+   `f-bind-cons-codes`, `f-invoke-same-bind`, `f-invoke-st-codes`).
+   **`a-stc`** (gen-stc.lisp): a-st plus the :sub call (`a-stc-call`: the
+   arguments as a lambda's, then a-call-val on the values) and the mv lambda
+   (mv's call first, mv bound to its results rs; a stobj var bound to
+   `(mv-nth 'k mv)` keeps S, a value var gets rs's k-th); a-call-val now
+   answers `(mv err S' rs)`. **`a-stc-is-a-st`**: on st-plain terms, wherever
+   a-st answers no error, a-stc is a-st (plus `(not (g-role nil st))`: a
+   lambda's args past its vars are read with var nil). c-sorc now asks only
+   for calls with as many arguments as formals (gst-callst gets it from
+   g-callst-ok), so gst-callst is stronger. **gen-stdisch.lisp**: the
+   oracles made concrete from a table `tab` of source subroutines (each
+   `(fn formals (sv) t x)`, one stobj answering itself, st-plain body):
+   `ac-orc` (a-st of f's body; errs unless ks int64, S with st-ok/st-wf) and
+   `sc-orc` (the codes by sv, S from the object's heap entry, ac-orc, the
+   heap put). `tab-ok` (each entry translates, its procedure is procs',
+   g-st-fn-call's static side conditions, b past 9 + the body's size, the
+   Fortran names distinct) is decidable on a given tab. Proved:
+   **`p-sorc-h-holds`**, **`c-sorc-h-holds`**, **`a-call-ok-h-holds`** --
+   p-sorc, c-sorc, a-call-ok with the oracles replaced by sc-orc/ac-orc,
+   from tab-ok alone. What is left to drop the oracle hypotheses from a
+   caller's theorem is the functional instance (sxc/sxc-list, a-stcall,
+   p-sorc, c-sorc, a-call-ok copied with sc-orc/ac-orc, as gen-disch-call's
+   p-orc-h): mechanical. Still open in 4a: (ii) gst-sem for g-callst with
+   stobj arguments that are updates and with dests (OUT results need g-st-fn
+   with rs, i.e. g-stmt's cons case, not yet in gst-sem), the mv lambda on
+   sxc (g-mvtmps), the st-plain induction extended to :sub calls; a-stc's
+   call case against a-stcall (equal when no stobj argument is an update).
    Left of 4, restated (2026-11-18): (4a) sx's `:do` and `:call` cases and
    f-invoke of a generated subroutine under a heap-aware oracle (as
    f-call-val is for functions), then gst-sem for g-callst and the mv lambda
