@@ -7,12 +7,12 @@ whole; use the headings below and `grep -n` / `sed -n`.
 
 - SCOPE score: 165 of 208 rules proved, 43 in part, none missing (SCOPE.md, first
   paragraphs).
-- FCVS: 151 of 180 programs print their reference output (SCOPE.md, "Theorem 3:
+- FCVS: 152 of 180 programs print their reference output (SCOPE.md, "Theorem 3:
   checked against the compilers", the FCVS bullet; the passing names are in
   build/fcvs.txt after `make check`).
 - Fuzzer: `make fuzz` (seed 1, 40 programs) agrees under gfortran and flang; seeds 1-5
   clean (same SCOPE section, "The fuzzer").
-- Oracle cases: 7 fsyn cases + 53 whole programs in model/cases/, all agree.
+- Oracle cases: 7 fsyn cases + 54 whole programs in model/cases/, all agree.
 
 ## Next lanes, in order
 
@@ -22,7 +22,12 @@ FCVS re-classification, 2026-11-16, 52 failing programs (128 pass), first stop b
 | FM500 FM503 | :parse SAVE /b/; :equiv | EQUIVALENCE in a subprogram (also with COMMON members), SAVE /blk/ | 8.10.1 / 15.9.4 | needs storage-sequence (FM506 passes) |
 | FM200 | :parse | blanks inside names/numbers across continuation lines | 3.2.2 | small (lexer) |
 | FM100-102 FM104-108 FM401 FM402 FM411 | passed (FCVS 151) | in-memory sequential file store (fio st-units, default file per unit, empty at start), REWIND/BACKSPACE/ENDFILE token sugar CALL rewind_(u), unformatted READ/WRITE(u) and END= by format-token sugar (frun ctl-sugar), READ implied-DO as rdido_([...]) (me-rido); no grammar change | 12.10 | done |
-| FM407 FM413 FM910 FM912 FM914-917 FM919-922 | :parse ")" | OPEN(ACCESS=,RECL=,FILE=var), INQUIRE, REC= | 12.10.1-3 | needs file store (12) |
+| FM912 | passed (FCVS 152) | formatted direct access to a named file: OPEN/CLOSE/INQUIRE as CALL open_(specs) (frun file-sugar, fmean fc-run), REC=/ERR= by ctl-sugar (unit rec_(u,r), ERR= in the format token), fio d-open/d-write/d-recs, named files ((:file name) recs) in st-units; ERR=/IOSTAT= also on CLOSE/REWIND/BACKSPACE/ENDFILE; no grammar change | 12.2.4.2, 12.10.1-3 | done |
+| FM910 | :pd (OPEN) | unformatted direct access: RECL=132 counts processor-dependent units (F77 12.10.1), then INQUIRE SEQUENTIAL= (YES/NO/UNKNOWN the processor's) and the direct file reopened ACCESS='SEQUENTIAL' (its record layout the processor's); test 4 a direct SCRATCH file, also unformatted | 12.10.1, 12.10.3 | :pd by design |
+| FM407 FM413 FM917 FM921 | :pd (OPEN) | unformatted direct access (FORM='UNFORMATTED', or the direct default): RECL's units are the processor's; FM407/413 also a default file name; FM917/921 then INQUIRE EXIST=/OPENED=/NUMBER=... | 12.10.1, 12.10.3 | :pd by design |
+| FM922 | :pd (OPEN) | named SEQUENTIAL file, STATUS='NEW' (oc-run still treats any sequential FILE= as :pd; with the empty file system NEW/OLD could be modelled as d-open does), then INQUIRE(FILE=, EXIST=, OPENED=, ...) | 12.10.1, 12.10.3 | medium |
+| FM914-916 FM919 FM920 | :open | sequential OPEN with BLANK=, FILE= sequential (named) files, unformatted OPEN; INQUIRE beyond RECL=/NEXTREC= | 12.10.1, 12.10.3 | not started (user scoped slice 2 to FM910/FM912) |
+| (limit) | - | READ/WRITE implied-DO variable not defined after the statement (construct entity, me-rido / me-ido); IOSTAT= on READ/WRITE not in ctl-sugar | 12.8.2.3, 12.7 | small, open |
 | FM905 FM907 | :stop | list-directed * output of REAL/COMPLEX | 13.10.4 | needs printing |
 | FM302 FM909 | :common / :equiv | COMMON block redeclared; EQUIVALENCE in a subprogram | 15.9.4 | needs storage-sequence |
 | FM062 FM357 FM804 FM828 FM829 FM830 FM831 | :pd | 062 5th power inexact; 357 804 MOD +0/-0; 828 830 831 829(t29) inexact complex * / ** | 6.1.2 / 15.10 | :pd by design (a decision, not work) |

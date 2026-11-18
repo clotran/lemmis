@@ -585,7 +585,7 @@
 (defun fs-mk (e before after eofp) (list (kar e) (kadr e) before after eofp))
 (defun fs-get (n st)                 ; the unit's entry, a default file connected when there is none; or an error
   (let ((e (fs-entry n st)))
-    (cond ((null e) (list n :default nil nil nil)) ((eq (kadr e) :closed) (err :pd)) (t e))))
+    (cond ((null e) (list n :default nil nil nil)) ((eq (kadr e) :closed) (err :pd)) ((eq (kadr e) :direct) (err :access)) (t e))))
 (defun fs-pos (op e)                 ; REWIND, BACKSPACE, ENDFILE (F77 12.10.4) on an entry (nil: not connected)
   (let ((b (fs-before e)) (a (fs-after e)))
     (case op
@@ -612,6 +612,57 @@
          (let ((s (kadr (kaddr (car ios)))))
            (coerce (reverse (rtrim-blanks (reverse (fi-up (coerce (if (stringp s) s "") 'list))))) 'string)))
         (t (io-kwv nm (cdr ios)))))
+;; ---- formatted direct access (F77 12.2.4.2, 12.10.1, 12.9.4.1, 12.10.3): a named file is the entry
+;; ((:file name) recs), recs an alist record number -> its text, RECL characters; a unit connected for
+;; direct access the entry (n :direct (:file name) recl nextrec). The file system starts empty: STATUS='NEW'
+;; makes the file, 'OLD' needs it made earlier in the run. :pd as the standard leaves it: an unformatted
+;; direct file (RECL's unit), a default name, STATUS='UNKNOWN' or 'SCRATCH'; reading a record never written.
+;; ponytail: names compared as written (trailing blanks dropped); a file named two ways is outside the model
+(defun io-kws (nm ios)               ; the spec's value as written, trailing blanks dropped; nil when absent
+  (cond ((atom ios) nil)
+        ((and (eq (kar (car ios)) :kw) (equal (kadr (car ios)) nm))
+         (let ((s (kadr (kaddr (car ios))))) (coerce (reverse (rtrim-blanks (reverse (coerce (if (stringp s) s "") 'list)))) 'string)))
+        (t (io-kws nm (cdr ios)))))
+(defun io-kwn (nm ios)               ; an integer spec's value, or nil
+  (cond ((atom ios) nil)
+        ((and (eq (kar (car ios)) :kw) (equal (kadr (car ios)) nm)) (let ((x (kaddr (car ios)))) (and (eq (kar x) :n) (integerp (kadr x)) (kadr x))))
+        (t (io-kwn nm (cdr ios)))))
+(defun d-conn-p (fk us)              ; the file connected to a unit already
+  (cond ((atom us) nil) ((and (eq (kadr (car us)) :direct) (equal (kaddr (car us)) fk)) t) (t (d-conn-p fk (cdr us)))))
+(defun d-open (n fe ios st)
+  (let* ((nm (io-kws "file" ios)) (stt (io-kwv "status" ios)) (rl (io-kwn "recl" ios)) (fk (list :file nm)) (ex (fs-entry fk st)))
+    (cond ((not (posp rl)) (mv (err :open) st))                                       ; RECL= positive, required
+          ((or fe (not (equal (io-kwv "form" ios) "FORMATTED")) (member-equal nm '(nil "")) (not (member-equal stt '("NEW" "OLD")))) (mv (err :pd) st))
+          ((or (if (equal stt "NEW") ex (not ex)) (d-conn-p fk (st-units st))) (mv (err :open) st))   ; NEW exists, OLD does not; connected already
+          (t (let ((st (if ex st (fs-put (list fk nil) st)))) (mv :normal (fs-put (list n :direct fk rl 1) st)))))))
+(defun d-unit (u st)                 ; a unit's :direct entry, or an error
+  (let ((e (and (file-unit-p u) (fs-entry (v-num u) st)))) (if (eq (kadr e) :direct) e (err :access))))
+(defun d-recs (e r st)               ; the records from number r on, consecutive, for a READ; or an error
+  (declare (xargs :measure (nfix (- 1000000 (nfix r)))))
+  (let ((t1 (cdr (assoc-equal r (alist-fix (kadr (fs-entry (kaddr e) st)))))))
+    (if (or (not (stringp t1)) (zp r) (<= 1000000 (nfix r))) nil (cons t1 (d-recs e (1+ (nfix r)) st)))))
+(defun int-pad (s k) (if (and (stringp s) (<= (length s) k)) (coerce (append (coerce s 'list) (make-list (- k (length s)) :initial-element #\Space)) 'string) nil))
+(defun d-pad (recs k)                ; each record blank-filled to k characters; nil when one is longer
+  (if (atom recs) nil
+    (let ((s (int-pad (car recs) k)) (r (d-pad (cdr recs) k))) (if (and s (not (eq r :bad))) (cons s r) :bad))))
+(defun d-store (rs r alist)          ; records rs written from number r on
+  (if (atom rs) alist (d-store (cdr rs) (1+ (nfix r)) (cons (cons (nfix r) (car rs)) (remove-assoc-equal (nfix r) (alist-fix alist))))))
+(defun d-write (e r recs st)         ; a WRITE's records at r: (mv status st)
+  (let ((ps (d-pad recs (nfix (kadddr e)))) (fe (fs-entry (kaddr e) st)))
+    (cond ((not (posp r)) (mv (err :rec) st))
+          ((eq ps :bad) (mv (err :record) st))                                         ; longer than RECL (12.2.4.2)
+          (t (mv :normal (fs-put (list (kar e) :direct (kaddr e) (kadddr e) (+ r (len ps)))
+                                 (fs-put (list (kaddr e) (d-store ps r (kadr fe))) st)))))))
+(defun d-next (e n) (list (kar e) :direct (kaddr e) (kadddr e) n))   ; NEXTREC n after a READ
+(defun d-inq (nm e)                  ; INQUIRE's answer for a spec, or an error
+  (cond ((equal nm "recl") (if (eq (kadr e) :direct) (kadddr e) (err :pd)))       ; undefined unless connected for direct access
+        ((equal nm "nextrec") (if (eq (kadr e) :direct) (kar (cddddr e)) (err :pd)))
+        ((equal nm "iostat") 0)
+        ((member-equal nm '("sequential" "direct" "formatted" "unformatted")) (err :pd))   ; YES, NO or UNKNOWN as the processor decides (12.10.3)
+        (t (err :inquire))))
+(defun d-inqs (nms e)                ; the answers, in order, or an error
+  (if (atom nms) nil (let ((v (d-inq (car nms) e)) (vs (d-inqs (cdr nms) e))) (cond ((errp v) v) ((errp vs) vs) (t (cons v vs))))))
+
 (defun oc-run (k ios u st)           ; k :open or :close; u the unit's value
   (let* ((n (v-num u)) (stt (io-kwv "status" ios)) (e (if (eq k :open) :open :close))
          (fe (fs-entry n st)) (conn (and fe (not (eq (kadr fe) :closed)))))
@@ -620,8 +671,10 @@
            (cond ((or (io-kwv "file" ios) (io-kwv "access" ios) (io-kwv "form" ios)
                       (not (member-equal stt (if (and conn (eq (kadr fe) :scratch)) '(nil "DELETE") '(nil "DELETE" "KEEP"))))) (mv (err e) st))
                  ((not conn) (mv :normal st))                                ; no effect (12.10.2)
+                 ((eq (kadr fe) :direct) (mv :normal (st-units-set (fs-drop n (if (equal stt "DELETE") (fs-drop (kaddr fe) (st-units st)) (st-units st))) st)))
                  ((and (not (eq (kadr fe) :scratch)) (not (equal stt "DELETE"))) (mv :normal (fs-put (cons n (cons :closed (cddr fe))) st)))
                  (t (mv :normal (st-units-set (fs-drop n (st-units st)) st)))))
+          ((and (not conn) (equal (io-kwv "access" ios) "DIRECT")) (d-open n fe ios st))
           ((or conn (not (member-equal (io-kwv "access" ios) '(nil "SEQUENTIAL")))
                (not (member-equal (io-kwv "form" ios) '(nil "FORMATTED")))) (mv (err e) st))
           ((io-kwv "file" ios) (mv (err (if (member-equal stt '(nil "UNKNOWN" "OLD" "NEW" "REPLACE")) :pd e)) st))

@@ -334,11 +334,19 @@
                   (t nil)))
          (nm (if (eql k 2) "endfile" (kadr (car toks))))
          (r (nthcdr (nfix k) toks))
-         (r (if (and (equal (car r) (op "(")) (equal (paren-end r 0) (len r))) (butlast (cdr r) 1) r))
-         (r (if (and (equal (car r) (kw "unit")) (equal (cadr r) (op "="))) (cddr r) r)))
-    (if (and k (stringp nm) (consp r) (not (member-equal (op "=") r)))
+         (pr (and (equal (car r) (op "(")) (equal (paren-end r 0) (len r))))
+         (r (if pr (butlast (cdr r) 1) r)))
+    (if (and k (stringp nm) (consp r) (or pr (not (member-equal (op "=") r))))   ; ( [UNIT=] u, ERR=, IOSTAT= ): fmean fc-args
         (append (list (kw "call") (kw (concatenate 'string nm "_")) (op "(")) r (list (op ")")))
       toks)))
+;; F77 12.10.1-3 OPEN, CLOSE, INQUIRE ( specs ) as CALL open_ ( specs ) etc.: each spec an actual argument,
+;; keyword = expression (fmean fc-args), so FILE=, RECL=, ERR= take any expression
+(defun file-sugar (toks)
+  (declare (xargs :guard t :verify-guards nil))
+  (if (and (member-equal (car toks) (list (kw "open") (kw "close") (kw "inquire"))) (stringp (kadr (car toks)))
+           (equal (cadr toks) (op "(")) (equal (paren-end (cdr toks) 0) (len (cdr toks))))
+      (list* (kw "call") (kw (concatenate 'string (kadr (car toks)) "_")) (cdr toks))
+    toks))
 ;; F77 12.9.5 unformatted READ/WRITE ( u [, END = l] ) and END= with a * or label format, by token sugar (fmean
 ;; ef-fmt): the format becomes the token (:char <control-C> l <control-C> f), f U, *, L and the label, or C and the literal's text.
 ;; Only a positional unit first; otherwise (and with FMT=) the tokens are left as they are.
@@ -350,20 +358,29 @@
 (defun ctl-join (its) (declare (xargs :guard t :verify-guards nil)) (if (atom its) nil (append (car its) (if (consp (cdr its)) (cons (op ",") (ctl-join (cdr its))) nil))))
 (defun kw-item-p (it) (declare (xargs :guard t)) (and (eq (kar (kar it)) :name) (equal (kadr it) (op "="))))
 (defun kw-item (nm its) (declare (xargs :guard t)) (cond ((atom its) nil) ((and (kw-item-p (car its)) (equal (kar (car its)) (kw nm))) (car its)) (t (kw-item nm (cdr its)))))
+;; F77 12.8.3 REC= and 12.7.1 ERR= the same way, UNIT= and FMT= written with keywords too: the unit becomes
+;; rec_ ( u , r ) (fmean rec-args), ERR='s label the format token's second part, (:char ^C end ^C err ^C f)
+(defun ctl-lab (it) (declare (xargs :guard t)) (if it (if (and (label-int-p (kaddr it)) (null (cdddr it))) (cadr (kaddr it)) nil) ""))
 (defun ctl-sugar (toks)
   (declare (xargs :guard t :verify-guards nil))
-  (let* ((its (ctl-split toks 0 nil)) (fpos (and (consp (cdr its)) (not (kw-item-p (cadr its)))))
-         (rest (if fpos (cddr its) (cdr its))) (en (kw-item "end" rest)) (rest (remove-equal en rest))
-         (f (if fpos (cadr its) nil))
-         (desc (cond ((not fpos) "U") ((equal f (list (op "*"))) "*")
+  (let* ((its (ctl-split toks 0 nil)) (upos (not (kw-item-p (car its))))
+         (u (if upos (car its) (cddr (kw-item "unit" its))))
+         (r1 (if upos (cdr its) its))
+         (fpos (and upos (consp r1) (not (kw-item-p (car r1)))))
+         (f (if fpos (car r1) (cddr (kw-item "fmt" r1))))
+         (en (kw-item "end" r1)) (er (kw-item "err" r1)) (rc (kw-item "rec" r1))
+         (rest (if fpos (cdr r1) r1))
+         (rest (remove-equal (kw-item "unit" rest) (remove-equal (kw-item "fmt" rest) (remove-equal en (remove-equal er (remove-equal rc rest))))))
+         (desc (cond ((null f) "U") ((equal f (list (op "*"))) "*")
                      ((and (consp f) (null (cdr f)) (label-int-p (car f))) (concatenate 'string "L" (cadr (car f))))
                      ((and (consp f) (null (cdr f)) (char-tok-p (car f))) (concatenate 'string "C" (cadr (car f)))) (t nil)))
-         (el (if en (if (and (label-int-p (kaddr en)) (null (cdddr en))) (cadr (kaddr en)) nil) "")))
-    (if (or (kw-item-p (car its)) (kw-item "fmt" rest) (and fpos (null en)) (null desc) (not (stringp el))) toks
-      (ctl-join (list* (car its) (list (list :char (concatenate 'string (coerce (list (code-char 3)) 'string) el (coerce (list (code-char 3)) 'string) desc))) rest)))))
+         (el (ctl-lab en)) (erl (ctl-lab er)) (c3 (coerce (list (code-char 3)) 'string)))
+    (if (or (null u) (and f (null en) (null er) (null rc)) (null desc) (not (stringp el)) (not (stringp erl)) (and rc (null (cddr rc)))) toks
+      (ctl-join (list* (if rc (append (list (kw "rec_") (op "(")) u (list (op ",")) (cddr rc) (list (op ")"))) u)
+                       (list (list :char (concatenate 'string c3 el c3 erl c3 desc))) rest)))))
 (defun io-sugar (toks0)                ; WRITE ( ios ) items; BLOCK DATA [name] as a subroutine
   (declare (xargs :guard t))
-  (let ((toks (pos-sugar (alt-sugar toks0))))
+  (let ((toks (file-sugar (pos-sugar (alt-sugar toks0)))))
   (if (and (equal (car toks) (kw "block")) (equal (cadr toks) (kw "data")) (atom (cdddr toks)))   ; R1116 (F77 16.2.5): its DATA is me-proc-datas'
       (list (kw "subroutine") (kw (if (and (consp (cddr toks)) (stringp (kadr (caddr toks)))) (concatenate 'string "blockdata_" (kadr (caddr toks))) "blockdata_")))
   (if (and (member-equal (car toks) (list (kw "write") (kw "read"))) (equal (cadr toks) (op "(")))

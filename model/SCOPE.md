@@ -48,7 +48,7 @@ Not a theorem: a test, run by `make check` (exit 1 on any difference).
   another for MOD): MOD now takes A's sign, as gfortran, flang and
   flang-new do (`cases/modzero.f90`); MODULO's zero stays processor dependent.
 - **FCVS**: scored, not failed, and only when `fcvs/` is fetched
-  (`bb fetch-fcvs.bb`; not committed): 151 of 180 programs print their
+  (`bb fetch-fcvs.bb`; not committed): 152 of 180 programs print their
   reference output exactly (build/fcvs.txt lists them; the names below are the earlier 75) (FM002-010, 012, 016-021, 025, 026, 030-045,
   060, 061, 097, 098, 109, 201-205, 251, 254, 256, 301, 306, 352-355,
   359-362, 368-370, 372-374, 718, 801, 803, 805-807, 812, 814, 816, 819, 821, 822). Of the rest, most stop at a statement outside the
@@ -348,13 +348,13 @@ Not a theorem: a test, run by `make check` (exit 1 on any difference).
 | R1201 | io-unit | part | *, file-unit-number; no internal-file-variable (the unit * only, 5 or 6, in the meaning) |
 | R1202 | file-unit-number | proved | |
 | R1204 | open-stmt | proved | OPEN ( connect-spec-list ); the meaning connects a scratch unit only (below, R1205) |
-| R1205 | connect-spec | part | [UNIT=], FILE=, STATUS=, ACCESS=, FORM= with a char-literal-constant; no IOSTAT=, ERR=, RECL=, ACTION=, ... (outside the grammar). Meaning: STATUS='SCRATCH' with ACCESS='SEQUENTIAL' and FORM='FORMATTED' (or absent) opens a unit other than 5 and 6, not yet connected; FILE= or no STATUS= (a file the file system names or holds) is an `:error :pd`; any other spec or an unit already connected is an `:error :open`. READ and WRITE on a connected unit stay outside (`:error :unit`) |
+| R1205 | connect-spec | part | [UNIT=], FILE=, STATUS=, ACCESS=, FORM= with a char-literal-constant; no IOSTAT=, ERR=, RECL=, ACTION=, ... (outside the grammar). By token sugar (frun file-sugar: OPEN/CLOSE/INQUIRE ( specs ) as CALL open_ ( specs ), fmean fc-run) each spec takes an expression, plus RECL=, ERR=, IOSTAT= (0; an error with ERR= or IOSTAT= is `:error :pd`, F77 12.7): ACCESS='DIRECT' with FORM='FORMATTED', FILE=, RECL= and STATUS='NEW' (the file must not exist; the file system starts empty) or 'OLD' (made earlier in the run) connects for formatted direct access; unformatted direct, a default name, STATUS='UNKNOWN'/'SCRATCH' with DIRECT are `:error :pd`. INQUIRE (unit only): RECL=, NEXTREC= of a direct unit, IOSTAT=; SEQUENTIAL=/DIRECT=/FORMATTED=/UNFORMATTED= `:error :pd`, other specs `:error :inquire`. Meaning: STATUS='SCRATCH' with ACCESS='SEQUENTIAL' and FORM='FORMATTED' (or absent) opens a unit other than 5 and 6, not yet connected; FILE= or no STATUS= (a file the file system names or holds) is an `:error :pd`; any other spec or an unit already connected is an `:error :open`. READ and WRITE on a connected unit stay outside (`:error :unit`) |
 | R1208 | close-stmt | proved | CLOSE ( close-spec-list ); a unit not connected: no effect (12.5.7) |
 | R1209 | close-spec | part | [UNIT=] and STATUS= 'DELETE' (or absent); STATUS='KEEP' on a scratch file, FILE=, ACCESS= and FORM= are an `:error :close`; unit 5 or 6 an `:error :unit` |
 | R1210 | read-stmt | proved | both forms |
 | R1211 | write-stmt | proved | |
 | R1212 | print-stmt | proved |  |
-| R1213 | io-control-spec | part | [UNIT=], [FMT=] (a literal, *, a label, or a bare CHARACTER variable name by token sugar; no element or expression format), ADVANCE= (a literal); C1210, C1211, C1218, C1223; a format required (no unformatted I/O) |
+| R1213 | io-control-spec | part | [UNIT=], [FMT=] (a literal, *, a label, or a bare CHARACTER variable name by token sugar; no element or expression format), ADVANCE= (a literal); C1210, C1211, C1218, C1223; a format required (no unformatted I/O). By token sugar (frun ctl-sugar): unformatted, END=, ERR= (taken only as `:error :pd`), REC= (formatted direct access: records blank-filled to RECL, a slash the next record, NEXTREC after; a record never written, or longer than RECL, an error / `:pd`) |
 | R1215 | format | part | *, a label, a char-literal-constant; no other default-char-expr |
 | R1216 | input-item | part | variable (a designator, character included; not a substring in the meaning); no io-implied-do |
 | R1217 | output-item | part | expr; no io-implied-do |
