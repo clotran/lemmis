@@ -42,6 +42,16 @@ In the table, "fsyn" says whether fsyn/fsem already has the target construct.
 | runtime shims `rt-*`, `rt-prim` on 1-3 items, `vmg-stk-from` | `rt_*(..)`, `rt_prim1..3`, `rt_list_from(st, ..)` | no | no |
 | `:reentrant`, `impure` | `recursive`, `function` without `pure` | the flags (fsem ignores them) | pure only |
 
+**clotran generates, not yet proved** (checked against clotran main
+e2c0d0e7): `src/f/gen/aot_gen.inc` (`-b aot`, aot-ch, aot-cop, aot-fr,
+aot-sc) needs no new row -- its constructs are rows above marked "no":
+`type(value)` formals and a value-returning function (`:value-formals`,
+`:value-fns`, val-type `gc_value`) and the runtime shims it reads the tree
+through (`:rt`: ast_kind, ast_nkids, ast_kid, ast_s3, ast_nalts, ast_alt,
+aot_nbods, aot_bod, externs answering int or value). It falls under item 5
+(values and shims), like the other value books. `arraymap_gen.inc` is not
+on clotran main (only model/arraymap.lisp), so nothing to add for it.
+
 ## The first slice: gen.lisp
 
 `gen.lisp` holds two things. `a-ev` gives the source its meaning: ACL2's own
@@ -798,6 +808,30 @@ Two findings from acl2-fortran's `stmt` (both fixed now, see above):
    past b + the statements' acl2-count is sxc-list. `:do` is left out of
    sxc on purpose: the tail loop's DO is reasoned on f-ex directly, as
    g-fn-sem-loop does (4b). 260 s, the flag induction most of it.
+   **gen-stcallst.lisp** ((4a), second piece): **`gst-callst`**, g-callst's
+   direct CALL (dests nil) against the source's call. The source meaning
+   `a-stcall`: the value arguments (`g-cvals`, the arguments at f's
+   non-stobj formals) by a-sx-list on S, then the unconstrained oracle
+   `(a-call-val f ks s)` => (mv err s'). For x = (f . args), f a :sub of st,
+   no stobj argument an update (`(not (g-upd ...))`), g-callst and
+   a-stcall answering no error, under gst-sem's hypotheses (no-calls of the
+   value arguments, em-ok, decl-ok, st-ok, st-wf, obj-at, sn-hyps,
+   em-nostobj, mv/mv-nth not roles nor defined) plus **`c-sorc o st`** (for
+   every :sub f, frame and heap where o is S's INOUT object and codes `cs`
+   answer int64 `ks` by sv: s-call-val of `(g-sym f)` on `(g-scs formals) ++
+   cs` answers no error, the frame unchanged, the heap's o put to
+   a-call-val's S') and **`a-call-ok st o`** (a-call-val keeps st-ok and
+   st-wf): sxc-list of g-callst's statements answers :normal, the heap
+   `(put (okey o fr) S' heap)`, S' with st-ok and st-wf. Both oracle
+   hypotheses name only the oracles, not the translator's output; c-sorc is
+   what a generated subroutine must be shown to satisfy (from p-sorc's
+   f-invoke and g-st-fn-sem generalized to any caller frame and argument
+   codes), a-call-ok what a-call-val's definition through defs must. Steps:
+   `g-scall-args-is-g-sargs` (with upd t, g-scall-args is g-sargs on the
+   value arguments, all int64, objects `g-scs`), `g-sacts-noupd`,
+   `callst-shape`, `callst-args-run` (gsa-sem by gs-sem-thm), `callst-glue`.
+   The proof splits badly when g-callst-ok/-noupd/-is-g-sargs are `:use`d
+   together (30k subgoals): each step is its own `rule-classes nil` lemma.
    Left of 4, restated (2026-11-18): (4a) sx's `:do` and `:call` cases and
    f-invoke of a generated subroutine under a heap-aware oracle (as
    f-call-val is for functions), then gst-sem for g-callst and the mv lambda
