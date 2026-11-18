@@ -446,7 +446,24 @@
         ((and (consp (car ss)) (equal (caar ss) (kw "save")) (member-equal (op "/") (cdar ss)))
          (let ((ns (sblk-names (cdar ss)))) (if ns (cons (cons (kw "save") (commas ns)) (save-blks (cdr ss))) (save-blks (cdr ss)))))
         (t (cons (car ss) (save-blks (cdr ss))))))
-(defun entry-sugar (ss) (declare (xargs :guard t :verify-guards nil)) (entry-sugar1 (hoist-units (unlabel-specs (save-blks ss)) nil) nil))
+;; F77 3.5 / R1101: a main program's PROGRAM statement is optional; the grammar
+;; (R1401 here) requires it, so a unit with no header gets PROGRAM lmain_ (token sugar).
+(defun unit-head-p (st)
+  (declare (xargs :guard t))
+  (or (member-equal (kar st) (list (kw "program") (kw "subroutine") (kw "function") (kw "module") (kw "block")
+                                   (kw "recursive") (kw "pure") (kw "elemental")))
+      (and (member-equal (kar st) (list (kw "integer") (kw "real") (kw "double") (kw "complex") (kw "logical") (kw "character")))
+           (member-equal (kw "function") st))))
+(defun main-end-p (st)              ; unit-end-p, but not END BLOCK (R1110), only END BLOCK DATA
+  (declare (xargs :guard t))
+  (and (unit-end-p st) (or (not (equal (kadr st) (kw "block"))) (equal (kaddr st) (kw "data")))))
+(defun main-sugar (ss start)         ; start: ss may begin a unit
+  (declare (xargs :guard t :measure (+ (* 2 (len ss)) (if start 1 0))))
+  (cond ((atom ss) nil)
+        ((and start (not (unit-head-p (car ss))) (not (main-end-p (car ss))))   ; an END right after an END is the host's
+         (cons (list (kw "program") (kw "lmain_")) (main-sugar ss nil)))
+        (t (cons (car ss) (main-sugar (cdr ss) (main-end-p (car ss)))))))
+(defun entry-sugar (ss) (declare (xargs :guard t :verify-guards nil)) (entry-sugar1 (hoist-units (unlabel-specs (save-blks (main-sugar ss t))) nil) nil))
 
 (defun parse-stmts (ss)              ; each statement parsed whole, or nil
   (declare (xargs :guard t :verify-guards nil))

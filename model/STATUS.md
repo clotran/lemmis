@@ -12,7 +12,7 @@ whole; use the headings below and `grep -n` / `sed -n`.
   build/fcvs.txt after `make check`).
 - Fuzzer: `make fuzz` (seed 1, 40 programs) agrees under gfortran and flang; seeds 1-5
   clean (same SCOPE section, "The fuzzer").
-- Oracle cases: 7 fsyn cases + 59 whole programs in model/cases/, all agree.
+- Oracle cases: 7 fsyn cases + 65 whole programs in model/cases/, all agree.
 
 ## Next lanes, in order
 
@@ -29,7 +29,9 @@ FCVS re-classification, 2026-11-16, 52 failing programs (128 pass), first stop b
 | FM914 FM916 FM919 | :pd (OPEN) | OPEN without STATUS= (UNKNOWN: processor dependent, 12.10.1; 914/916 also a default file name); BLANK='NULL' accepted; test 1 then INQUIRE SEQUENTIAL=/DIRECT=/FORMATTED= (the processor's YES/NO/UNKNOWN) | 12.10.1, 12.10.3 | :pd by design |
 | FM915 FM920 | :open (OPEN) | sequential FORM='UNFORMATTED' OPEN not modelled (cheap), but no STATUS= (UNKNOWN, 12.10.1, 915 a default name) and test 1 INQUIRE SEQUENTIAL=/UNFORMATTED= are :pd behind it | 12.10.1, 12.10.3 | :pd by design once OPEN takes UNFORMATTED |
 | (limit) | - | READ/WRITE implied-DO variable not defined after the statement (construct entity, me-rido / me-ido). IOSTAT= on READ/WRITE landed (frun ctl-sugar, V name in the format token, fmean ef-ios: 0 assigned on success, any error or end of file with IOSTAT= :pd, its value the processor's; cases/iostat.f90; no FCVS program uses it) | 12.8.2.3, 12.7 | small, open |
-| FM905 FM907 | :stop | list-directed * output of REAL/COMPLEX | 13.10.4 | needs printing |
+| FM905 FM907 | :pd (layout) | every list-directed line differs between the compilers (2026-11-17, /private/tmp/claude-501/lemmis-ro/): the reference is flang's (minimal width, 1 blank between values, shortest round-trip reals `2.5E-11 .25 250. 2.5E+09`, `(3.,4.)`, records broken at 80 columns); gfortran writes integers I12, reals with 9 (REAL) / 17 (DOUBLE) digits `2.50000003E-11 0.250000000`, `(3.00000000,4.00000000)`, no break at 80. The model's list-directed record is its values as words (fval render; real text exact `~R4:5/2`), compared by value in check-fsem, never by layout; FM905 tests 1, 2, 5, 10 (integers/logicals only) differ by width alone | 13.10.4 | :pd by design (field widths, separators and record length are the processor's) |
+| (gap) | done | a main program with no PROGRAM statement (F77 3.5; R1401 here requires it): frun main-sugar inserts PROGRAM lmain_ before any unit that starts with no header (not after END BLOCK, not before a host's END); cases/noprog.f | 3.5, R1101 | done |
+| (READ error) | :pd | ERR=/IOSTAT= on a READ conversion error (`READ (C,'(I4)',ERR=10)` of 'AB12') stops :pd: F77 12.6 leaves the set of error conditions to the processor; END= at end of file is modelled | 12.6 | :pd by design |
 | FM909 | passed (FCVS 158) | character EQUIVALENCE of different lengths (fequiv: a unit per character); internal WRITE to an array element or substring (fmean int-text then me-assign) and to an undefined variable (int-unit-val); cases/charequiv.f90 | 17.1.2, 12.2.5 | done |
 | FM302 | passed (FCVS 159) | COMMON block laid out otherwise in another unit (shapes, blank common shorter/longer, EQUIVALENCE extending a block): fhelp com-overlay joins the unit's objects to the first unit's as an equivalence group at block offsets; groups now merge through a storage image (eqv-push); cases/comlayout.f90 | 15.9.4, F77 17.1.2 | done |
 | FM062 FM357 FM804 FM828 FM829 FM830 FM831 | :pd | 062 5th power inexact; 357 804 MOD +0/-0; 828 830 831 829(t29) inexact complex * / ** | 6.1.2 / 15.10 | :pd by design (a decision, not work) |
@@ -88,3 +90,7 @@ each theorem means: PLAN.md "Verification".
   proofs skipped, then that event with proofs; pass/fail + checkpoints. Dev only,
   not a gate.
 - `make check` / `make check-gen`: summary lines; full in build/check.txt, check-gen.txt.
+
+## gfortran.dg survey (2026-11-17)
+
+Not run: no gfortran.dg (or gfortran.fortran-torture) on this machine (searched /opt, /usr, /usr/local, the brew gcc 16.2.0 cellar, ~). A scratch runner for one-off files is /private/tmp/claude-501/lemmis-dg/run1.bb MODEL_DIR FILE... (not in the repo). Probing it found the missing-PROGRAM-statement gap above.

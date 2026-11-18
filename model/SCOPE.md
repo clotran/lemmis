@@ -359,7 +359,7 @@ Not a theorem: a test, run by `make check` (exit 1 on any difference).
 | R1216 | input-item | part | variable (a designator, character included; not a substring in the meaning); no io-implied-do |
 | R1217 | output-item | part | expr; no io-implied-do |
 | R1301 | format-stmt | part | its format-specification one token (flex); read into edit descriptors by fio.lisp's parse-format, not proved |
-| R1401 | main-program | proved | the program-stmt required |
+| R1401 | main-program | proved | the program-stmt required by the grammar; frun main-sugar supplies one (F77 3.5) |
 | R1402 | program-stmt | proved |  |
 | R1403 | end-program-stmt | proved |  |
 | R1404 | module | proved |  |
