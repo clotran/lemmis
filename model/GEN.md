@@ -832,6 +832,7 @@ Two findings from acl2-fortran's `stmt` (both fixed now, see above):
    `callst-shape`, `callst-args-run` (gsa-sem by gs-sem-thm), `callst-glue`.
    The proof splits badly when g-callst-ok/-noupd/-is-g-sargs are `:use`d
    together (30k subgoals): each step is its own `rule-classes nil` lemma.
+   (4a) remaining, restated: (i) `a-stc`, a-st with a :sub-call case (the call's value arguments by a-sx on S, stobj arguments threaded, then a-call-val) and the mv lambda (a-call-val's value results bound to mv), with `a-stc = a-st` on st-plain; (ii) gst-sem on sxc-list for g-callst with stobj arguments that are updates (g-settle's temporaries, then g-sacts' gsc-sem) and with dests (the OUT results: c-sorc's frame then puts the dests), then the mv lambda (g-mvtmps' `mv_k` temporaries, gst-lam's pattern), and their st-plain induction extended (gst-ind with :sub calls); (iii) discharging c-sorc and p-sorc for a generated subroutine: g-st-fn-sem generalized to any caller frame, argument codes (gen-callarg's f-invoke-args for objects and values) and OUT results (copy-out), and a-call-ok from a-call-val's definition through defs (a-orc's pattern). Then the instances need (4b).
    Left of 4, restated (2026-11-18): (4a) sx's `:do` and `:call` cases and
    f-invoke of a generated subroutine under a heap-aware oracle (as
    f-call-val is for functions), then gst-sem for g-callst and the mv lambda
