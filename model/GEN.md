@@ -911,6 +911,27 @@ Two findings from acl2-fortran's `stmt` (both fixed now, see above):
    mv lambda) and :sub calls with dests (hpg-run-pop, hpg-run-new,
    hpg-run-take-c); hpg-drain the subroutine tail loop (g-stail);
    hpg-next-tail and hpg-seq-op g-sret's value functions reading a stobj.
+   **gen-stret.lisp** ((4b), value functions, first piece): **`gsr-sem-thm`**
+   -- g-sret against a-sx on sx-list, unconditional as a gsr-sem fact: on
+   call-free bodies, under gs-sem's hypotheses (em-ok, decl-ok, st-ok,
+   obj-is, sn-hyps, em-nostobj, mv/mv-nth not roles nor defined) plus
+   `(dty "r" fr)` the function's type, wherever g-sret and a-sx answer no
+   error, its statements answer :return, the heap unchanged, "r" holding
+   a-sx's value of that type (`sret-ok`). Induction `gsr-ind` on g-sret
+   (the if with fewer than 3 arms, else the leaf), cases `gsr-leaf`
+   (gs-sem-holds, `sret-glue`) and `gsr-if` (split into `gsr-if-test`,
+   `gsr-if-hyps` over `gsr-h`, the hypotheses as a function, then gen-stcase's
+   sif-st-glue); names `srn-ok` (g-sret only adds locals). `a-sx-if-all`:
+   a-sx of an if whether or not it reads the stobj. No new hypothesis.
+   Left for hpg-next-tail/hpg-seq-op: the FUNCTION (f-invoke of g-st-fn's
+   `:function` with an intent(in) object dummy; g-st-fn must pass
+   `(append fnames (st-objs st))` to g-sret as it does to g-stmt, for
+   sn-hyps' `sobjs`), then calls of value functions given the stobj
+   (`f(hs, args)`: a-sx has no such case -- it goes to a-prim and errs --
+   nor sv; a heap-aware value oracle as f-call-val, its bridge to f-ev, and
+   gs-sem's call case), then the instances, whose callees (hpg-ot, hpg-or,
+   hpg-obj-at, hpg-okd, hpg-oi) read `hp_*` externs: until 4c their
+   correctness is a named oracle hypothesis of the instance.
    Left of 4, restated (2026-11-18): (4a) sx's `:do` and `:call` cases and
    f-invoke of a generated subroutine under a heap-aware oracle (as
    f-call-val is for functions), then gst-sem for g-callst and the mv lambda

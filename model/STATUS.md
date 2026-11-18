@@ -77,7 +77,8 @@ no stobj argument an update, under c-sorc/a-call-ok; gen-stcallst); `g-st-fn-cal
 from any caller frame, codes cs; gen-stcsorc), `a-stc` = a-st on st-plain (gen-stc), and the
 oracles made concrete from a table with p-sorc/c-sorc/a-call-ok proved from `tab-ok` alone
 (gen-stdisch), and the functional instance: `sxc-h-ok-is-f-ex-list`, `gst-callst-h` with
-only tab-ok, no oracle hypothesis (gen-stinst). Left, ~6 lanes: rest of 4a (updates/dests/mv
+only tab-ok, no oracle hypothesis (gen-stinst). 4b begun: `gsr-sem-thm`, g-sret (value
+functions reading a stobj) against a-sx, call-free (gen-stret). Left, ~6 lanes: rest of 4a (updates/dests/mv
 lambda on sxc; a-stc's call = a-stcall done, gen-stccall; GEN.md), subroutine tail loops + the other 5 heapgn instances (4b), `hp_*`
 externs (4c), values/runtime shims (2), acl2-fortran printing g-module's output (1).
 
