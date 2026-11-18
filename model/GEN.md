@@ -900,6 +900,17 @@ Two findings from acl2-fortran's `stmt` (both fixed now, see above):
    error and a-stc is `(mv nil S')`, S' a-stcall's (`a-stc-args-noupd`: S
    unchanged, the value results a-sx-list's at any larger fuel, by
    a-sx-mono; `a-stc-call-is-a-stcall`).
+   Still open in 4a after gen-stinst/gen-stmono/gen-stccall: gst-sem for
+   g-callst with stobj arguments that are updates (g-settle's temporaries
+   -- g-settle1, gen-stst -- then g-sacts' gsc-sem, then c-sorc on the
+   temporaries' codes, which the updates leave alone by stan-ok), with dests
+   (OUT results: g-stmt's cons case into gst-sem first), the mv lambda on
+   sxc (g-mvtmps), and gst-ind extended to :sub calls (with a-stc's call
+   case now a-stcall, gen-stccall). No 4b instance can start before these:
+   hpg-run-from-batch and hpg-run-take need OUT results (the cons tuple, the
+   mv lambda) and :sub calls with dests (hpg-run-pop, hpg-run-new,
+   hpg-run-take-c); hpg-drain the subroutine tail loop (g-stail);
+   hpg-next-tail and hpg-seq-op g-sret's value functions reading a stobj.
    Left of 4, restated (2026-11-18): (4a) sx's `:do` and `:call` cases and
    f-invoke of a generated subroutine under a heap-aware oracle (as
    f-call-val is for functions), then gst-sem for g-callst and the mv lambda
