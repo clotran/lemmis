@@ -50,6 +50,9 @@
 ;; string is a control-A then the name (no grammar change); here the name's value, an array's elements
 ;; concatenated, is the format.  ponytail: a bare name only (no element, substring or expression format)
 (defun fv-name (s) (and (stringp s) (< 1 (length s)) (eql (char s 0) (code-char 1)) (subseq s 1 (length s))))
+(defun fv-expr (tx)                  ; the format item's text read again as an expression (frun fmt-var-sub), or nil
+  (let ((ss (flex (if (stringp tx) tx ""))))
+    (and (consp ss) (null (cdr ss)) (mv-let (ok e r) (fp :expr (car ss)) (and ok (null r) e)))))
 (defun fv-cat (rs) (if (atom rs) "" (concatenate 'string (if (stringp (car rs)) (car rs) "") (fv-cat (cdr rs)))))
 (defun fv-text (v) (if (int-file-p v) (fv-cat (int-recs (flat-vals (list v)))) (err :format)))
 
@@ -953,7 +956,7 @@
                         (f0 (if ctl (kaddr (io-spec :fmt ios)) (kadr s))) (endl (ef-end f0)) (errl (ef-err f0)) (iov (ef-ios f0)) (rc (and ctl (rec-args u))) (f1 (ef-fmt f0))
                         (fm0 (if (eq f1 :unf) :unf (io-fmt f1 cx))) (adv (io-adv ios)))
                   (mv-let (s2 st)
-                  (with-v (fv st) (if (fv-name fm0) (me-ev :expr (prim-expr nil (list :name (kw (fv-name fm0)))) env st cx (1- fuel)) (mv nil st))
+                  (with-v (fv st) (cond ((not (fv-name fm0)) (mv nil st)) ((fv-expr (fv-name fm0)) (me-ev :expr (fv-expr (fv-name fm0)) env st cx (1- fuel))) (t (mv (err :format) st)))
                    (let ((fm (if (fv-name fm0) (fv-text fv) fm0)))
                    (with-v (uv st) (cond ((eq u :star) (mv (list (vi 4 (if (member-eq (kar s) '(:write :print)) 6 5))) st))
                                          (rc (me-list rc env st cx (1- fuel)))

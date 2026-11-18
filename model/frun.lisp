@@ -148,6 +148,16 @@
 ;; R1111 BLOCK DATA / DATA in an external procedure (8.6.7, 16.2.5): its DATA objects are saved, and
 ;; defined once before the program's first statement: each such procedure's declarations are elaborated,
 ;; its DATA applied, and the unit marked (fmean's me-call then skips the DATA). Every DATA object must be declared.
+;; a dummy's declaration is not elaborated before the first call (it has no actual yet)
+(defun ents-without (ents dns) (declare (xargs :guard t)) (if (atom ents) nil (if (member-equal (tok-name (kar (car ents))) dns) (ents-without (cdr ents) dns) (cons (car ents) (ents-without (cdr ents) dns)))))
+(defun drop-dummy-decls (ds dns)
+  (declare (xargs :guard t))
+  (cond ((atom ds) nil)
+        ((and (eq (kar (car ds)) :decl) (consp (kdr (kdr (kdr (kdr (car ds)))))))
+         (let* ((d (car ds)) (es (ents-without (kar (kdr (kdr (kdr (kdr d))))) dns)))
+           (if es (cons (list* (kar d) (kadr d) (kaddr d) (kar (kdr (kdr (kdr d)))) es (kdr (kdr (kdr (kdr (kdr d)))))) (drop-dummy-decls (cdr ds) dns))
+             (drop-dummy-decls (cdr ds) dns))))
+        (t (cons (car ds) (drop-dummy-decls (cdr ds) dns)))))
 (defun me-proc-datas (units g gframe st fuel)   ; (mv err st)
   (declare (xargs :guard t :verify-guards nil))
   (if (atom units) (mv nil st)
@@ -156,7 +166,7 @@
           (me-proc-datas (cdr units) g gframe st fuel)
         (let* ((cx (list g nil (unit-formats u))) (ufr (use-frames (kar spec) (car g))) (env0 (append ufr (list gframe)))
                (pfr (proc-frame (kadr (unit-int u)) :host)))
-          (mv-let (e fr copies st) (me-decls (no-datas (kaddr spec)) env0 st cx fuel pfr nil (unit-key u) nil)
+          (mv-let (e fr copies st) (me-decls (drop-dummy-decls (no-datas (kaddr spec)) (dummy-names (unit-hd u))) env0 st cx fuel pfr nil (unit-key u) nil)
             (declare (ignore copies))
             (mv-let (e fr st) (if e (mv e fr st) (com-overlay (kaddr spec) fr st))
             (if e (mv e st)
@@ -251,19 +261,41 @@
         ((equal (car toks) (kw "call")) (alt-subst toks nil 0 1 :call))
         ((equal (car toks) (kw "subroutine")) (alt-subst toks nil 0 1 :sub))
         (t toks)))
-;; F77 12.2.4 FMT= a character variable, by token sugar (see fmean fv-name): in READ/WRITE ( ... ), a name that is
-;; the second positional control item or follows FMT= becomes the format token (:char <control-A> name)
+;; F77 12.2.4 FMT= a character expression or variable, by token sugar (see fmean fv-expr): in READ/WRITE ( ... ),
+;; the second positional control item or the one after FMT=, unless a lone literal, label or *, becomes the format
+;; token (:char <control-A> text), text the item's tokens written out again; fmean reads and evaluates it.
 (defun fv-tok (nm) (list :char (concatenate 'string (coerce (list (code-char 1)) 'string) nm)))
-(defun fmt-var-sub (toks pp prev d commas)   ; toks from just after the "(" (d: paren depth, 1 inside the control list)
+(defun qchars (cs) (declare (xargs :guard t)) (if (atom cs) nil (if (eql (car cs) #\') (list* #\' #\' (qchars (cdr cs))) (cons (car cs) (qchars (cdr cs))))))
+(defun tok-text (tk)                 ; a token as source text, or nil
+  (declare (xargs :guard t))
+  (let ((s (kadr tk)))
+    (cond ((not (stringp s)) (if (eq (kar tk) :log) (if s ".true." ".false.") nil))
+          ((member-eq (kar tk) '(:name :op)) s)
+          ((and (eq (kar tk) :int) (null (kaddr tk))) s)
+          ((eq (kar tk) :char) (coerce (append (list #\') (qchars (coerce s 'list)) (list #\')) 'string))
+          (t nil))))
+(defun toks-text (ts)                ; the tokens (reversed) as text, or nil
+  (declare (xargs :guard t))
+  (if (atom ts) "" (let ((a (tok-text (car ts))) (r (toks-text (cdr ts)))) (and a r (concatenate 'string r " " a)))))
+(defun fmt-lone-p (tk nx)            ; a lone literal, label or * item: left as it is
+  (declare (xargs :guard t))
+  (and (member-equal nx (list (op ",") (op ")"))) (or (member-eq (kar tk) '(:char :int)) (equal tk (op "*")))))
+(defun fmt-flush (acc)               ; the collected item: its format token, or its tokens if it cannot be written out
+  (declare (xargs :guard t))
+  (let ((tx (toks-text acc))) (if tx (list (fv-tok tx)) (reverse (true-list-fix acc)))))
+(defun fmt-var-sub (toks pp prev d commas acc)   ; toks from just after the "(" (d: paren depth, 1 inside the control list); acc the item being collected
   (declare (xargs :guard t :verify-guards nil :measure (len toks)))
-  (if (atom toks) nil
-    (let ((tk (car toks)))
-      (if (and (equal d 1) (eq (kar tk) :name) (stringp (kadr tk)) (consp (cdr toks))
-               (member-equal (cadr toks) (list (op ",") (op ")")))
-               (or (and (equal prev (op ",")) (equal commas 1)) (and (equal prev (op "=")) (equal pp (kw "fmt")))))
-          (cons (fv-tok (kadr tk)) (fmt-var-sub (cdr toks) prev tk d commas))
-        (cons tk (fmt-var-sub (cdr toks) prev tk (cond ((equal tk (op "(")) (1+ d)) ((equal tk (op ")")) (if (< 0 d) (1- d) 0)) (t d))
-                              (if (and (equal d 1) (equal tk (op ","))) (1+ commas) commas)))))))
+  (if (atom toks) (if acc (fmt-flush acc) nil)
+    (let* ((tk (car toks))
+           (d2 (cond ((equal tk (op "(")) (1+ d)) ((equal tk (op ")")) (if (< 0 d) (1- d) 0)) (t d)))
+           (c2 (if (and (equal d 1) (equal tk (op ","))) (1+ commas) commas)))
+      (cond ((and acc (equal d 1) (member-equal tk (list (op ",") (op ")"))))
+             (append (fmt-flush acc) (cons tk (fmt-var-sub (cdr toks) prev tk d2 c2 nil))))
+            (acc (fmt-var-sub (cdr toks) prev tk d2 c2 (cons tk acc)))
+            ((and (equal d 1) (consp (cdr toks)) (not (fmt-lone-p tk (cadr toks))) (not (equal (cadr toks) (op "=")))
+                  (or (and (equal prev (op ",")) (equal commas 1)) (and (equal prev (op "=")) (equal pp (kw "fmt")))))
+             (fmt-var-sub (cdr toks) prev tk d2 c2 (list tk)))
+            (t (cons tk (fmt-var-sub (cdr toks) prev tk d2 c2 nil)))))))
 ;; F77 12.10.4 REWIND / BACKSPACE / ENDFILE (END FILE) u, or ( [UNIT =] u ), as CALL rewind_ ( u ) etc. (fmean pos-op)
 (defun pos-sugar (toks)
   (declare (xargs :guard t :verify-guards nil))
@@ -325,7 +357,7 @@
   (if (and (member-equal (car toks) (list (kw "write") (kw "read"))) (equal (cadr toks) (op "(")))
       (let ((n (paren-end (cdr toks) 0)))
         (if (and n (<= (1+ n) (len toks)))
-            (append (list (car toks) (op "(")) (fmt-var-sub (append (ctl-sugar (take (- n 2) (cddr toks))) (list (op ")"))) nil (op "(") 1 0)
+            (append (list (car toks) (op "(")) (fmt-var-sub (append (ctl-sugar (take (- n 2) (cddr toks))) (list (op ")"))) nil (op "(") 1 0 nil)
                     (io-items (nthcdr (1+ n) toks) t 0 (equal (car toks) (kw "read"))))
           toks))
     toks))))
