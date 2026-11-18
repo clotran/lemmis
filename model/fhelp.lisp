@@ -908,3 +908,18 @@
       (if e (mv e st)
         (mv-let (ok gs) (eqv-merge s gs)
           (if (and ok (eqv-kinds-ok tks)) (eqv-apply (cdr sets) fr st gs vs) (mv (err :equiv) st)))))))
+
+;; F77 8.4.1: a function whose result is CHARACTER*(*) (in its header, or its name's type statement) takes the
+;; length the caller declares. ponytail: the result is fitted to it on return (fmean me-ev), so LEN(f) or a
+;; substring of f inside the function sees the length of the value assigned, not the caller's.
+(defun star-ts-p (ts) (declare (xargs :guard t)) (and (equal (kar ts) "character") (eq (kadr (kadr ts)) :star)))
+(defun ents-name-p (n ents) (declare (xargs :guard t)) (and (consp ents) (or (equal (tok-name (kar (car ents))) n) (ents-name-p n (cdr ents)))))
+(defun star-decl-of (n ds)
+  (declare (xargs :guard t))
+  (and (consp ds)
+       (or (and (eq (kar (car ds)) :decl) (star-ts-p (kadr (car ds))) (ents-name-p n (kar (kdr (kdr (kdr (kdr (car ds))))))))
+           (star-decl-of n (cdr ds)))))
+(defun star-result-p (u)
+  (declare (xargs :guard t))
+  (let ((hd (unit-hd u)))
+    (and (eq (kar hd) :function) (or (star-ts-p (prefix-ts hd)) (star-decl-of (result-name hd) (kaddr (unit-spec u)))) t)))

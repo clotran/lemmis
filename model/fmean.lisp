@@ -443,7 +443,8 @@
                           (declare (ignore d2))
                           (if (and (eq (kar b2) :proc) (eq (kar (unit-hd (kadr b2))) :function))
                               (mv-let (r st) (me-call (kadr b2) (proc-host (kaddr b2) suf2 cx) args env st cx (1- fuel))
-                                (mv (if (or (errp r) (and (equal (scal-ty r) (scal-ty a)) (equal (scal-k r) (scal-k a)))) r (err :type)) st))
+                                (let ((r (if (and (cval-p r) (eq (scal-ty a) :c) (natp (scal-k a)) (star-result-p (kadr b2))) (c-fit (scal-k a) r) r)))   ; F77 8.4.1: a CHARACTER*(*) function's length is the caller's
+                                (mv (if (or (errp r) (and (equal (scal-ty r) (scal-ty a)) (equal (scal-k r) (scal-k a)))) r (err :type)) st)))
                         (with-v (vs st) (mv-let (vs kw st) (me-iargs args nil env st cx (1- fuel)) (mv (if (errp vs) vs (list :ok vs kw)) st))
                           (let ((r (intrinsic-spec (tok-name tk) (kadr vs) (kaddr vs))))
                             (mv (if (or (errp r) (and (equal (scal-ty r) (scal-ty a)) (equal (scal-k r) (scal-k a)))) r (err :type)) st)))))
@@ -674,7 +675,7 @@
                       (mv nil (cons (cons n (list :var loc :alloc)) fr) copies st))))
                  ((member-equal n dns)                           ; a dummy: its actual's binding
                   (me-dummy n ty k ss attrs envf st cx (1- fuel) fr copies))
-                 ((eq k :star) (mv (err :syntax) nil nil st))   ; an assumed length: a dummy's or a constant's (C803)
+                 ((and (eq k :star) (or ss (not (equal n (tok-name key))))) (mv (err :syntax) nil nil st))   ; an assumed length: a dummy's, a constant's or the function's (C803, F77 8.4.1)
                  (t
                   (mv-let (ls us st) (if (and ss (not (all-assumed ss))) (me-bounds ss envf st cx (1- fuel)) (mv nil nil st))
                     (cond
