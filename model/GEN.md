@@ -923,15 +923,39 @@ Two findings from acl2-fortran's `stmt` (both fixed now, see above):
    `gsr-if-hyps` over `gsr-h`, the hypotheses as a function, then gen-stcase's
    sif-st-glue); names `srn-ok` (g-sret only adds locals). `a-sx-if-all`:
    a-sx of an if whether or not it reads the stobj. No new hypothesis.
-   Left for hpg-next-tail/hpg-seq-op: the FUNCTION (f-invoke of g-st-fn's
-   `:function` with an intent(in) object dummy; g-st-fn must pass
-   `(append fnames (st-objs st))` to g-sret as it does to g-stmt, for
-   sn-hyps' `sobjs`), then calls of value functions given the stobj
-   (`f(hs, args)`: a-sx has no such case -- it goes to a-prim and errs --
-   nor sv; a heap-aware value oracle as f-call-val, its bridge to f-ev, and
-   gs-sem's call case), then the instances, whose callees (hpg-ot, hpg-or,
-   hpg-obj-at, hpg-okd, hpg-oi) read `hp_*` externs: until 4c their
-   correctness is a named oracle hypothesis of the instance.
+   **gen-stretfn.lisp**: **`g-sret-fn-sem`** -- the FUNCTION g-st-fn emits
+   for `(fn formals (nil) t x)`: for x call-free, one stobj formal (its
+   dummy `(o :in c)`), o neither a value formal's name nor "r", int64 ks,
+   the heap's key holding S with st-ok, a-sx of x answering no error, and the
+   caller's `ob` any object at key (any intent), f-invoke on
+   `((:var ob) . (g-lits ks))` at fuel past 7 + (len ks) + the body's
+   acl2-count answers `(mv nil v heap)`, v a-sx's value. g-st-fn now passes
+   `(append fnames (st-objs st))` to g-sret as it does to g-stmt (sn-hyps'
+   `sobjs`); check-gen agrees unchanged. Steps: `srl-holds` (g-sret keeps
+   lf-ok), `g-formal-not-r`, `g-st-fn-fshape`, `f-bind-obj-in`, `rfr-ok`
+   (em-ok, decl-ok, "r" declared, obj-is at the callee frame), `rfn-run`
+   (gsr-sem-thm there), `f-invoke-sret` (f-invoke on an abstract FUNCTION of
+   that shape). New hypotheses, both ground facts about st decided by
+   evaluation: o not a value formal's name (as g-st-fn-sem), `(not (equal o
+   "r"))`.
+   **gen-stsxf.lisp**: `a-sxf`, a-sx plus calls of functions in defs on
+   stobj terms (f's body on the arguments' values, S unchanged: a-ev's call
+   case), a new evaluator; **`a-sxf-is-a-sx`** (and the list form): under
+   no-prim-defs, wherever a-sx answers no error, a-sxf is a-sx.
+   Left for hpg-next-tail/hpg-seq-op: calls of value functions given the
+   stobj, `f(hs, args)`, in the code -- a heap-aware value oracle for sv's
+   `:fcall` (svf/sxf, as s-call-val is for CALL), its bridge to f-ev under a
+   p-sorc-like hypothesis, gs-sem on svf against a-sxf with the call case
+   (the oracle answering a-sxf of f's body), discharged from g-sret-fn-sem
+   from any caller frame with argument codes (gen-stcsorc's pattern); then
+   the instances, whose callees (hpg-ot, hpg-or, hpg-obj-at, hpg-okd,
+   hpg-oi) read `hp_*` externs: until 4c their correctness is a named
+   oracle hypothesis of each instance.
+   **Hypotheses still to discharge** (milestone 2, stobj layer): the oracle
+   hypotheses p-sorc/c-sorc/a-call-ok of gst-callst (discharged by tab-ok in
+   gst-callst-h); tab-ok, `(not (g-role nil st))`, o not a formal's name, o
+   not "r" -- each a ground fact decided on a given table/configuration;
+   per heapgn instance, its callees' correctness while they read `hp_*`.
    Left of 4, restated (2026-11-18): (4a) sx's `:do` and `:call` cases and
    f-invoke of a generated subroutine under a heap-aware oracle (as
    f-call-val is for functions), then gst-sem for g-callst and the mv lambda

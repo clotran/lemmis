@@ -334,7 +334,8 @@ extension starts before Stage A is done.
    the oracle hypotheses (gen-stinst: `sxc-h-ok-is-f-ex-list`, `gst-callst-h`).
    Fuel monotonicity of a-ev/a-sx (gen-stmono); a-stc's call case is
    a-stcall (gen-stccall). 4b begun: g-sret against a-sx, call-free
-   (gen-stret's `gsr-sem-thm`).
+   (gen-stret's `gsr-sem-thm`), the FUNCTION (gen-stretfn's
+   `g-sret-fn-sem`), a-sx with calls (gen-stsxf).
    Left, in order: the rest of stobj calls and mv (4a: updates, dests, the
    mv lambda on sxc), tail loops in subroutines and
    the value functions reading a stobj, with the other five checked

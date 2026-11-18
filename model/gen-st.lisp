@@ -519,7 +519,7 @@
       (mv :formals nil))
      ((equal outs '(nil))
       ; reads a stobj, answers a value: a pure FUNCTION, the stobj intent(in)
-      (mv-let (e stmts cnt locs) (g-sret body (g-em vals) 0 nil fn sigs fnames st)
+      (mv-let (e stmts cnt locs) (g-sret body (g-em vals) 0 nil fn sigs (append fnames (st-objs st)) st)
         (declare (ignore cnt))
         (if (or e (not (consp (lkp fn sigs)))) (mv (or e :sig) nil)
           (mv nil (list :function (g-sym fn nil) t
