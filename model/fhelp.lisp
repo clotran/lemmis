@@ -808,3 +808,102 @@
               (list* (car d) (cadr d) (caddr d) '(declare (xargs :guard t :measure (nfix fuel))) (cdddr d))))
           (me-decl-defs (cdr defs)))))
 (defmacro me-mutual (&rest defs) (cons 'mutual-recursion (me-decl-defs defs)))
+
+;; R870 EQUIVALENCE (8.10.1): a unit's sets, its variables declared, give
+;; fequiv.lisp's groups (frun's me-equiv for a main program, fmean's me-call
+;; for a subprogram; both evaluate eqv-sub-es first, eqv-apply takes the
+;; values). Each object's storage starts at a unit, an array element's at its
+;; offset in array element order (9.5.3.2) times its units; the objects of a
+;; set start together (8.10.1.2), sets with a variable in common are one
+;; group. Outside the subset, an :error :equiv: a type other than integer,
+;; real, logical, complex, character; kinds not all default unless one type
+;; and kind (C8110; a character's kind its length); objects that cannot share
+;; storage so. A member already defined (in COMMON, or SAVE'd) gives its
+;; units to the others (19.6.5).
+(defun unit-equivs (ds)
+  (declare (xargs :guard t))
+  (if (atom ds) nil (append (if (eq (kar (car ds)) :equiv) (true-list-fix (kadr (car ds))) nil) (unit-equivs (cdr ds)))))
+(defun strip-equivs (ds) (declare (xargs :guard t)) (if (atom ds) nil (if (eq (kar (car ds)) :equiv) (strip-equivs (cdr ds)) (cons (car ds) (strip-equivs (cdr ds))))))
+(defun lone-prims (as) (declare (xargs :guard t)) (if (atom as) nil (cons (lone-prim (kadr (car as))) (lone-prims (cdr as)))))
+(defun eqv-names (ss)                ; an EQUIVALENCE's objects' names
+  (declare (xargs :guard t))
+  (if (atom ss) nil (append (prim-names (lone-prims (car ss))) (eqv-names (cdr ss)))))
+(defun eqv-sub-es1 (as) (declare (xargs :guard t)) (if (atom as) nil (cons (list :e (kadr (car as))) (eqv-sub-es1 (cdr as)))))
+(defun eqv-set-es (as)               ; a set's elements' subscripts, as me-list items
+  (declare (xargs :guard t))
+  (if (atom as) nil
+    (append (let ((p (lone-prim (kadr (car as))))) (if (eq (kar p) :ref) (eqv-sub-es1 (kaddr p)) nil)) (eqv-set-es (cdr as)))))
+(defun eqv-sub-es (sets) (declare (xargs :guard t)) (if (atom sets) nil (append (eqv-set-es (car sets)) (eqv-sub-es (cdr sets)))))
+(defun eqv-take (n vs)               ; (mv ok idx rest): n integer values
+  (declare (xargs :guard t :measure (nfix n)))
+  (cond ((zp n) (mv t nil vs))
+        ((and (consp vs) (ival-scalar (car vs)))
+         (mv-let (ok idx r) (eqv-take (1- n) (cdr vs)) (mv ok (cons (v-num (car vs)) idx) r)))
+        (t (mv nil nil nil))))
+(defun eqv-tk (v) (declare (xargs :guard t)) (if (aval-p v) (list (a-ty v) (a-k v)) (list (scal-ty v) (scal-k v))))
+(defun eqv-item (a fr st vs)         ; (mv err (loc . unit) vs)
+  (declare (xargs :guard t))
+  (let* ((p (lone-prim (kadr a))) (b (cdr (alk (tok-name (kadr p)) fr))) (loc (kadr b)) (v (st-get loc st)))
+    (cond ((not (and (eq (kar b) :var) (eq (kaddr b) :rw) (member-eq (car (eqv-tk v)) '(:i :r :l :z :c)))) (mv (err :equiv) nil vs))
+          ((eq (kar p) :name) (mv nil (cons loc 0) vs))
+          ((not (and (eq (kar p) :ref) (aval-p v))) (mv (err :equiv) nil vs))
+          (t (mv-let (ok idx vs) (eqv-take (len (kaddr p)) vs)
+               (let ((off (and ok (arr-offset idx (a-lbs v) (a-ubs v)))))
+                 (if (natp off) (mv nil (cons loc (* off (if (eq (a-ty v) :z) 2 1))) vs) (mv (err :equiv) nil vs))))))))
+(defun eqv-union (a b)               ; (mv ok alist): a's (loc . start)s with b's, a loc at one start
+  (declare (xargs :guard t))
+  (if (atom a) (mv t b)
+    (let ((c (alk (kar (car a)) b)))
+      (cond ((null c) (eqv-union (cdr a) (cons (car a) b)))
+            ((equal (cdr c) (kdr (car a))) (eqv-union (cdr a) b))
+            (t (mv nil nil))))))
+(defun eqv-shift (s d) (declare (xargs :guard t)) (if (atom s) nil (cons (cons (kar (car s)) (+ (ifix d) (ifix (kdr (car s))))) (eqv-shift (cdr s) d))))
+(defun eqv-common (s g) (declare (xargs :guard t)) (cond ((atom s) nil) ((alk (kar (car s)) g) (car s)) (t (eqv-common (cdr s) g))))
+(defun eqv-merge (s gs)              ; (mv ok groups): s joined to the groups it meets
+  (declare (xargs :guard t :measure (len gs)))
+  (if (atom gs) (mv t (list s))
+    (let ((c (eqv-common s (car gs))))
+      (if (null c) (mv-let (ok r) (eqv-merge s (cdr gs)) (mv ok (cons (car gs) r)))
+        (mv-let (ok u) (eqv-union (eqv-shift s (- (ifix (cdr (alk (car c) (car gs)))) (ifix (cdr c)))) (car gs))
+          (if ok (eqv-merge u (cdr gs)) (mv nil nil)))))))
+(defun eqv-set (as fr st s tks vs)   ; (mv err s tks vs): a set's (loc . start)s, its objects' (ty k)s
+  (declare (xargs :guard t))
+  (if (atom as) (mv nil s tks vs)
+    (mv-let (e it vs) (eqv-item (car as) fr st vs)
+      (if e (mv e nil nil vs)
+        (mv-let (ok s2) (eqv-union (list (cons (car it) (- (ifix (cdr it))))) s)
+          (if ok (eqv-set (cdr as) fr st s2 (cons (eqv-tk (st-get (car it) st)) tks) vs) (mv (err :equiv) nil nil vs)))))))
+(defun eqv-kinds-ok (tks)            ; C8110: numeric or logical all of default kind, or one type and kind
+  (declare (xargs :guard t))
+  (or (and (subsetp-equal (strip-cars-safe tks) '(:i :r :l :z)) (subsetp-equal (strip-cadrs-safe tks) '(4)))
+      (and (consp tks) (subsetp-equal tks (list (car tks))))))
+(defun eqv-all-undef (us) (declare (xargs :guard t)) (if (atom us) t (and (eq (kaddr (car us)) :u) (eqv-all-undef (cdr us)))))
+(defun eqv-install (g ms st)         ; each member's key (:eqv loc) to the group g
+  (declare (xargs :guard t))
+  (if (atom ms) st (eqv-install g (cdr ms) (st-save (list :eqv (kar (car ms))) g st))))
+(defun eqv-push (ms st)              ; each defined member's units to the others
+  (declare (xargs :guard t))
+  (cond ((atom ms) st)
+        ((eqv-all-undef (eqv-units (st-get (kar (car ms)) st))) (eqv-push (cdr ms) st))
+        (t (eqv-push (cdr ms) (st-put (kar (car ms)) (st-get (kar (car ms)) st) st)))))
+(defun eqv-installs (gs st)
+  (declare (xargs :guard t))
+  (if (atom gs) st (eqv-installs (cdr gs) (eqv-push (car gs) (eqv-install (car gs) (car gs) st)))))
+;; a member's group from an earlier unit (BLOCK DATA, an earlier call: the same COMMON or SAVE'd storage)
+;; joins the new one, so storage shared through it stays shared.
+;; ponytail: a call's fresh locals stay in the group after it returns; per-call removal if groups grow large
+(defun eqv-olds (ms st)
+  (declare (xargs :guard t))
+  (if (atom ms) nil
+    (let ((g (cdr (alk (list :eqv (kar (car ms))) (st-saves st))))) (append (if (consp g) (list g) nil) (eqv-olds (cdr ms) st)))))
+(defun eqv-olds* (gs st) (declare (xargs :guard t)) (if (atom gs) nil (append (eqv-olds (car gs) st) (eqv-olds* (cdr gs) st))))
+(defun eqv-merges (ss gs)
+  (declare (xargs :guard t))
+  (if (atom ss) (mv t gs) (mv-let (ok gs) (eqv-merge (car ss) gs) (if ok (eqv-merges (cdr ss) gs) (mv nil nil)))))
+(defun eqv-apply (sets fr st gs vs)  ; (mv err st): vs the values of (eqv-sub-es sets)
+  (declare (xargs :guard t :measure (acl2-count sets)))
+  (if (atom sets) (mv-let (ok gs) (eqv-merges (eqv-olds* gs st) gs) (if ok (mv nil (eqv-installs gs st)) (mv (err :equiv) st)))
+    (mv-let (e s tks vs) (eqv-set (car sets) fr st nil nil vs)
+      (if e (mv e st)
+        (mv-let (ok gs) (eqv-merge s gs)
+          (if (and ok (eqv-kinds-ok tks)) (eqv-apply (cdr sets) fr st gs vs) (mv (err :equiv) st)))))))

@@ -48,7 +48,7 @@ Not a theorem: a test, run by `make check` (exit 1 on any difference).
   another for MOD): MOD now takes A's sign, as gfortran, flang and
   flang-new do (`cases/modzero.f90`); MODULO's zero stays processor dependent.
 - **FCVS**: scored, not failed, and only when `fcvs/` is fetched
-  (`bb fetch-fcvs.bb`; not committed): 155 of 180 programs print their
+  (`bb fetch-fcvs.bb`; not committed): 157 of 180 programs print their
   reference output exactly (build/fcvs.txt lists them; the names below are the earlier 75) (FM002-010, 012, 016-021, 025, 026, 030-045,
   060, 061, 097, 098, 109, 201-205, 251, 254, 256, 301, 306, 352-355,
   359-362, 368-370, 372-374, 718, 801, 803, 805-807, 812, 814, 816, 819, 821, 822). Of the rest, most stop at a statement outside the
@@ -258,11 +258,11 @@ Not a theorem: a test, run by `make check` (exit 1 on any difference).
 | R851 | dimension-stmt | proved | DIMENSION [::] entity-decl-list, each an array-name ( array-spec ), no initialization; in the meaning the array-spec joins the entity's declaration, or an implicitly typed one (8.7) |
 | R855 | parameter-stmt | proved | PARAMETER ( named-constant-def-list ) (:parstmt), "parameter" now among *fkeywords*; in the meaning each named constant takes its earlier type declaration (moved to the statement, with the PARAMETER attribute) or its implicit type (8.7), its value converted as by assignment (fdecl's par-decls) |
 | R856 | named-constant-def | proved | named-constant = constant-expr, read as an entity-decl (:ent) with an initialization only |
-| R859 | save-stmt | proved | SAVE [[::] saved-entity-list], each an object-name (no common block); in the meaning, each saved entity's SAVE attribute (8.5.16) |
+| R859 | save-stmt | proved | SAVE [[::] saved-entity-list], each an object-name; a / common-block-name / dropped before parsing (frun save-blks: COMMON is saved already); in the meaning, each saved entity's SAVE attribute (8.5.16) |
 | R866 | implicit-stmt | proved | IMPLICIT NONE, IMPLICIT implicit-spec-list (read by imp-specs, proved with its own lemmas in fstmt-base.lisp); in the meaning a main program's or subprogram's undeclared names (a main program's DIMENSION'd names too) are typed by their first letter (8.7) |
 | R867 | implicit-spec | proved | declaration-type-spec ( letter-spec-list ): INTEGER, REAL, LOGICAL, COMPLEX, DOUBLE PRECISION, CHARACTER [* char-length]; no kind-selector |
 | R868 | letter-spec | proved | letter [- letter] |
-| R870 | equivalence-stmt | part | EQUIVALENCE equivalence-set-list (:equiv, an :esets; parse proved); in the meaning a main program's only (fequiv.lisp storage units, frun's me-equiv); elsewhere an :error :equiv |
+| R870 | equivalence-stmt | part | EQUIVALENCE equivalence-set-list (:equiv, an :esets; parse proved); in the meaning any unit's (fequiv.lisp storage units, fhelp eqv-apply: frun me-equiv, me-proc-datas, fmean me-call), a dummy an :error :equiv; a member's group from an earlier unit (COMMON, BLOCK DATA) joins the new one |
 | R871 | equivalence-set | part | ( equivalence-object , equivalence-object-list ), read as actual args (eqv-set-p); the objects' storage starts together, sets sharing a variable one group; integer, real, logical, complex, all default kind or one type and kind (C8110), else :error :equiv; no initialized object |
 | R872 | equivalence-object | part | variable-name or array-element (subscripts any integer expression); no substring, character or derived type |
 | R873 | common-stmt | proved | COMMON [/ [common-block-name] /] common-block-object-list [[,] / [common-block-name] / common-block-object-list]... (:common, a :citems); in the meaning each object gets SAVE and its block and place, the i-th object of a block one variable in every unit; subset: the same type, kind and bounds in each unit; BLOCK DATA [name] is read as a subroutine (frun io-sugar) and DATA in any external procedure runs once before the main program (frun me-proc-datas), so a block data unit initialises COMMON; no storage-sequence overlay (fdecl) |

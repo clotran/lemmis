@@ -505,7 +505,7 @@
                         (ufr (use-frames (kar spec) (g-mods (cx-g cx))))
                         (fr (append (proc-frame (kadr (unit-int u)) :host) fr))
                         (cx2 (list (cx-g cx) purep (unit-formats u))))
-                   (mv-let (e fr copies st) (me-decls (if (assoc-equal (data-marker (unit-key u)) (st-saves st)) (strip-datas (kaddr spec)) (kaddr spec)) (append ufr host) st cx2 (1- fuel) fr copies
+                   (mv-let (e fr copies st) (me-decls (strip-equivs (if (assoc-equal (data-marker (unit-key u)) (st-saves st)) (strip-datas (kaddr spec)) (kaddr spec))) (append ufr host) st cx2 (1- fuel) fr copies
                                                       (unit-key u) (dummy-names hd))
                      (if e (mv e st)
                        (mv-let (fr st) (if (kadr spec) (mv fr st)     ; IMPLICIT NONE, or implicit typing (8.7)
@@ -513,13 +513,18 @@
                                                  (mv-let (loc st) (st-new (ts-undef (imp-rule (result-name hd) (unit-rules u))) st)
                                                    (mv (cons (cons (result-name hd) (list :var loc :rw)) fr) st))
                                                (mv fr st))
-                                         (implicit-vars (used-names (unit-exec u)) fr (append ufr host) st (unit-rules u))))
-                       (let ((env2 (cons fr (append ufr host))))
+                                         (implicit-vars (append (used-names (unit-exec u)) (eqv-names (unit-equivs (kaddr spec)))) fr (append ufr host) st (unit-rules u))))
+                       (let ((env2 (cons fr (append ufr host))) (eqs (unit-equivs (kaddr spec))))
+                       (mv-let (e st) (cond ((atom eqs) (mv nil st))   ; R870 (fhelp eqv-apply): no dummy (8.10.1.1)
+                                            ((intersectp-equal (eqv-names eqs) (dummy-names hd)) (mv (err :equiv) st))
+                                            (t (mv-let (vs st) (me-list (eqv-sub-es eqs) env2 st cx2 (1- fuel))
+                                                 (if (errp vs) (mv vs st) (eqv-apply eqs fr st nil vs)))))
+                       (if e (mv e st)
                          (mv-let (sfr exec) (sfun-frame (unit-exec u) fr st (unit-rules u) (kadr spec))   ; R1544
                          (mv-let (s st) (me-blk exec (if sfr (list* sfr fr (append ufr host)) env2) st cx2 (1- fuel))
                            (cond ((errp s) (mv s st))
                                  ((not (or (member-eq s '(:normal :return)) (and (not fn) (altret-p s)))) (mv (err :syntax) st))
-                                 (t (mv-let (r st) (call-result fn hd copies fr st) (mv (if (and (altret-p s) (eq r :normal)) s r) st))))))))))))))))))))
+                                 (t (mv-let (r st) (call-result fn hd copies fr st) (mv (if (and (altret-p s) (eq r :normal)) s r) st))))))))))))))))))))))
 
  ; each dummy dn bound to its actual: a whole variable by reference; an
  ; element or section to a temporary copied back; an expression to a
@@ -613,7 +618,7 @@
               (declare (ignore cps))
               (if e (mv e nil nil st)
                 (me-decls (cdr ds) env st cx (1- fuel) (cons (cons tn (list :type (frame-vals cfr st))) fr) copies key dns)))))
-         ((eq (kar (car ds)) :equiv) (mv (err :equiv) nil nil st))   ; EQUIVALENCE outside a main program: frun's me-equiv reads a main's
+         ((eq (kar (car ds)) :equiv) (mv (err :equiv) nil nil st))   ; EQUIVALENCE: frun's me-equiv or me-call reads it, after the declarations
          ((eq (kar (car ds)) :data) (mv (err :data) nil nil st))   ; DATA outside a main program: frun's me-data reads a main's
          ; TYPE ( type-name ): entities of a type defined in scope
          ((eq (kar (car ds)) :tdecl)

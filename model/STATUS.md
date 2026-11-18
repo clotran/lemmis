@@ -7,19 +7,19 @@ whole; use the headings below and `grep -n` / `sed -n`.
 
 - SCOPE score: 165 of 208 rules proved, 43 in part, none missing (SCOPE.md, first
   paragraphs).
-- FCVS: 155 of 180 programs print their reference output (SCOPE.md, "Theorem 3:
+- FCVS: 157 of 180 programs print their reference output (SCOPE.md, "Theorem 3:
   checked against the compilers", the FCVS bullet; the passing names are in
   build/fcvs.txt after `make check`).
 - Fuzzer: `make fuzz` (seed 1, 40 programs) agrees under gfortran and flang; seeds 1-5
   clean (same SCOPE section, "The fuzzer").
-- Oracle cases: 7 fsyn cases + 54 whole programs in model/cases/, all agree.
+- Oracle cases: 7 fsyn cases + 55 whole programs in model/cases/, all agree.
 
 ## Next lanes, in order
 
 FCVS re-classification, 2026-11-16, 52 failing programs (128 pass), first stop by fortran-run-form (fixed driver). Internal WRITE landed (095bf6b: a whole CHARACTER scalar/array unit, formatted; element/substring unit and list-directed internal WRITE still :unit); no failing program moved by it, FM711's WRITE(UNIT=CVCOMP,FMT=C1N002) first needs a variable FMT (below). FM829: test 28 passes, the :pd is test 29, REAL((3.495,98.734)*AVC), an inexact single complex product (15.10), same class as 828 830 831: stays :pd. Sizes (52): small 15, needs file store 23, needs printing 2, needs storage-sequence 2, :pd by design 7, other (not isolated) 3.
 | program | first stop | construct | F77 rule | size |
 | FM903 | :parse | FMT= an expression ('(/1X,' // A65VK // ...) or an array element C151K(IVI) (bare names now work), T/TL/TR (READ implied-DO landed) | 12.2.4, 12.8, 12.8.2.3 | medium: the format needs a grammar/AST change (fmt-spec-p holds only * label char-literal; names are token sugar), READ implied-DO needs the :readf all-lone items relaxed |
-| FM500 FM503 | :parse SAVE /b/; :equiv | EQUIVALENCE in a subprogram (also with COMMON members), SAVE /blk/ | 8.10.1 / 15.9.4 | needs storage-sequence (FM506 passes) |
+| FM500 FM503 | passed (FCVS 157) | EQUIVALENCE in a subprogram and with COMMON members; SAVE /blk/ (frun save-blks token sugar); fhelp eqv-apply takes the subscripts evaluated (me-list) so fmean me-call runs it with no clique change; a member's earlier group (BLOCK DATA, a COMMON member) joins the new one; DATA implied-DO variables implicitly typed (frun ctl-names); cases/equivsub.f90 | 8.10.1 / 15.9.4 | done |
 | FM200 | passed (already at 7e7ebba; the row was stale) | blanks inside names/numbers across continuation lines | 3.2.2 | done |
 | FM100-102 FM104-108 FM401 FM402 FM411 | passed (FCVS 151) | in-memory sequential file store (fio st-units, default file per unit, empty at start), REWIND/BACKSPACE/ENDFILE token sugar CALL rewind_(u), unformatted READ/WRITE(u) and END= by format-token sugar (frun ctl-sugar), READ implied-DO as rdido_([...]) (me-rido); no grammar change | 12.10 | done |
 | FM912 | passed (FCVS 152) | formatted direct access to a named file: OPEN/CLOSE/INQUIRE as CALL open_(specs) (frun file-sugar, fmean fc-run), REC=/ERR= by ctl-sugar (unit rec_(u,r), ERR= in the format token), fio d-open/d-write/d-recs, named files ((:file name) recs) in st-units; ERR=/IOSTAT= also on CLOSE/REWIND/BACKSPACE/ENDFILE; no grammar change | 12.2.4.2, 12.10.1-3 | done |
@@ -30,7 +30,7 @@ FCVS re-classification, 2026-11-16, 52 failing programs (128 pass), first stop b
 | FM915 FM920 | :open (OPEN) | sequential FORM='UNFORMATTED' OPEN not modelled (cheap), but no STATUS= (UNKNOWN, 12.10.1, 915 a default name) and test 1 INQUIRE SEQUENTIAL=/UNFORMATTED= are :pd behind it | 12.10.1, 12.10.3 | :pd by design once OPEN takes UNFORMATTED |
 | (limit) | - | READ/WRITE implied-DO variable not defined after the statement (construct entity, me-rido / me-ido). IOSTAT= on READ/WRITE landed (frun ctl-sugar, V name in the format token, fmean ef-ios: 0 assigned on success, any error or end of file with IOSTAT= :pd, its value the processor's; cases/iostat.f90; no FCVS program uses it) | 12.8.2.3, 12.7 | small, open |
 | FM905 FM907 | :stop | list-directed * output of REAL/COMPLEX | 13.10.4 | needs printing |
-| FM302 FM909 | :common / :equiv | COMMON block redeclared; EQUIVALENCE in a subprogram | 15.9.4 | needs storage-sequence |
+| FM302 FM909 | :common / :equiv | COMMON block redeclared; FM909 character EQUIVALENCE of different lengths (A97VK*97 with A97E1(97)*1: per-character storage units) | 15.9.4 | needs storage-sequence |
 | FM062 FM357 FM804 FM828 FM829 FM830 FM831 | :pd | 062 5th power inexact; 357 804 MOD +0/-0; 828 830 831 829(t29) inexact complex * / ** | 6.1.2 / 15.10 | :pd by design (a decision, not work) |
 | FM906 | passed (FCVS 153) | list-directed input of a complex with an end of record between the real part and the comma or the comma and the imaginary part (fio li-cxr; cases/cxrecs.f90) | 13.6 | done |
 | FM715 | passed (FCVS 154) | fixed-form CHARACTER*10 FUNCTION and CHARACTER*(*) FUNCTION headers (flex ff-clen, ff-fn-sp; ff-stmt-no-blanks re-proved), and COMPLEX FUNCTION (FM722); cases/fixedfn.f | 3.1.6, 15.5.1 | done |
@@ -55,7 +55,7 @@ fortran-run-form per program, bucketing (:ERROR :PARSE)'s AT tokens, else STATUS
    (`REWIND I08`) 7. 4. EXTERNAL and INTRINSIC parse (R1210, R1216; no run-time effect yet; FCVS 112 unchanged): typed-prefix FUNCTION headers (INTEGER/REAL/LOGICAL/DOUBLE PRECISION FUNCTION, blank-free, flex *ff-keywords*) now parse (113): 308 311 now pass (a type statement naming an intrinsic or an external function, REAL SINH, INTEGER FF312, is a call; statement functions in external functions); the 113 -> 117 step was FM028 FM056 FM308 FM311 (diffed against a 961361e rebuild); dummy procedures (an external function, subroutine or specific intrinsic name as an actual, dummy bound to the proc or (:intr name); fhelp proc-actual): FM317 FM328 pass, FCVS 119; an array element actual to an explicit-shape array dummy (sequence association, F77 15.9.3.3) now binds the storage sequence from that element (dummy-elem, copy-back :from; error :shape when too few remain): FM317 tests 26-28 and FM328 17-19 pass, but 317 (test 29) and 328 (test 20) now stop at a procedure name as an actual argument (FF325, FF330; dummy procedures), still 117, 509 CALL `*` returns, 500 CHARACTER*2D2, 722 unit, 903 READ implied-DO. FM407/413/910/912/914/916/917/919-922/915 stop at OPEN/INQUIRE and need an in-memory file store (queued). WRITE implied-DO (io-implied-do, F77 12.8.2.3, rewritten to an array constructor before the parse, io-sugar in frun.lisp; FM710 passes, FCVS 120; FM905 now runs but differs; 5. odd unit / FMT=
    variable 6. 6. Unit fails to parse, cause not isolated (:PROGRAM) 6. 7. Run-time :END was the harness passing no card-reader input; it now feeds each .reference_input (FM403 FM404 pass, FCVS 122; FM110 stops at a later READ, FM900/FM901 at READ of COMPLEX / substring items :TYPE). Classified stops: FM405 FM908 :UNIT = READ from an internal file (12.2.5); FM302 :COMMON = block redeclared with other entity types/shapes (15.9.4, needs a storage sequence); FM080 :TYPE at test 686 (FF083 implicit-real function); FM829 :TYPE at test 3 (INT of a complex argument); FM907 FM905 :STOP = list-directed output of REAL/COMPLEX prints raw ~R values (13.10.4, printing milestone). fi-real accepts a bare `.` as zero (gfortran and flang agree). 8. Computed GO TO 3, END FILE 2, CALL `*` returns 2, BLOCK DATA 2; DATA
    implied-DO/substring (FM700), :TYPE (FM829), READ implied-DO, INQUIRE, ASSIGN 1 each.
-EQUIVALENCE (fequiv.lisp, frun me-equiv): main programs only; a subprogram's is :error :equiv.
+EQUIVALENCE (fequiv.lisp, fhelp eqv-apply; frun me-equiv for a main, fmean me-call for a subprogram, frun me-proc-datas for BLOCK DATA): no dummy; character only of one length.
 New blank-free keyword: one more `*ff-keywords*` entry (flex.lisp `ff-stmt`). After these:
 READ/WRITE on a connected unit (per-unit records in st-units), INQUIRE.
 fstmt-complete's runes write stalls on `decl-rest-comma-second` (traps). Then the rest of Stage A (derived-type gap, the "part" rows): SCOPE.md, "The rules".
