@@ -892,6 +892,14 @@ Two findings from acl2-fortran's `stmt` (both fixed now, see above):
    meaning answers no error at fuel n, it answers the same at any integer m
    >= n (flag inductions on both fuels). Needed to compare a-stc-args (fuel
    spent on stobj arguments too) with a-stcall's a-sx-list.
+   **gen-stccall.lisp**: **`a-stc-sub-is-a-stcall`** -- a-stc's call case is
+   a-stcall: for x = (f . xs), f a :sub of st, no stobj argument an update
+   (`not g-upd`), as many arguments as formals, no formal named mv, no
+   argument an `(mv-nth 'k mv)` (`no-mvnth`), and `(not (g-role 'if st))`:
+   wherever a-stc answers no error, a-stcall at one less fuel answers no
+   error and a-stc is `(mv nil S')`, S' a-stcall's (`a-stc-args-noupd`: S
+   unchanged, the value results a-sx-list's at any larger fuel, by
+   a-sx-mono; `a-stc-call-is-a-stcall`).
    Left of 4, restated (2026-11-18): (4a) sx's `:do` and `:call` cases and
    f-invoke of a generated subroutine under a heap-aware oracle (as
    f-call-val is for functions), then gst-sem for g-callst and the mv lambda
