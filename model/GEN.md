@@ -867,6 +867,27 @@ Two findings from acl2-fortran's `stmt` (both fixed now, see above):
    with rs, i.e. g-stmt's cons case, not yet in gst-sem), the mv lambda on
    sxc (g-mvtmps), the st-plain induction extended to :sub calls; a-stc's
    call case against a-stcall (equal when no stobj argument is an update).
+   **gen-stinst.lisp** ((4a), the functional instance): sxc/sxc-list and
+   a-stcall copied with the concrete oracles (`sxc-h`, `sxc-list-h`,
+   `a-stcall-h`: sc-orc for s-call-val, ac-orc for a-call-val, their
+   parameters tab st defs n o as arguments). **`sxc-h-ok-is-f-ex-list`**:
+   for a table with `tab-ok tab gdefs sigs st defs procs o b`, natp b,
+   wherever sxc-list-h answers a non-error status, f-ex-list at fuel past b +
+   the statements' size is sxc-list-h. **`gst-callst-h`**: gst-callst with
+   `tab-ok` in place of c-sorc and a-call-ok (sxc-list-h, a-stcall-h). Both
+   by `:functional-instance` (sxc-ok-is-f-ex-list, gst-callst) with fresh
+   names for the oracles' parameters (ACL2 refuses a substitution whose free
+   variables a constraint binds), then `:instance`; the constraints get
+   their hints by content (`stinst-hint`: a defun-sk's definition, its
+   necc, sxc's equations). c-sorc's and a-call-ok's lambdas need the
+   caller's st apart from the oracle's: `c-sorc-h2`/`a-call-ok-h2`, given by
+   c-sorc-h/a-call-ok-h when they agree. **No oracle hypothesis is left** in
+   either theorem: only tab-ok, decidable on a given table.
+   `(not (g-role nil st))` in a-stc-is-a-st: harmless -- a ground fact
+   about the configuration (no entry for the symbol nil), true of every
+   g-st-cfg built from a stobj's field names (heapgn's included) and
+   discharged by evaluation in an instance; dropping it would mean changing
+   a-stc-args (a lambda's arguments past its vars are read with var nil).
    Left of 4, restated (2026-11-18): (4a) sx's `:do` and `:call` cases and
    f-invoke of a generated subroutine under a heap-aware oracle (as
    f-call-val is for functions), then gst-sem for g-callst and the mv lambda
