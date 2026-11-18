@@ -884,10 +884,14 @@ Two findings from acl2-fortran's `stmt` (both fixed now, see above):
    c-sorc-h/a-call-ok-h when they agree. **No oracle hypothesis is left** in
    either theorem: only tab-ok, decidable on a given table.
    `(not (g-role nil st))` in a-stc-is-a-st: harmless -- a ground fact
-   about the configuration (no entry for the symbol nil), true of every
-   g-st-cfg built from a stobj's field names (heapgn's included) and
-   discharged by evaluation in an instance; dropping it would mean changing
+   about the configuration (no entry for the symbol nil), decided by
+   evaluation on a given st, so an instance discharges it as it does tab-ok; dropping it would mean changing
    a-stc-args (a lambda's arguments past its vars are read with var nil).
+   **gen-stmono.lisp**: fuel monotonicity, **`a-ev-mono`**,
+   **`a-ev-list-mono`**, **`a-sx-mono`**, **`a-sx-list-mono`**: wherever the
+   meaning answers no error at fuel n, it answers the same at any integer m
+   >= n (flag inductions on both fuels). Needed to compare a-stc-args (fuel
+   spent on stobj arguments too) with a-stcall's a-sx-list.
    Left of 4, restated (2026-11-18): (4a) sx's `:do` and `:call` cases and
    f-invoke of a generated subroutine under a heap-aware oracle (as
    f-call-val is for functions), then gst-sem for g-callst and the mv lambda
