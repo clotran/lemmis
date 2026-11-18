@@ -17,8 +17,9 @@
 (include-book "gen-stst")
 (include-book "gen-stcall")
 
-(encapsulate (((a-call-val * * *) => (mv * *)))
-  (local (defun a-call-val (f ks s) (declare (ignore f ks)) (mv :unknown s))))
+; (mv err S' rs): rs the call's results by position (nil at a stobj's), read by an mv lambda (gen-stc)
+(encapsulate (((a-call-val * * *) => (mv * * *)))
+  (local (defun a-call-val (f ks s) (declare (ignore f ks)) (mv :unknown s nil))))
 
 ; a call's value arguments, and the objects g-scall-args passes for its stobj formals
 (defun g-cvals (formals xs st)
@@ -36,7 +37,7 @@
 ; the source's meaning of the call
 (defun a-stcall (x env s st defs n)
   (mv-let (e ks) (a-sx-list (g-cvals (g-obj (car x) st) (cdr x) st) env s st defs n)
-    (if e (mv e s) (a-call-val (car x) ks s))))
+    (if e (mv e s nil) (a-call-val (car x) ks s))))
 
 ; ---- g-scall-args (upd t) is g-sargs on the value arguments
 
@@ -119,7 +120,7 @@
 ; the Fortran oracle answers the emitted CALL as the source's does
 (defun-sk c-sorc (o st)
   (forall (f xs cs fr heap ks s)
-    (implies (and (eq (g-role f st) :sub) (obj-at o s fr heap) (svs-is cs ks fr heap) (int64s ks)
+    (implies (and (eq (g-role f st) :sub) (equal (len xs) (len (g-obj f st))) (obj-at o s fr heap) (svs-is cs ks fr heap) (int64s ks)
                   (not (mv-nth 0 (a-call-val f ks s))))
              (equal (s-call-val (g-sym f nil) (append (g-scs (g-obj f st) xs st) cs) fr heap)
                     (list nil fr (put (okey o fr) (mv-nth 1 (a-call-val f ks s)) heap))))))
@@ -237,7 +238,7 @@
            :in-theory (disable a-stcall g-role g-callst g-sargs a-sx-list sx-list sxc-list obj-at okey st-ok st-wf
                                no-calls em-ok decl-ok g-cvals g-scs g-sym svs-is put lkp g-upd g-obj
                                c-sorc-necc a-call-ok-necc callst-glue)
-           :use (callst-shape a-stcall-parts
+           :use (callst-shape a-stcall-parts (:instance g-callst-ok (dests nil))
                  (:instance callst-args-run (xs (cvs)))
                  (:instance c-sorc-necc (f (car x)) (xs (cdr x)) (cs (gca 2)) (fr (cfr1)) (ks (cks)))
                  (:instance a-call-ok-necc (f (car x)) (ks (cks)))
