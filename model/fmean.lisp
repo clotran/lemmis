@@ -83,7 +83,7 @@
 
 ;; F77 12.9.5 unformatted READ/WRITE (no format) and 12.7.2 END=, by token sugar (frun ctl-sugar): the
 ;; format written as (:char <control-C> label <control-C> f), label END='s ("" when none), f U (unformatted),
-;; *, L and a FORMAT label, or C and a literal format. ponytail: no END= with a variable format, no ERR= or IOSTAT=
+;; *, L and a FORMAT label, or C and a literal format; IOSTAT= v as V v <control-C> before f. ponytail: no END= with a variable format
 (defun ef-ctl-p (f) (and (stringp (kadr f)) (< 0 (length (kadr f))) (eql (char (kadr f) 0) (code-char 3))))
 (defun ef-parts (cs acc)             ; the characters after the first control-C: (mv label rest)
   (cond ((atom cs) (mv "" nil)) ((eql (car cs) (code-char 3)) (mv (coerce (reverse acc) 'string) (cdr cs)))
@@ -95,11 +95,16 @@
       (mv-let (l r) (ef-parts (cdr (coerce (kadr f) 'list)) nil)
         (declare (ignore l))
         (mv-let (l2 r) (ef-parts r nil) (declare (ignore l2))
-        (cond ((equal r '(#\U)) :unf) ((equal r '(#\*)) :star) ((eql (car r) #\L) (coerce (cdr r) 'string)) ((eql (car r) #\C) (list :char (coerce (cdr r) 'string))) (t f))))
+        (let ((r (if (eql (car r) #\V) (mv-let (v r2) (ef-parts r nil) (declare (ignore v)) r2) r)))
+        (cond ((equal r '(#\U)) :unf) ((equal r '(#\*)) :star) ((eql (car r) #\L) (coerce (cdr r) 'string)) ((eql (car r) #\C) (list :char (coerce (cdr r) 'string))) (t f)))))
     f))
 (defun ef-err (f)                    ; ERR='s label, or nil
   (if (ef-ctl-p f) (mv-let (l r) (ef-parts (cdr (coerce (kadr f) 'list)) nil) (declare (ignore l))
                      (mv-let (l2 r2) (ef-parts r nil) (declare (ignore r2)) (if (equal l2 "") nil l2))) nil))
+(defun ef-ios (f)                    ; IOSTAT='s variable name, or nil
+  (if (ef-ctl-p f) (mv-let (l r) (ef-parts (cdr (coerce (kadr f) 'list)) nil) (declare (ignore l))
+                     (mv-let (l2 r) (ef-parts r nil) (declare (ignore l2))
+                       (if (eql (car r) #\V) (mv-let (v r2) (ef-parts (cdr r) nil) (declare (ignore r2)) v) nil))) nil))
 (defun ef-status (s errl rc)         ; ERR= present: an error the processor's (F77 12.7.1: which conditions are errors is
   (cond ((or (not (errp s)) (equal s (err :fuel))) s)   ; processor dependent); a direct READ past the last record likewise
         ((or errl (and rc (equal s (err :end)))) (err :pd))
@@ -916,7 +921,7 @@
               ((st-trace st) (mv (err :pd) st))             ; in an order the processor picks (11.1.7.4.2)
               (t (let* ((ctl (member-eq (kar s) '(:write :read))) (ios (if ctl (kadr s) nil))
                         (u (if ctl (kaddr (io-spec :unit ios)) :star))
-                        (f0 (if ctl (kaddr (io-spec :fmt ios)) (kadr s))) (endl (ef-end f0)) (errl (ef-err f0)) (rc (and ctl (rec-args u))) (f1 (ef-fmt f0))
+                        (f0 (if ctl (kaddr (io-spec :fmt ios)) (kadr s))) (endl (ef-end f0)) (errl (ef-err f0)) (iov (ef-ios f0)) (rc (and ctl (rec-args u))) (f1 (ef-fmt f0))
                         (fm0 (if (eq f1 :unf) :unf (io-fmt f1 cx))) (adv (io-adv ios)))
                   (mv-let (s2 st)
                   (with-v (fv st) (if (fv-name fm0) (me-ev :expr (prim-expr nil (list :name (kw (fv-name fm0)))) env st cx (1- fuel)) (mv nil st))
@@ -959,7 +964,9 @@
                                               (fe (mv :normal (fs-put (fs-read fe (in-recs in)) (st-in-set oin st))))
                                               (de (mv :normal (fs-put (d-next de (+ (v-num r) (- (len dr) (len (in-recs in))))) (st-in-set oin st))))
                                               (t (mv :normal (st-in-set (if (int-file-p u) oin in) st)))))))))))))))))))
-                  (mv (ef-status s2 errl rc) st))))))
+                  (cond ((not iov) (mv (ef-status s2 errl rc) st))   ; IOSTAT= 0, else a value the processor's (F77 12.7)
+                        ((eq s2 :normal) (fc-puts (list (cons "iostat" (prim-expr nil (list :name (kw iov))))) (list 0) env st))
+                        (t (mv (if (equal s2 (err :fuel)) s2 (err :pd)) st))))))))
        ((:open :close) (let ((e (kaddr (io-spec :unit (kadr s)))))
           (cond ((cx-pure cx) (mv (err :pure) st)) ((or (st-trace st) (eq e :star)) (mv (err (if (eq e :star) :unit :pd)) st))
                 (t (with-v (u st) (me-ev :expr e env st cx (1- fuel)) (oc-run (kar s) (kadr s) u st))))))

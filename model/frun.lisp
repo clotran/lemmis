@@ -368,16 +368,17 @@
          (r1 (if upos (cdr its) its))
          (fpos (and upos (consp r1) (not (kw-item-p (car r1)))))
          (f (if fpos (car r1) (cddr (kw-item "fmt" r1))))
-         (en (kw-item "end" r1)) (er (kw-item "err" r1)) (rc (kw-item "rec" r1))
+         (en (kw-item "end" r1)) (er (kw-item "err" r1)) (rc (kw-item "rec" r1)) (io (kw-item "iostat" r1))
          (rest (if fpos (cdr r1) r1))
-         (rest (remove-equal (kw-item "unit" rest) (remove-equal (kw-item "fmt" rest) (remove-equal en (remove-equal er (remove-equal rc rest))))))
+         (rest (remove-equal (kw-item "unit" rest) (remove-equal (kw-item "fmt" rest) (remove-equal en (remove-equal er (remove-equal rc (remove-equal io rest)))))))
          (desc (cond ((null f) "U") ((equal f (list (op "*"))) "*")
                      ((and (consp f) (null (cdr f)) (label-int-p (car f))) (concatenate 'string "L" (cadr (car f))))
                      ((and (consp f) (null (cdr f)) (char-tok-p (car f))) (concatenate 'string "C" (cadr (car f)))) (t nil)))
-         (el (ctl-lab en)) (erl (ctl-lab er)) (c3 (coerce (list (code-char 3)) 'string)))
-    (if (or (null u) (and f (null en) (null er) (null rc)) (null desc) (not (stringp el)) (not (stringp erl)) (and rc (null (cddr rc)))) toks
+         (el (ctl-lab en)) (erl (ctl-lab er)) (c3 (coerce (list (code-char 3)) 'string))
+         (iv (if (and io (eq (kar (kaddr io)) :name) (stringp (kadr (kaddr io))) (null (cdddr io))) (concatenate 'string "V" (kadr (kaddr io)) c3) "")))
+    (if (or (null u) (and f (null en) (null er) (null rc) (null io)) (and io (equal iv "")) (null desc) (not (stringp el)) (not (stringp erl)) (and rc (null (cddr rc)))) toks
       (ctl-join (list* (if rc (append (list (kw "rec_") (op "(")) u (list (op ",")) (cddr rc) (list (op ")"))) u)
-                       (list (list :char (concatenate 'string c3 el c3 erl c3 desc))) rest)))))
+                       (list (list :char (concatenate 'string c3 el c3 erl c3 iv desc))) rest)))))
 (defun io-sugar (toks0)                ; WRITE ( ios ) items; BLOCK DATA [name] as a subroutine
   (declare (xargs :guard t))
   (let ((toks (file-sugar (pos-sugar (alt-sugar toks0)))))
