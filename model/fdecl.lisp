@@ -97,9 +97,9 @@
 ;; (its own, by DIMENSION or the COMMON statement's array-spec, or implicit)
 ;; gets (:save) and (:common b i), b the block's name (nil: blank common), i
 ;; the object's place in the block's objects in this scoping unit; the i-th
-;; object of b is then one variable in every unit. Subset: it is of the same
-;; type, kind and bounds in each (no storage association of differing
-;; objects; fmean's me-ents checks), and no BLOCK DATA.
+;; object of b is then one variable in every unit when it has the same type,
+;; kind and bounds there (fmean's me-ents checks); otherwise fhelp's
+;; com-overlay associates it with the block's storage (an equivalence group).
 (defun com-objs (is blk)             ; ((tk ss blk) ...) of a COMMON statement's items
   (declare (xargs :guard t))
   (cond ((atom is) nil)

@@ -7,12 +7,12 @@ whole; use the headings below and `grep -n` / `sed -n`.
 
 - SCOPE score: 165 of 208 rules proved, 43 in part, none missing (SCOPE.md, first
   paragraphs).
-- FCVS: 158 of 180 programs print their reference output (SCOPE.md, "Theorem 3:
+- FCVS: 159 of 180 programs print their reference output (SCOPE.md, "Theorem 3:
   checked against the compilers", the FCVS bullet; the passing names are in
   build/fcvs.txt after `make check`).
 - Fuzzer: `make fuzz` (seed 1, 40 programs) agrees under gfortran and flang; seeds 1-5
   clean (same SCOPE section, "The fuzzer").
-- Oracle cases: 7 fsyn cases + 57 whole programs in model/cases/, all agree.
+- Oracle cases: 7 fsyn cases + 58 whole programs in model/cases/, all agree.
 
 ## Next lanes, in order
 
@@ -31,7 +31,7 @@ FCVS re-classification, 2026-11-16, 52 failing programs (128 pass), first stop b
 | (limit) | - | READ/WRITE implied-DO variable not defined after the statement (construct entity, me-rido / me-ido). IOSTAT= on READ/WRITE landed (frun ctl-sugar, V name in the format token, fmean ef-ios: 0 assigned on success, any error or end of file with IOSTAT= :pd, its value the processor's; cases/iostat.f90; no FCVS program uses it) | 12.8.2.3, 12.7 | small, open |
 | FM905 FM907 | :stop | list-directed * output of REAL/COMPLEX | 13.10.4 | needs printing |
 | FM909 | passed (FCVS 158) | character EQUIVALENCE of different lengths (fequiv: a unit per character); internal WRITE to an array element or substring (fmean int-text then me-assign) and to an undefined variable (int-unit-val); cases/charequiv.f90 | 17.1.2, 12.2.5 | done |
-| FM302 | :common | COMMON block redeclared | 15.9.4 | needs storage-sequence |
+| FM302 | passed (FCVS 159) | COMMON block laid out otherwise in another unit (shapes, blank common shorter/longer, EQUIVALENCE extending a block): fhelp com-overlay joins the unit's objects to the first unit's as an equivalence group at block offsets; groups now merge through a storage image (eqv-push); cases/comlayout.f90 | 15.9.4, F77 17.1.2 | done |
 | FM062 FM357 FM804 FM828 FM829 FM830 FM831 | :pd | 062 5th power inexact; 357 804 MOD +0/-0; 828 830 831 829(t29) inexact complex * / ** | 6.1.2 / 15.10 | :pd by design (a decision, not work) |
 | FM906 | passed (FCVS 153) | list-directed input of a complex with an end of record between the real part and the comma or the comma and the imaginary part (fio li-cxr; cases/cxrecs.f90) | 13.6 | done |
 | FM715 | passed (FCVS 154) | fixed-form CHARACTER*10 FUNCTION and CHARACTER*(*) FUNCTION headers (flex ff-clen, ff-fn-sp; ff-stmt-no-blanks re-proved), and COMPLEX FUNCTION (FM722); cases/fixedfn.f | 3.1.6, 15.5.1 | done |

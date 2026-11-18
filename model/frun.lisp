@@ -158,6 +158,7 @@
                (pfr (proc-frame (kadr (unit-int u)) :host)))
           (mv-let (e fr copies st) (me-decls (no-datas (kaddr spec)) env0 st cx fuel pfr nil (unit-key u) nil)
             (declare (ignore copies))
+            (mv-let (e fr st) (if e (mv e fr st) (com-overlay (kaddr spec) fr st))
             (if e (mv e st)
               (mv-let (fr st) (if (kadr spec) (mv fr st) (implicit-vars (spec-names (kaddr spec)) fr env0 st (unit-rules u)))
               (mv-let (e st) (me-equiv (unit-equivs (kaddr spec)) fr (cons fr env0) st cx fuel)
@@ -165,7 +166,7 @@
                 (mv-let (e st) (me-data (unit-datas (kaddr spec)) (cons fr env0) st cx fuel)
                   (if e (mv e st)
                     (mv-let (loc st) (st-new (vi 4 0) st)
-                      (me-proc-datas (cdr units) g gframe (st-save (data-marker (unit-key u)) loc st) fuel)))))))))))))) 
+                      (me-proc-datas (cdr units) g gframe (st-save (data-marker (unit-key u)) loc st) fuel))))))))))))))) 
 (defun me-program (units in fuel)    ; (mv status lines): in the input's records
   (declare (xargs :guard t :verify-guards nil))
   (let ((gframe (ext-frame units)) (st (mk-st8 nil 0 nil nil nil nil (cons in nil) nil)) (main (find-main units)))
@@ -179,6 +180,7 @@
                       (pfr (proc-frame (kadr (unit-int main)) :host)))
                  (mv-let (e fr copies st) (me-decls (no-datas (kaddr spec)) env0 st cx fuel pfr nil (unit-key main) nil)
                    (declare (ignore copies))
+                   (mv-let (e fr st) (if e (mv e fr st) (com-overlay (kaddr spec) fr st))
                    (if e (mv e (close-lines (reverse (true-list-fix (st-out st)))))
                      (mv-let (fr st) (if (kadr spec) (mv fr st)          ; IMPLICIT NONE, or implicit typing (8.7)
                                        (implicit-vars (append (used-names (unit-exec main)) (spec-names (kaddr spec))) fr env0 st (unit-rules main)))
@@ -188,7 +190,7 @@
                                           (if e (mv e st) (me-blk exec (if sfr (list* sfr fr env0) (cons fr env0)) st cx fuel))))
                          (mv (cond ((equal s (err :stop)) :stop) ((eq s :normal) :normal)
                                    ((errp s) s) ((goto-p s) (err :label)) (t (err :syntax)))
-                             (close-lines (reverse (true-list-fix (st-out st)))))))))))))))))
+                             (close-lines (reverse (true-list-fix (st-out st))))))))))))))))))
 (in-theory (disable me-program))
 
 ; ---- the text to its answer

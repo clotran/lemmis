@@ -48,7 +48,7 @@ Not a theorem: a test, run by `make check` (exit 1 on any difference).
   another for MOD): MOD now takes A's sign, as gfortran, flang and
   flang-new do (`cases/modzero.f90`); MODULO's zero stays processor dependent.
 - **FCVS**: scored, not failed, and only when `fcvs/` is fetched
-  (`bb fetch-fcvs.bb`; not committed): 158 of 180 programs print their
+  (`bb fetch-fcvs.bb`; not committed): 159 of 180 programs print their
   reference output exactly (build/fcvs.txt lists them; the names below are the earlier 75) (FM002-010, 012, 016-021, 025, 026, 030-045,
   060, 061, 097, 098, 109, 201-205, 251, 254, 256, 301, 306, 352-355,
   359-362, 368-370, 372-374, 718, 801, 803, 805-807, 812, 814, 816, 819, 821, 822). Of the rest, most stop at a statement outside the
@@ -265,7 +265,7 @@ Not a theorem: a test, run by `make check` (exit 1 on any difference).
 | R870 | equivalence-stmt | part | EQUIVALENCE equivalence-set-list (:equiv, an :esets; parse proved); in the meaning any unit's (fequiv.lisp storage units, fhelp eqv-apply: frun me-equiv, me-proc-datas, fmean me-call), a dummy an :error :equiv; a member's group from an earlier unit (COMMON, BLOCK DATA) joins the new one |
 | R871 | equivalence-set | part | ( equivalence-object , equivalence-object-list ), read as actual args (eqv-set-p); the objects' storage starts together, sets sharing a variable one group; integer, real, logical, complex, all default kind or one type and kind (C8110), else :error :equiv; no initialized object |
 | R872 | equivalence-object | part | variable-name or array-element (subscripts any integer expression); character of any lengths (a storage unit per character, F77 17.1.2); no substring or derived type |
-| R873 | common-stmt | proved | COMMON [/ [common-block-name] /] common-block-object-list [[,] / [common-block-name] / common-block-object-list]... (:common, a :citems); in the meaning each object gets SAVE and its block and place, the i-th object of a block one variable in every unit; subset: the same type, kind and bounds in each unit; BLOCK DATA [name] is read as a subroutine (frun io-sugar) and DATA in any external procedure runs once before the main program (frun me-proc-datas), so a block data unit initialises COMMON; no storage-sequence overlay (fdecl) |
+| R873 | common-stmt | proved | COMMON [/ [common-block-name] /] common-block-object-list [[,] / [common-block-name] / common-block-object-list]... (:common, a :citems); in the meaning each object gets SAVE and its block and place, the i-th object of a block one variable in every unit; a unit laying a block out otherwise (other types, shapes or lengths) has its objects joined to the first unit's as an equivalence group at their block offsets (fhelp com-overlay); BLOCK DATA [name] is read as a subroutine (frun io-sugar) and DATA in any external procedure runs once before the main program (frun me-proc-datas), so a block data unit initialises COMMON |
 | R874 | common-block-object | proved | variable-name [( array-spec )] |
 | R901 | designator | proved | object-name, array-element, array-section |
 | R902 | variable | proved | in assignment-stmt |

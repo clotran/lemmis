@@ -527,6 +527,7 @@
                         (cx2 (list (cx-g cx) purep (unit-formats u))))
                    (mv-let (e fr copies st) (me-decls (strip-equivs (if (assoc-equal (data-marker (unit-key u)) (st-saves st)) (strip-datas (kaddr spec)) (kaddr spec))) (append ufr host) st cx2 (1- fuel) fr copies
                                                       (unit-key u) (dummy-names hd))
+                     (mv-let (e fr st) (if e (mv e fr st) (com-overlay (kaddr spec) fr st))
                      (if e (mv e st)
                        (mv-let (fr st) (if (kadr spec) (mv fr st)     ; IMPLICIT NONE, or implicit typing (8.7)
                                          (mv-let (fr st) (if (and fn (not (prefix-ts hd)) (not (alk (result-name hd) fr)))   ; 4.1.2: an untyped function's result is typed by its name
@@ -544,7 +545,7 @@
                          (mv-let (s st) (me-blk exec (if sfr (list* sfr fr (append ufr host)) env2) st cx2 (1- fuel))
                            (cond ((errp s) (mv s st))
                                  ((not (or (member-eq s '(:normal :return)) (and (not fn) (altret-p s)))) (mv (err :syntax) st))
-                                 (t (mv-let (r st) (call-result fn hd copies fr st) (mv (if (and (altret-p s) (eq r :normal)) s r) st))))))))))))))))))))))
+                                 (t (mv-let (r st) (call-result fn hd copies fr st) (mv (if (and (altret-p s) (eq r :normal)) s r) st)))))))))))))))))))))))
 
  ; each dummy dn bound to its actual: a whole variable by reference; an
  ; element or section to a temporary copied back; an expression to a
@@ -683,7 +684,10 @@
                      ((and ss (all-assumed ss)) (mv (err :syntax) nil nil st))   ; assumed shape only for a dummy (C836)
                      ((and (or init (decl-has :save attrs)) (assoc-equal (ckey key n attrs) (st-saves st)))   ; saved (8.5.16), or common (8.10.2)
                       (let ((loc (cdr (assoc-equal (ckey key n attrs) (st-saves st)))))
-                        (if (com-fits (fresh ty k ls us) (st-get loc st)) (mv nil (cons (cons n (list :var loc :rw)) fr) copies st) (mv (err :common) nil nil st))))
+                        (cond ((com-fits (fresh ty k ls us) (st-get loc st)) (mv nil (cons (cons n (list :var loc :rw)) fr) copies st))
+                              ((not (assoc-equal :common (true-list-fix attrs))) (mv (err :common) nil nil st))
+                              (t (mv-let (loc st) (st-new (fresh ty k ls us) st)   ; another layout of the block: fhelp com-overlay joins it
+                                   (mv nil (cons (cons n (list :var loc :rw)) fr) copies st))))))
                      (init
                       (mv-let (v st) (me-ev :expr init envf st cx (1- fuel))
                         (let ((c (if (errp v) v (assign-val (fresh ty k ls us) v))))

@@ -882,14 +882,24 @@
 (defun eqv-install (g ms st)         ; each member's key (:eqv loc) to the group g
   (declare (xargs :guard t))
   (if (atom ms) st (eqv-install g (cdr ms) (st-save (list :eqv (kar (car ms))) g st))))
-(defun eqv-push (ms st)              ; each defined member's units to the others
+(defun img-put (img p us)            ; the group's storage image: each defined unit at its place, the first kept
   (declare (xargs :guard t))
-  (cond ((atom ms) st)
-        ((eqv-all-undef (eqv-units (st-get (kar (car ms)) st))) (eqv-push (cdr ms) st))
-        (t (eqv-push (cdr ms) (st-put (kar (car ms)) (st-get (kar (car ms)) st) st)))))
+  (if (atom us) img
+    (img-put (if (or (eq (kaddr (car us)) :u) (assoc-equal (ifix p) img)) img (acons (ifix p) (car us) img)) (+ 1 (ifix p)) (cdr us))))
+(defun img-build (ms st img)
+  (declare (xargs :guard t))
+  (if (atom ms) img (img-build (cdr ms) st (img-put img (kdr (car ms)) (eqv-units (st-get (kar (car ms)) st))))))
+(defun img-units (img p n)           ; n units from p (an undefined place a unit no type reads)
+  (declare (xargs :guard t :measure (nfix n)))
+  (if (zp n) nil (cons (or (cdr (assoc-equal (ifix p) (alist-fix img))) (list :none 0 :u)) (img-units img (+ 1 (ifix p)) (1- n)))))
+(defun eqv-push (ms img st)          ; each member's value from the image: defined members' units shared
+  (declare (xargs :guard t))
+  (if (atom ms) st
+    (let ((w (st-get (kar (car ms)) st)))
+      (eqv-push (cdr ms) img (st-put1 (kar (car ms)) (eqv-rebuild w (img-units img (kdr (car ms)) (len (eqv-units w)))) st)))))
 (defun eqv-installs (gs st)
   (declare (xargs :guard t))
-  (if (atom gs) st (eqv-installs (cdr gs) (eqv-push (car gs) (eqv-install (car gs) (car gs) st)))))
+  (if (atom gs) st (eqv-installs (cdr gs) (eqv-push (car gs) (img-build (car gs) st nil) (eqv-install (car gs) (car gs) st)))))
 ;; a member's group from an earlier unit (BLOCK DATA, an earlier call: the same COMMON or SAVE'd storage)
 ;; joins the new one, so storage shared through it stays shared.
 ;; ponytail: a call's fresh locals stay in the group after it returns; per-call removal if groups grow large
@@ -923,3 +933,49 @@
   (declare (xargs :guard t))
   (let ((hd (unit-hd u)))
     (and (eq (kar hd) :function) (or (star-ts-p (prefix-ts hd)) (star-decl-of (result-name hd) (kaddr (unit-spec u)))) t)))
+
+;; 15.9.4 / F77 17.1.2: a COMMON block is one storage sequence; a unit whose objects do not lie as the first
+;; unit's (other types or shapes, fmean me-ents binds them apart) has them joined to the block's first objects as
+;; an equivalence group (fequiv), each at its offset in the block; so is a block one of whose objects is in an
+;; EQUIVALENCE (which may extend it, 8.10.3.2), so a unit naming the extension shares it. ponytail: a later unit's blank common longer
+;; than the first's keeps its extra objects' places as they come.
+(defun com-places (ds)               ; ((name blk i) ...): the unit's COMMON objects
+  (declare (xargs :guard t))
+  (cond ((atom ds) nil)
+        ((member-eq (kar (car ds)) '(:decl :tdecl))
+         (let ((c (assoc-equal :common (true-list-fix (kaddr (car ds))))) (ents (kar (kdr (kdr (kdr (kdr (car ds))))))))
+           (if (and c (consp ents)) (cons (list (tok-name (kar (car ents))) (kadr c) (kaddr c)) (com-places (cdr ds))) (com-places (cdr ds)))))
+        (t (com-places (cdr ds)))))
+(defun com-blks (ps acc) (declare (xargs :guard t)) (if (atom ps) acc (com-blks (cdr ps) (if (member-equal (kadr (car ps)) acc) acc (cons (kadr (car ps)) acc)))))
+(defun com-name-at (b i ps) (declare (xargs :guard t)) (cond ((atom ps) nil) ((and (equal (kadr (car ps)) b) (equal (kaddr (car ps)) i)) (kar (car ps))) (t (com-name-at b i (cdr ps)))))
+(defun com-unames (b i k ps)         ; the block's names in order (k objects)
+  (declare (xargs :guard (natp i) :measure (nfix k)))
+  (if (zp k) nil (cons (com-name-at b i ps) (com-unames b (1+ i) (1- k) ps))))
+(defun com-count (b ps) (declare (xargs :guard t)) (if (atom ps) 0 (+ (if (equal (kadr (car ps)) b) 1 0) (com-count b (cdr ps)))))
+(defun com-clocs (b i k st)          ; the first unit's objects' locations
+  (declare (xargs :guard (natp i) :measure (nfix k)))
+  (let ((c (assoc-equal (list :common b i) (alist-fix (st-saves st)))))
+    (if (or (zp k) (not c)) nil (cons (cdr c) (com-clocs b (1+ i) (1- k) st)))))
+(defun com-size (loc st) (declare (xargs :guard t)) (len (eqv-units (st-get loc st))))
+(defun com-coffs (locs off st)       ; ((loc . offset) ...)
+  (declare (xargs :guard t))
+  (if (atom locs) nil (cons (cons (car locs) (ifix off)) (com-coffs (cdr locs) (+ (ifix off) (com-size (car locs) st)) st))))
+(defun com-unit (ns off fr cs st g)  ; (mv fr st g): each name off its first-unit place a new variable in the group g
+  (declare (xargs :guard t))
+  (if (atom ns) (mv fr st g)
+    (let* ((loc (kadr (cdr (alk (car ns) fr)))) (c (alk loc cs)) (sz (com-size loc st)) (nxt (+ (ifix off) sz)))
+      (cond ((and c (equal (cdr c) (ifix off))) (com-unit (cdr ns) nxt fr cs st g))
+            ((null c) (com-unit (cdr ns) nxt fr cs st (cons (cons loc (ifix off)) g)))   ; bound apart by me-ents
+            (t (mv-let (nl st) (st-new (eqv-rebuild (st-get loc st) nil) st)
+                 (com-unit (cdr ns) nxt (cons (cons (car ns) (list :var nl :rw)) fr) cs st (cons (cons nl (ifix off)) g))))))))
+(defun com-overlay1 (bs ps fr st)    ; (mv err fr st)
+  (declare (xargs :guard t))
+  (if (atom bs) (mv nil fr st)
+    (let* ((b (car bs)) (k (com-count b ps)) (cs (com-coffs (com-clocs b 0 (len (st-saves st)) st) 0 st)))
+      (mv-let (fr st g) (com-unit (com-unames b 0 k ps) 0 fr cs st nil)
+        (if (and (atom g) (not (eqv-olds cs st))) (com-overlay1 (cdr bs) ps fr st)   ; laid out as the first unit's, none EQUIVALENCEd
+          (mv-let (ok gs) (eqv-merges (eqv-olds* (list (append cs g)) st) (list (append cs g)))
+            (if ok (com-overlay1 (cdr bs) ps fr (eqv-installs gs st)) (mv (err :common) fr st))))))))
+(defun com-overlay (ds fr st)        ; (mv err fr st): ds the unit's declarations (unit-spec)
+  (declare (xargs :guard t))
+  (let ((ps (com-places ds))) (com-overlay1 (com-blks ps nil) ps fr st)))
