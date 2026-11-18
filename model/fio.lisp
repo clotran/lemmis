@@ -627,13 +627,16 @@
   (cond ((atom ios) nil)
         ((and (eq (kar (car ios)) :kw) (equal (kadr (car ios)) nm)) (let ((x (kaddr (car ios)))) (and (eq (kar x) :n) (integerp (kadr x)) (kadr x))))
         (t (io-kwn nm (cdr ios)))))
-(defun d-conn-p (fk us)              ; the file connected to a unit already
-  (cond ((atom us) nil) ((and (eq (kadr (car us)) :direct) (equal (kaddr (car us)) fk)) t) (t (d-conn-p fk (cdr us)))))
+(defun fs-conn (fk us)               ; the entry of the unit the file fk is connected to, or nil
+  (cond ((atom us) nil)
+        ((or (equal (kadr (car us)) fk) (and (eq (kadr (car us)) :direct) (equal (kaddr (car us)) fk))) (car us))
+        (t (fs-conn fk (cdr us)))))
 (defun d-open (n fe ios st)
   (let* ((nm (io-kws "file" ios)) (stt (io-kwv "status" ios)) (rl (io-kwn "recl" ios)) (fk (list :file nm)) (ex (fs-entry fk st)))
     (cond ((not (posp rl)) (mv (err :open) st))                                       ; RECL= positive, required
           ((or fe (not (equal (io-kwv "form" ios) "FORMATTED")) (member-equal nm '(nil "")) (not (member-equal stt '("NEW" "OLD")))) (mv (err :pd) st))
-          ((or (if (equal stt "NEW") ex (not ex)) (d-conn-p fk (st-units st))) (mv (err :open) st))   ; NEW exists, OLD does not; connected already
+          ((or (if (equal stt "NEW") ex (not ex)) (fs-conn fk (st-units st))) (mv (err :open) st))   ; NEW exists, OLD does not; connected already
+          ((eq (kar (kadr ex)) :seq) (mv (err :pd) st))                                   ; a sequential file's records as direct ones
           (t (let ((st (if ex st (fs-put (list fk nil) st)))) (mv :normal (fs-put (list n :direct fk rl 1) st)))))))
 (defun d-unit (u st)                 ; a unit's :direct entry, or an error
   (let ((e (and (file-unit-p u) (fs-entry (v-num u) st)))) (if (eq (kadr e) :direct) e (err :access))))
@@ -654,14 +657,36 @@
           (t (mv :normal (fs-put (list (kar e) :direct (kaddr e) (kadddr e) (+ r (len ps)))
                                  (fs-put (list (kaddr e) (d-store ps r (kadr fe))) st)))))))
 (defun d-next (e n) (list (kar e) :direct (kaddr e) (kadddr e) n))   ; NEXTREC n after a READ
-(defun d-inq (nm e)                  ; INQUIRE's answer for a spec, or an error
-  (cond ((equal nm "recl") (if (eq (kadr e) :direct) (kadddr e) (err :pd)))       ; undefined unless connected for direct access
-        ((equal nm "nextrec") (if (eq (kadr e) :direct) (kar (cddddr e)) (err :pd)))
-        ((equal nm "iostat") 0)
-        ((member-equal nm '("sequential" "direct" "formatted" "unformatted")) (err :pd))   ; YES, NO or UNKNOWN as the processor decides (12.10.3)
-        (t (err :inquire))))
-(defun d-inqs (nms e)                ; the answers, in order, or an error
-  (if (atom nms) nil (let ((v (d-inq (car nms) e)) (vs (d-inqs (cdr nms) e))) (cond ((errp v) v) ((errp vs) vs) (t (cons v vs))))))
+(defun d-inq (nm e fk st)            ; INQUIRE's answer (an integer, string or boolean) for a spec, or an error (F77 12.10.3):
+  (let ((op (or (member-eq (kadr e) '(:direct :scratch)) (consp (kadr e)))))   ; e the unit's entry when connected, else nil;
+    (cond ((equal nm "iostat") 0)                                               ; fk the file of an INQUIRE by file, else nil
+          ((equal nm "exist") (if fk (consp (fs-entry fk st)) (err :pd)))        ; which units exist is the processor's
+          ((equal nm "opened") (consp e))
+          ((equal nm "number") (if e (kar e) (err :pd)))                         ; undefined when not connected
+          ((equal nm "recl") (if (eq (kadr e) :direct) (kadddr e) (err :pd)))   ; undefined unless connected for direct access
+          ((equal nm "nextrec") (if (eq (kadr e) :direct) (kar (cddddr e)) (err :pd)))
+          ((member-equal nm '("sequential" "direct" "formatted" "unformatted")) (err :pd))   ; YES, NO or UNKNOWN as the processor decides
+          ((not (member-equal nm '("access" "form" "blank"))) (err :inquire))
+          ((null e) (err :pd))                                                    ; undefined when not connected
+          ((equal nm "access") (if (eq (kadr e) :direct) "DIRECT" "SEQUENTIAL"))
+          ((not op) (err :pd))                                                    ; a default file's form: the processor's
+          ((equal nm "form") "FORMATTED")                                         ; OPEN connects formatted files only
+          (t "NULL"))))                                                           ; no BLANK= in OPEN
+(defun d-inqs (nms e fk st)          ; the answers, in order, or an error
+  (if (atom nms) nil (let ((v (d-inq (car nms) e fk st)) (vs (d-inqs (cdr nms) e fk st))) (cond ((errp v) v) ((errp vs) vs) (t (cons v vs))))))
+(defun f-inqs (nms u fk st)          ; INQUIRE by file fk, or by unit u
+  (if fk (d-inqs nms (fs-conn fk (st-units st)) fk st)
+    (let ((e (fs-entry (v-num u) st))) (if (file-unit-p u) (d-inqs nms (if (eq (kadr e) :closed) nil e) nil st) (err :pd)))))
+;; a named sequential file (F77 12.10.1): the file entry ((:file name) (:seq . records)); connected, the unit's
+;; entry (n (:file name) before after eofp). STATUS='NEW' makes it (the file system starts empty), 'OLD' needs it
+;; made earlier in the run; CLOSE keeps its records (STATUS='KEEP') or deletes it. UNKNOWN (or no STATUS=) :pd.
+(defun s-open (n ios st)
+  (let* ((nm (io-kws "file" ios)) (stt (io-kwv "status" ios)) (fk (list :file nm)) (ex (fs-entry fk st)))
+    (cond ((member-equal nm '(nil "")) (mv (err :pd) st))
+          ((not (member-equal stt '("NEW" "OLD"))) (mv (err (if (member-equal stt '(nil "UNKNOWN" "REPLACE")) :pd :open)) st))
+          ((or (if (equal stt "NEW") ex (not ex)) (fs-conn fk (st-units st))) (mv (err :open) st))
+          ((and ex (not (eq (kar (kadr ex)) :seq))) (mv (err :pd) st))            ; a direct file's records as sequential ones
+          (t (mv :normal (fs-put (list n fk nil (true-list-fix (kdr (kadr ex))) nil) (if ex st (fs-put (list fk (list :seq)) st))))))))
 
 (defun oc-run (k ios u st)           ; k :open or :close; u the unit's value
   (let* ((n (v-num u)) (stt (io-kwv "status" ios)) (e (if (eq k :open) :open :close))
@@ -671,12 +696,14 @@
            (cond ((or (io-kwv "file" ios) (io-kwv "access" ios) (io-kwv "form" ios)
                       (not (member-equal stt (if (and conn (eq (kadr fe) :scratch)) '(nil "DELETE") '(nil "DELETE" "KEEP"))))) (mv (err e) st))
                  ((not conn) (mv :normal st))                                ; no effect (12.10.2)
+                 ((consp (kadr fe)) (mv :normal (st-units-set (fs-drop n (if (equal stt "DELETE") (fs-drop (kadr fe) (st-units st))
+                                                                             (cons (list (kadr fe) (cons :seq (revappend (fs-before fe) (fs-after fe)))) (fs-drop (kadr fe) (st-units st))))) st)))
                  ((eq (kadr fe) :direct) (mv :normal (st-units-set (fs-drop n (if (equal stt "DELETE") (fs-drop (kaddr fe) (st-units st)) (st-units st))) st)))
                  ((and (not (eq (kadr fe) :scratch)) (not (equal stt "DELETE"))) (mv :normal (fs-put (cons n (cons :closed (cddr fe))) st)))
                  (t (mv :normal (st-units-set (fs-drop n (st-units st)) st)))))
           ((and (not conn) (equal (io-kwv "access" ios) "DIRECT")) (d-open n fe ios st))
           ((or conn (not (member-equal (io-kwv "access" ios) '(nil "SEQUENTIAL")))
                (not (member-equal (io-kwv "form" ios) '(nil "FORMATTED")))) (mv (err e) st))
-          ((io-kwv "file" ios) (mv (err (if (member-equal stt '(nil "UNKNOWN" "OLD" "NEW" "REPLACE")) :pd e)) st))
+          ((io-kwv "file" ios) (s-open n ios st))
           ((equal stt "SCRATCH") (mv :normal (fs-put (list n :scratch nil nil nil) st)))
           (t (mv (err (if (member-equal stt '(nil "UNKNOWN")) :pd e)) st)))))

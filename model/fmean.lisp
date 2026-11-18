@@ -169,12 +169,13 @@
 (defun fc-run (op u ins ios outs st)  ; (mv status answers st)
   (let ((nms (fc-names ins)) (zs (make-list (len outs) :initial-element 0)))
     (case op
-      (:open (if (fc-subset nms '("file" "status" "access" "form" "recl" "err"))
-                 (if (and (member-equal "recl" nms) (not (equal (io-kwv "access" ios) "DIRECT"))) (mv (err :open) nil st)
+      (:open (if (fc-subset nms '("file" "status" "access" "form" "recl" "err" "blank"))
+                 (if (or (and (member-equal "recl" nms) (not (equal (io-kwv "access" ios) "DIRECT")))
+                         (not (member-equal (io-kwv "blank" ios) '(nil "NULL")))) (mv (err :open) nil st)   ; BLANK='NULL' the default (F77 12.10.1)
                    (mv-let (s st) (oc-run :open ios u st) (mv s zs st)))
                (mv (err :open) nil st)))
       (:close (if (fc-subset nms '("status" "err")) (mv-let (s st) (oc-run :close ios u st) (mv s zs st)) (mv (err :close) nil st)))
-      (:inquire (let ((vs (if (fc-subset nms '("err")) (d-inqs (fc-names outs) (and (file-unit-p u) (fs-entry (v-num u) st))) (err :inquire))))
+      (:inquire (let ((vs (if (fc-subset nms '("err" "file")) (f-inqs (fc-names outs) u (and (member-equal "file" nms) (list :file (io-kws "file" ios))) st) (err :inquire))))
                   (if (errp vs) (mv vs nil st) (mv :normal vs st))))
       (otherwise (if (fc-subset nms '("err")) (mv-let (s st) (file-pos op u st) (mv s zs st)) (mv (err :syntax) nil st))))))
 (defun fc-puts (outs vals env st)    ; each output's answer assigned to its variable (a name)
@@ -187,7 +188,7 @@
                 ((not (eq (kar b) :var)) (mv (err (if b :type :undeclared)) st))
                 ((eq (kaddr b) :in) (mv (err :intent) st))
                 ((member loc (st-dovars st)) (mv (err :do-var) st))
-                (t (let ((n (assign-val (st-get loc st) (vi 4 (ifix (car vals))))))
+                (t (let ((n (assign-val (st-get loc st) (let ((x (car vals))) (cond ((integerp x) (vi 4 x)) ((stringp x) (vc x)) (t (vl 4 (and x t))))))))
                      (if (errp n) (mv n st) (fc-puts (cdr outs) (cdr vals) env (st-put loc n (st-log (list (list :w loc :all)) st))))))))))))
 ;; an expression's lone primary, whatever its kind (lone-prim's walk), or nil
 (defun lone-any (e)
@@ -967,9 +968,10 @@
        (:deallocate (dealloc-all (kadr s) env st cx))
        (:stop (with-v (v st) (me-ev :expr (kadr s) env st cx (1- fuel)) (mv (if (or (ival-scalar v) (cval-p v)) (err :stop) (cond-err v)) st)))   ; R1163
        (:call (if (fc-op (tok-name (kadr s)))
-                  (let* ((op (fc-op (tok-name (kadr s)))) (as (kadddr s)) (ue (fc-unit as)) (ins (fc-ins op as)) (outs (fc-outs op as)))
+                  (let* ((op (fc-op (tok-name (kadr s)))) (as (kadddr s)) (ins (fc-ins op as)) (fl (and (eq op :inquire) (cdr (assoc-equal "file" ins))))
+                         (ue (or (fc-unit as) fl)) (outs (fc-outs op as)))   ; INQUIRE by file: the name in the unit's place
                     (cond ((cx-pure cx) (mv (err :pure) st)) ((st-trace st) (mv (err :pd) st))
-                          ((or (null ue) (not (fc-ok as)) (not (no-duplicatesp-equal (append (fc-names ins) (fc-names outs))))) (mv (err :syntax) st))
+                          ((or (null ue) (and fl (fc-unit as)) (not (fc-ok as)) (not (no-duplicatesp-equal (append (fc-names ins) (fc-names outs))))) (mv (err :syntax) st))
                           (t (with-v (vs st) (me-list (cons ue (fc-exprs ins)) env st cx (1- fuel))
                                (mv-let (r vals st) (fc-run op (kar vs) ins (fc-ios ins (kdr vs)) outs st)
                                  (if (errp r) (mv (ef-status r (or (assoc-equal "err" ins) (assoc-equal "iostat" outs)) nil) st)
