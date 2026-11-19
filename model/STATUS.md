@@ -84,9 +84,9 @@ the emitted FUNCTION answers a-sx's value (gen-stretfn); `a-sxf` (a-sx with call
 s-fn-val) = f-ev/f-ex-list under p-sforc (gen-sfx); gs-sem on svf against a-sxf with the call
 case, `gs-sem-holds-f` under sf-orc (gen-sfexp, -sfcall, -sfnames, -sflam, -sfthm); both
 oracles discharged on a table, `sxf-h-ok-is-f-ex-list` and `gs-sem-holds-h` under the
-decidable `sfd-ok` alone (gen-sflits, gen-sfdisch, gen-sfinst). NEXT:
-hpg-next-tail-fortran-correct (GEN.md "Next: hpg-next-tail"). Left, ~6 lanes: rest of 4a (updates/dests/mv
-lambda on sxc; a-stc's call = a-stcall done, gen-stccall; GEN.md), subroutine tail loops + the other 5 heapgn instances (4b), `hp_*`
+decidable `sfd-ok` alone (gen-sflits, gen-sfdisch, gen-sfinst). `hpg-next-tail-fortran-correct`,
+`hpg-seq-op-fortran-correct` under p-sflits-n, the hp_* callees' correctness (gen-st-ntail). Left, ~6 lanes: rest of 4a (updates/dests/mv
+lambda on sxc; a-stc's call = a-stcall done, gen-stccall; GEN.md), subroutine tail loops + hpg-drain, -run-from-batch, -run-take (4b), `hp_*`
 externs (4c), values/runtime shims (2), acl2-fortran printing g-module's output (1).
 
 ## Traps

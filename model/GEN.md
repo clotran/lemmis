@@ -1023,23 +1023,47 @@ Two findings from acl2-fortran's `stmt` (both fixed now, see above):
    ground fact. Constraint hints: the instance's subgoal in the minimal
    theory, a witness constraint by the defun-sk's definition plus its necc,
    the copies' definitions by an :expand of exactly the constraint's term.
-   **Next: hpg-next-tail**: its callees (hpg-ot, hpg-or, hpg-obj-at,
-   hpg-okd, hpg-oi) read `hp_*` externs, so until 4c they cannot be sfd-ok
-   entries; the instance takes their correctness as a named hypothesis (the
-   oracle on them = what their procedures answer), and hpg-next-tail is tail
-   recursive (the self-call is 4b's tail loop, not yet in gs-sem).
+   **gen-st-ntail: `hpg-next-tail-fortran-correct` and
+   `hpg-seq-op-fortran-correct`.** Neither is recursive (hpg-next-tail is
+   "next of a cons cell's tail"; no tail loop needed, none was added to
+   gs-sem). Both read the stobj only through callees (hpg-ot, hpg-or,
+   hpg-obj-at, hpg-okd, hpg-oi) whose Fortran reads `hp_*` externs, so
+   they are not sfd-ok entries and a-sxf cannot evaluate them (no role for
+   h-otagi etc. in *heapg-st*); gs-sem-f's a-sxf side is not used. Instead:
+   a concrete oracle `s-fn-val-n name s ks hpg0 nms` (defun-nx) answers each
+   callee's ACL2 value on hpg0 -- the externs' state; the heap entry s is
+   not read -- for the names in nms (hpg_next_tail only on its guard,
+   0 <= o < 2^40); svf/svlf/sxf/sxf-list copied as `-n` with (hpg0 nms);
+   `sxf-n-ok-is-f-ex-list` is the functional instance of
+   sxf-lits-ok-is-f-ex-list; `f-invoke-sret-n` is gen-stretfn's
+   f-invoke-sret on sxf-list-n; the body's run (`nt-run`, `sq-run`) is
+   symbolic (sxf-n/svf-n expanded with `:free`). The named hypothesis is
+   **`p-sflits-n procs b hpg *nt-callees*`**: gen-sflits' p-sflits on that
+   oracle -- each callee's procedure is a FUNCTION (object dummy, then
+   value dummies) and f-invoke of it on int64 literals answers the
+   callee's ACL2 value on hpg, any heap. Statements: on (hpgp hpg), o
+   natural below 2^40 (hpg-next-tail's guard), ob bound to an object in the
+   caller, fuel > 681 + b (8 + the body's acl2-count, 673): f-invoke of the
+   procedure g-st-module prints (`*nt-proc*`) on `(:var ob), o` answers
+   `(mv nil (hpg-next-tail o hpg) heap)`. hpg-seq-op: int64 op tag ref, the
+   same hypothesis plus `(find-proc "hpg_next_tail" procs) = *nt-proc*`; its
+   hpg_next_tail entry is discharged by hpg-next-tail-fortran-correct
+   (`p-sflits-n-seq`), so only hpg-obj-at, hpg-okd, hpg-oi (and hpg-ot,
+   hpg-or through hpg-next-tail) are assumed. check-gen compares the
+   copies (hpg-next-tail, hpg-seq-op, the five callees, the accessors).
    **Hypotheses still to discharge** (milestone 2, stobj layer): tab-ok
    (CALL) and sfd-ok (value functions given the stobj), o not a formal's
    name, o not "r", `(g-role nil st)` not :stobj -- each a ground fact
-   decided on a given table/configuration; per heapgn instance, its callees'
-   correctness while they read `hp_*`.
+   decided on a given table/configuration; for hpg-next-tail/hpg-seq-op,
+   `p-sflits-n` on the five `hp_*` readers (4c: once fsem has the externs,
+   prove their procedures answer s-fn-val-n).
    Left of 4, restated (2026-11-18): (4a) sx's `:do` and `:call` cases and
    f-invoke of a generated subroutine under a heap-aware oracle (as
    f-call-val is for functions), then gst-sem for g-callst and the mv lambda
    (one lane); (4b) the tail self-call in subroutines (g-stail, the DO
    around the body, as g-fn-sem-loop) and g-sret's value functions reading a
-   stobj, then the instances hpg-drain, hpg-run-from-batch, hpg-run-take,
-   hpg-next-tail, hpg-seq-op (one lane); (4c) the `hp_*` extern
+   stobj (done, gen-sf*), then the instances hpg-drain, hpg-run-from-batch, hpg-run-take
+   (hpg-next-tail, hpg-seq-op done: gen-st-ntail) (one lane); (4c) the `hp_*` extern
    fields/arrays (fsyn's externs first), for the rest of heapgn (one lane).
 5. Values and the runtime shims (`type(value)`, `rt_*`): fsyn/fsem first need
    an abstract runtime. Two lanes.

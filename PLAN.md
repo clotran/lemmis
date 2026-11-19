@@ -341,10 +341,10 @@ extension starts before Stage A is done.
    (gen-sfexp..gen-sfthm: gs-sem-holds-f, under sf-orc); both oracles
    discharged on a table (gen-sflits, gen-sfdisch, gen-sfinst:
    sxf-h-ok-is-f-ex-list, gs-sem-holds-h under the decidable sfd-ok only);
-   next hpg-next-tail (GEN.md).
+   hpg-next-tail and hpg-seq-op -fortran-correct under the hp_* callees' correctness (gen-st-ntail).
    Left, in order: the rest of stobj calls and mv (4a: updates, dests, the
-   mv lambda on sxc), tail loops in subroutines and
-   the value functions reading a stobj, with the other five checked
+   mv lambda on sxc), tail loops in subroutines with
+   the other three checked
    heapgn procedures (4b), the `hp_*` externs (4c); values and the
    runtime shims (two lanes); then acl2-fortran prints g-module's output
    (and its lambda scoping, which leaks a binding to later siblings,
