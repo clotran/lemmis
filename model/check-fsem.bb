@@ -173,6 +173,29 @@
              (list :call "pop2" [(v "st") (v "o1") (v "o2")])
              (list :print (v "o1")) (list :print (v "o2"))
              '(:dump "st")]}
+   {:name "extern"
+    ;; fsyn's :extern procedures, one per op, on the module's own variables (hs's %ext in the
+    ;; model, ext_0 and ext_1 in the Fortran), called from the main program and from procedures
+    ;; given hs (as the generated hpg_* call GC.f90's hp_*); then a subscript past the array
+    :objects [{:name "hs" :type "h_state" :comps [["n" :scalar 0] ["%ext" :ext [[5 6 7] 9]]]}]
+    :procs [(list :extern "hp_a" :elem 0) (list :extern "hp_n_a" :size 0) (list :extern "hp_b" :scalar 1)
+            (list :extern "hp_set_a" :set-elem 0) (list :extern "hp_set_b" :set-scalar 1)
+            (list :function "peek" 't 'nil [["hs" :in "h_state"] ["i_" :value :int64]] :int64 []
+                  [(list :assign (v "r") (list :add (list :xcall "hp_a" "hs" [(v "i_")]) (list :xcall "hp_b" "hs" [])))])
+            (list :subroutine "poke" 'nil [["hs" :inout "h_state"] ["i_" :value :int64]] []
+                  [(list :xcall "hp_set_a" "hs" [(v "i_") (list :xcall "hp_n_a" "hs" [])])
+                   (list :xcall "hp_set_b" "hs" [(v "i_")])
+                   (list :assign (list :comp "hs" "n") (list :fcall "peek" [(v "hs") (n 0)]))])]
+    :probes [(list :print (list :xcall "hp_n_a" "hs" []))
+             (list :print (list :fcall "peek" [(v "hs") (n 2)]))
+             (list :call "poke" [(v "hs") (n 1)])
+             (list :print (list :xcall "hp_a" "hs" [(n 1)]))
+             (list :print (list :xcall "hp_b" "hs" []))
+             (list :print (list :comp "hs" "n"))
+             (list :xcall "hp_set_a" "hs" [(n 2) (n -4)])
+             (list :xcall "hp_set_b" "hs" [(n 11)])
+             (list :print (list :fcall "peek" [(v "hs") (n 2)]))
+             (list :print (list :xcall "hp_a" "hs" [(n 3)]))]}
    {:name "bounds"
     ;; the model stops at the subscript past the array (9.5.3.1p2); gfortran -fcheck=bounds must too
     :objects [{:name "st" :type "s_state" :comps [["n" :scalar 3] ["a" :array [5 6 7]]]}]
@@ -189,7 +212,7 @@
             (if (= :dump (first pr))
               (let [o (first (filter #(= (second pr) (:name %)) (:objects c)))]
                 (mapcat (fn [[cn k vs]]
-                          (if (= k :scalar) [(list :print (list :comp (:name o) cn))]
+                          (case k :ext [] :scalar [(list :print (list :comp (:name o) cn))]
                             (for [i (range (count vs))] (list :print (list :elem (:name o) cn (n i))))))
                         (:comps o)))
               [pr]))
@@ -229,7 +252,7 @@
   (let [[op a] e]
     (case op
       (:true :false :not :eq :lt :le :ge) :logical
-      :fcall (let [pr (first (filter #(= a (second %)) (:procs c)))] (nth pr 5))
+      :fcall (let [pr (first (filter #(= a (second %)) (:procs c)))] (get (vec pr) 5))
       :var (second (first (filter #(= a (first %)) (:vars c))))
       :int64)))
 
@@ -238,19 +261,30 @@
         (concat
          ["module types" "  use iso_fortran_env, only: int64" "  implicit none"]
          (mapcat (fn [[t comps]] (concat [(str "  type " t)]
-                                        (for [[cn k] comps] (if (= k :scalar) (str "    integer(int64) :: " cn)
-                                                              (str "    integer(int64), allocatable :: " cn "(:)")))
+                                        (for [[cn k] comps :when (not= k :ext)]
+                                          (if (= k :scalar) (str "    integer(int64) :: " cn)
+                                            (str "    integer(int64), allocatable :: " cn "(:)")))
                                         [(str "  end type " t)]))
                  (distinct (for [o (:objects c)] [(:type o) (:comps o)])))
          ["end module types"
-          "module m" "  use iso_fortran_env, only: int64" "  use types" "  implicit none" "contains"]
+          "module m" "  use iso_fortran_env, only: int64" "  use types" "  implicit none"]
+         ;; an object's %ext fields: the module's own variables ext_k (fsyn's :extern)
+         (for [o (:objects c) [cn k vs] (:comps o) :when (= k :ext) [j x] (map-indexed vector vs)]
+           (if (sequential? x) (str "  integer(int64), allocatable :: ext_" j "(:)") (str "  integer(int64) :: ext_" j)))
+         ["contains"]
          (mapcat #(map (fn [l] (str "  " l)) (fproc %)) (:procs c))
          ["end module m"
           "program main" "  use iso_fortran_env, only: int64" "  use types" "  use m" "  implicit none"]
          (for [o (:objects c)] (str "  type(" (:type o) ") :: " (:name o)))
          (for [[x t] (:vars c)] (str "  " (ftype t) " :: " x))
          (mapcat (fn [o] (mapcat (fn [[cn k vs]]
-                                   (if (= k :scalar) [(str "  " (:name o) "%" cn " = " vs "_int64")]
+                                   (case k
+                                     :ext (mapcat (fn [[j x]] (if (sequential? x)
+                                                                [(str "  allocate(ext_" j "(0:" (dec (count x)) "))")
+                                                                 (str "  ext_" j " = [" (str/join ", " (map #(str % "_int64") x)) "]")]
+                                                                [(str "  ext_" j " = " x "_int64")]))
+                                                  (map-indexed vector vs))
+                                     :scalar [(str "  " (:name o) "%" cn " = " vs "_int64")]
                                      [(str "  allocate(" (:name o) "%" cn "(0:" (dec (count vs)) "))")
                                       (str "  " (:name o) "%" cn " = [" (str/join ", " (map #(str % "_int64") vs)) "]")]))
                                  (:comps o)))

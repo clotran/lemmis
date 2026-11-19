@@ -26,7 +26,10 @@
 ;          dummy, key naming its object in the heap
 ;   heap   alist key -> components, an alist comp -> integer, or comp ->
 ;          (:array . elements) for an int64 array with lower bound 0
-;          (the generator's arrays are all 0-based)
+;          (the generator's arrays are all 0-based); and "%ext" -> a list,
+;          the module variables an :extern procedure reads and writes
+;          (fsyn; field k is the k-th element: an integer, or a list of
+;          integers for an array with lower bound 0)
 ;
 ; Every function's guard is T and verified: the meaning runs as Common
 ; Lisp without a guard violation on any input, checking its operands'
@@ -116,6 +119,55 @@
          (let ((x (nth i (cdr v)))) (if (int64p x) (mv nil x) (mv :undefined nil))))
         (t (mv :bounds nil))))
 
+; ---- the module's own procedures over its variables (fsyn's :extern, :xcall)
+;
+; GC.f90's hp_* read and write module variables, not their caller's
+; arguments. Here those variables are the "%ext" component of one heap
+; entry: the object a call (:xcall f o args) names o (the one heap_state:
+; every generated hpg_* procedure has it as its dummy hs). The arguments
+; are bound as VALUE dummies i and x (f-bind); then ext-op reads or writes
+; the field. A subscript outside the array is :bounds (9.5.3.1p2), as for
+; a component. A separate kind, not :fcall/:call: what it answers depends
+; on o, which its arguments do not name.
+
+(defun ext-dums (op)
+  (declare (xargs :guard t))
+  (case op
+    (:elem '(("i" :value :int64)))
+    (:set-elem '(("i" :value :int64) ("x" :value :int64)))
+    (:set-scalar '(("x" :value :int64)))
+    (otherwise nil)))
+
+(defun ext-read-p (p)
+  (declare (xargs :guard t))
+  (and (eq (kar p) :extern) (member-eq (kaddr p) '(:elem :size :scalar)) t))
+
+(defun ext-write-p (p)
+  (declare (xargs :guard t))
+  (and (eq (kar p) :extern) (member-eq (kaddr p) '(:set-elem :set-scalar)) t))
+
+; (mv err v heap): a read answers its value; a write the heap with the field updated
+(defun ext-op (p o callee frame heap)
+  (declare (xargs :guard t))
+  (let* ((p (true-list-fix p)) (op (nth 2 p)) (f (nth 3 p))
+         (i (kdr (cdr (lkp "i" callee)))) (x (kdr (cdr (lkp "x" callee)))))
+    (mv-let (err key intent) (obj-of o frame)
+      (declare (ignore intent))
+      (let* ((e (cdr (lkp key heap))) (ext (cdr (lkp "%ext" e))))
+        (cond (err (mv err nil heap))
+              ((not (and (natp f) (true-listp ext))) (mv :type nil heap))
+              (t (let ((a (nth f ext)))
+                   (case op
+                     (:size (if (true-listp a) (mv nil (len a) heap) (mv :type nil heap)))
+                     (:scalar (if (int64p a) (mv nil a heap) (mv :type nil heap)))
+                     (:set-scalar (mv nil nil (put key (put "%ext" (update-nth f x ext) e) heap)))
+                     ((:elem :set-elem)
+                      (cond ((not (and (true-listp a) (integerp i))) (mv :type nil heap))
+                            ((not (and (<= 0 i) (< i (len a)))) (mv :bounds nil heap))
+                            ((eq op :elem) (if (int64p (nth i a)) (mv nil (nth i a) heap) (mv :undefined nil heap)))
+                            (t (mv nil nil (put key (put "%ext" (update-nth f (update-nth i x a) ext) e) heap)))))
+                     (otherwise (mv :syntax nil heap))))))))))
+
 ; ---- evaluation and execution, one mutual recursion on fuel
 ;
 ; ev       expr -> (mv err value)
@@ -181,6 +233,14 @@
                    (mv-let (err v h) (f-invoke p (kaddr x) frame heap procs (1- fuel))
                      (declare (ignore h))
                      (mv err v)))))
+       (:xcall (let ((p (find-proc (kadr x) procs)))
+                 (if (not (ext-read-p p)) (mv :unknown-proc nil)
+                   (mv-let (err callee outs) (f-bind (ext-dums (kaddr p)) (kadddr x) frame nil nil heap procs (1- fuel))
+                     (declare (ignore outs))
+                     (if err (mv err nil)
+                       (mv-let (err v h) (ext-op p (kaddr x) callee frame heap)
+                         (declare (ignore h))
+                         (mv err v)))))))
        (otherwise (mv :syntax nil)))))
 
  (defun f-bind (dummies args caller callee outs heap procs fuel)
@@ -282,6 +342,14 @@
                 (if (not (eq (kar p) :subroutine)) (mv (errst :unknown-proc) frame heap)
                   (mv-let (err fr h) (f-invoke p (kaddr x) frame heap procs (1- fuel))
                     (if err (mv (errst err) frame heap) (mv :normal fr h))))))
+       (:xcall (let ((p (find-proc (kadr x) procs)))
+                 (if (not (ext-write-p p)) (mv (errst :unknown-proc) frame heap)
+                   (mv-let (err callee outs) (f-bind (ext-dums (kaddr p)) (kadddr x) frame nil nil heap procs (1- fuel))
+                     (declare (ignore outs))
+                     (if err (mv (errst err) frame heap)
+                       (mv-let (err v h) (ext-op p (kaddr x) callee frame heap)
+                         (declare (ignore v))
+                         (if err (mv (errst err) frame heap) (mv :normal frame h))))))))
        (otherwise (mv (errst :syntax) frame heap)))))
 
  (defun f-ex-list (xs frame heap procs fuel)
@@ -401,3 +469,27 @@
 (assert-event (equal (run0 (:print (:var "o"))) '((:error :undefined))))
 (assert-event (equal (run0 (:print (:fcall "noresult" nil))) '((:error :undefined))))
 (assert-event (equal (fsem-run *test-module* *test-objs* nil '((:do nil)) 1000) '((:error :fuel))))
+
+; the externs: hs's "%ext" field 0 an array, field 1 a scalar
+(defconst *ext-module*
+  '(:module "x"
+    ((:extern "hp_a" :elem 0) (:extern "hp_n_a" :size 0) (:extern "hp_b" :scalar 1)
+     (:extern "hp_set_a" :set-elem 0) (:extern "hp_set_b" :set-scalar 1)
+     (:function "peek" t nil (("hs" :in "h") ("i_" :value :int64)) :int64 nil
+      ((:assign (:var "r") (:add (:xcall "hp_a" "hs" ((:var "i_"))) (:xcall "hp_b" "hs" nil)))))
+     (:subroutine "poke" nil (("hs" :inout "h") ("i_" :value :int64)) nil
+      ((:xcall "hp_set_a" "hs" ((:var "i_") (:xcall "hp_n_a" "hs" nil))) (:xcall "hp_set_b" "hs" ((:var "i_"))))))))
+
+(assert-event (fmodule-p *ext-module*))
+
+(defmacro runx (&rest probes)
+  `(fsem-run *ext-module* '(("hs" (("n" :scalar 0) ("%ext" :scalar ((5 6 7) 9))))) nil ',probes 100000))
+
+(assert-event (equal (runx (:print (:xcall "hp_n_a" "hs" nil)) (:print (:fcall "peek" ((:var "hs") (:int 2))))
+                           (:call "poke" ((:var "hs") (:int 1)))
+                           (:print (:xcall "hp_a" "hs" ((:int 1)))) (:print (:xcall "hp_b" "hs" nil))
+                           (:print (:xcall "hp_a" "hs" ((:int 3)))))
+                     '(3 16 3 1 (:error :bounds))))
+(assert-event (equal (runx (:print (:xcall "hp_set_b" "hs" ((:int 1))))) '((:error :unknown-proc))))
+(assert-event (equal (runx (:xcall "hp_a" "hs" ((:int 1)))) '((:error :unknown-proc))))
+(assert-event (equal (runx (:print (:fcall "hp_a" ((:int 1))))) '((:error :unknown-proc))))

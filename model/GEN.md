@@ -1164,11 +1164,51 @@ Two findings from acl2-fortran's `stmt` (both fixed now, see above):
    gen-stdisch's p-sorc-h-holds does from a table.
    Estimated: (1)+(2) one lane (discharges p-sflits-n, so hpg-next-tail and
    hpg-seq-op lose their last hypothesis); (3) one to two lanes.
+   **4c steps (1)+(2) done (gen-st-ext).** As built, two changes to the
+   design above. (a) The entry is `(:extern f op field)` (no key) and the
+   call a new kind `(:xcall f o args)` -- an expression (read ops) or a
+   statement (write ops), printed `f(args)` / `call f(args)` (fprint; o not
+   printed): o names the object whose "%ext" models the module variables.
+   Not :fcall/:call with a fixed key: (i) a fixed key (or any global module
+   state) cannot meet p-sflits-n, whose oracle sees only the entry of the
+   object passed (any heap, any other entry), so the extern must read
+   through the caller's hs; (ii) reading hs through an :fcall breaks
+   gen-call's `f-ev-agree` (an expression depends on the frame only through
+   the names it reads) -- a separate kind outside ce-ok keeps every proof
+   above fsem unchanged. fsem: `ext-op`, f-ev/f-ex :xcall cases (arguments
+   bound by f-bind as VALUE dummies i, x); fsyn: fproc-p :extern, fexpr-p /
+   fstmt-p :xcall; check-fsem case "extern" (each op, from main and from
+   procedures given hs, then :bounds) against a GC.f90-style stub (module
+   variables ext_k). (b) The lengths: hp_n_oslot answers both
+   h-otag-length and h-oref-length, hp_n_obj both h-okind-length and
+   h-oi1-length, so the stobj must have them equal (`nt-lens`, a fact about
+   the state, in the oracle's domain). gen-st-ntail's oracle now reads the
+   entry: `s-fn-val-n name s ks nms` answers on `(hs-hpg s)` where
+   `nt-ent-ok s` (its "%ext" a true list, hpgp, nt-lens); hs-rep/hs-hpg
+   moved there from gen-st-drain. One lemma per op: `f-ev-xcall-size`,
+   `-scalar`, `-elem`, `f-ex-xcall-set-scalar`, `-set-elem`. The five
+   callees' procedures are written by hand as acl2-fortran prints them
+   (`*ot-proc*` .. `*oat-proc*`; check-gen compares their text with
+   heap_gen.inc) -- gen-st does not translate extern roles yet;
+   `nt-ot-ok` .. `nt-oat-ok` prove each answers its ACL2 value on the
+   entry's stobj; `p-sflits-n-holds`: `(nt-finds)` (the 6 externs and 5
+   callees found in procs) implies `p-sflits-n procs 60 *nt-callees*`.
+   **`hpg-next-tail-fortran-correct-x`, `hpg-seq-op-fortran-correct-x`**:
+   on nt-finds (seq-op: and hpg_next_tail's procedure), hpgp, nt-lens, the
+   guard, ob at key, `(cdr (lkp key heap)) = (hs-rep c hpg)`, fuel past 68
+   + the body (78 + both bodies): f-invoke answers `(mv nil (hpg-next-tail
+   o hpg) heap)` (resp. hpg-seq-op). No hypothesis on the procedures past
+   their being the printed ones. Step (3) next: gen-st's extern roles
+   (g-sexpr/g-stmt emitting :xcall; a-sx reading "%ext"; the per-case
+   lemmas in gen-stexp/-stnames/-sfexp/-sfnames and their induction
+   schemes sn-ind/sn-ind-f), then the hand-written procedures become
+   g-st-module's, then p-sorc-d/-r/-t.
    **Hypotheses still to discharge** (milestone 2, stobj layer): tab-ok
    (CALL) and sfd-ok (value functions given the stobj), o not a formal's
    name, o not "r", `(g-role nil st)` not :stobj -- each a ground fact
    decided on a given table/configuration; for hpg-next-tail/hpg-seq-op,
-   `p-sflits-n` on the five `hp_*` readers, for hpg-drain `p-sorc-d` (hpg_scan_obj,
+   none past the ground `nt-finds` and the state fact `nt-lens`
+   (gen-st-ext, 4c (1)+(2) above), for hpg-drain `p-sorc-d` (hpg_scan_obj,
    hpg_scan_vec), for hpg-run-from-batch `p-sorc-r` (hpg_run_pop, hpg_run_new), for
    hpg-run-take `p-sorc-t` (hpg_run_take_c) and the ground `rt-finds` (4c: once
    fsem has the externs, prove their procedures answer the oracles).

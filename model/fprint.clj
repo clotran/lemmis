@@ -18,7 +18,9 @@
       :le (str "(" (fx a) " <= " (fx b) ")") :ge (str "(" (fx a) " >= " (fx b) ")")
       :not (str "(.not. " (fx a) ")") :max (str "max(" (fx a) ", " (fx b) ")")
       :size (str "size(" a "%" b ", kind=int64)")
-      :fcall (str a "(" (str/join ", " (map fx b)) ")"))))
+      :fcall (str a "(" (str/join ", " (map fx b)) ")")
+      ;; an extern (fsyn :xcall): b names the object modelling its module variables, not printed
+      :xcall (str a "(" (str/join ", " (map fx c)) ")"))))
 
 (declare fstmts)
 (defn fstmt [s]
@@ -31,12 +33,31 @@
                       ["case default"] (ind (fstmts c)) ["end select"])
       :do (concat ["do"] (ind (fstmts a)) ["end do"])
       (:cycle :exit :return) [(name op)]
-      :call [(str "call " a "(" (str/join ", " (map fx b)) ")")])))
+      :call [(str "call " a "(" (str/join ", " (map fx b)) ")")]
+      :xcall [(str "call " a "(" (str/join ", " (map fx c)) ")")])))
 (defn fstmts [ss] (mapcat fstmt ss))
 
 (defn ftype [t] (case t :int64 "integer(int64)" :logical "logical"))
 
+(defn fext
+  "an :extern procedure as a GC.f90 stub: field k of %ext is the module variable ext_k"
+  [[_ nm op f]]
+  (let [v (str "ext_" f) i "integer(int64), intent(in) :: "
+        fun (fn [args body] (concat [(str "pure function " nm "(" args ") result(r)")]
+                                   (map #(str "  " %) (concat (when (seq args) [(str i args)]) ["integer(int64) :: r" body]))
+                                   [(str "end function " nm)]))
+        sub (fn [args decls body] (concat [(str "subroutine " nm "(" args ")")]
+                                         (map #(str "  " %) (concat (map #(str i %) decls) [body]))
+                                         [(str "end subroutine " nm)]))]
+    (case op
+      :elem (fun "i" (str "r = " v "(i)"))
+      :size (fun "" (str "r = size(" v ", kind=int64)"))
+      :scalar (fun "" (str "r = " v))
+      :set-elem (sub "i, x" ["i" "x"] (str v "(i) = x"))
+      :set-scalar (sub "x" ["x"] (str v " = x")))))
+
 (defn fproc [pr]
+  (if (= :extern (first pr)) (fext pr)
   (let [fun (= :function (first pr))
         [_ nm pure rec dummies rtype locals body] (if fun pr (let [[k nm rec ds ls b] pr] [k nm nil rec ds nil ls b]))
         head (str (when (= 't rec) "recursive ") (when (= 't pure) "pure ")
@@ -46,5 +67,5 @@
                              :out (str "integer(int64), intent(out) :: " x)))]
     (concat [head] (map #(str "  " %) (concat (map decl dummies) (when fun [(str (ftype rtype) " :: r")])
                                                (for [[x t] locals] (str (ftype t) " :: " x)) (fstmts body)))
-            [(str "end " (if fun "function " "subroutine ") nm)])))
+            [(str "end " (if fun "function " "subroutine ") nm)]))))
 

@@ -84,10 +84,10 @@ the emitted FUNCTION answers a-sx's value (gen-stretfn); `a-sxf` (a-sx with call
 s-fn-val) = f-ev/f-ex-list under p-sforc (gen-sfx); gs-sem on svf against a-sxf with the call
 case, `gs-sem-holds-f` under sf-orc (gen-sfexp, -sfcall, -sfnames, -sflam, -sfthm); both
 oracles discharged on a table, `sxf-h-ok-is-f-ex-list` and `gs-sem-holds-h` under the
-decidable `sfd-ok` alone (gen-sflits, gen-sfdisch, gen-sfinst). `hpg-next-tail-fortran-correct`,
-`hpg-seq-op-fortran-correct` under p-sflits-n, the hp_* callees' correctness (gen-st-ntail); `hpg-drain-fortran-correct` (the tail loop, gen-st-drain) under p-sorc-d and `hpg-run-from-batch-fortran-correct` (OUT result, gen-st-rfb) under p-sorc-r and `hpg-run-take-fortran-correct` (function calls in assignments, gen-st-tkfn/gen-st-take: asg-t-fcall proved from hpg-size-class/hpg-class-len -fortran-correct) under p-sorc-t, the externs a ghost "%ext" component of hs (hs-rep, a modelling choice). 4b done. Left, ~5 lanes: rest of 4a (updates/dests/mv
+decidable `sfd-ok` alone (gen-sflits, gen-sfdisch, gen-sfinst). `hpg-next-tail-fortran-correct-x`,
+`hpg-seq-op-fortran-correct-x` with no hypothesis on the procedures past `nt-finds` (the printed callees and the hp_* externs found) and the state fact `nt-lens` (gen-st-ntail, gen-st-ext: fsem :extern entries and :xcall over hs's "%ext", 4c steps 1-2); `hpg-drain-fortran-correct` (the tail loop, gen-st-drain) under p-sorc-d and `hpg-run-from-batch-fortran-correct` (OUT result, gen-st-rfb) under p-sorc-r and `hpg-run-take-fortran-correct` (function calls in assignments, gen-st-tkfn/gen-st-take: asg-t-fcall proved from hpg-size-class/hpg-class-len -fortran-correct) under p-sorc-t, the externs a ghost "%ext" component of hs (hs-rep, a modelling choice). 4b done. Left, ~5 lanes: rest of 4a (updates/dests/mv
 lambda on sxc; a-stc's call = a-stcall done, gen-stccall; GEN.md), `hp_*`
-externs (4c, designed in GEN.md: fsem :extern entries reading/writing hs's "%ext"), values/runtime shims (2), acl2-fortran printing g-module's output (1).
+externs (4c step 3: gen-st translating extern roles to :xcall, then p-sorc-d/-r/-t; GEN.md "4c steps (1)+(2) done"), values/runtime shims (2), acl2-fortran printing g-module's output (1).
 
 ## Traps
 

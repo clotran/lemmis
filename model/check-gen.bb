@@ -79,9 +79,8 @@
     (when (and start end) (subvec lines start (inc end)))))
 
 (def failures (atom 0))
-(doseq [{:keys [book file fns bools raw st] :as b} books]
-  (let [procs (translate (dump b) bools raw fns st)
-        lines (vec (str/split-lines (slurp (str clotran "/" file))))]
+(defn compare! [file fns procs]
+  (let [lines (vec (str/split-lines (slurp (str clotran "/" file))))]
     (doseq [[fn pr] (map vector fns procs)]
       (let [pr (vec pr)
             li (if (= :function (first pr)) 6 4)
@@ -95,6 +94,19 @@
               (doseq [[a t] (map vector (concat ours (repeat "<none>")) (or theirs ["<not found>"]))
                       :when (not= a t)] ; first differences only
                 (println "  gen.lisp:     " a) (println "  acl2-fortran: " t))))))))
+(doseq [{:keys [book file fns bools raw st] :as b} books]
+  (compare! file fns (translate (dump b) bools raw fns st)))
+
+;; procedures a book writes by hand, as acl2-fortran prints them (gen-st does not translate
+;; extern roles yet): gen-st-ext.lisp's hpg-next-tail callees, on the hp_* externs
+(def hand [["gen-st-ext" "src/f/gen/heap_gen.inc" ["*ot-proc*" "*or-proc*" "*okd-proc*" "*oi-proc*" "*oat-proc*"]]])
+(doseq [[book file consts] hand]
+  (let [out (acl2! "." (str "(include-book \"" book "\")\n(set-print-case :downcase state)\n(set-iprint nil)\n"
+                            (str/join (map #(str "(cw \"~%PROC ~x0~%\" " % ")\n") consts)) "(good-bye)\n"))
+        procs (map #(edn/read-string (form-text %)) (rest (str/split out #"\nPROC\s+")))]
+    (when (not= (count procs) (count consts))
+      (println "check-gen:" book "did not hand over" consts) (System/exit 1))
+    (compare! file consts procs)))
 ;; gen-disch.lisp's and gen-disch-loop.lisp's copies of clotran's definitions: the
 ;; formals, guard and
 ;; body ACL2 makes of each must equal what clotran's certified books make

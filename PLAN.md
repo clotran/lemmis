@@ -341,13 +341,13 @@ extension starts before Stage A is done.
    (gen-sfexp..gen-sfthm: gs-sem-holds-f, under sf-orc); both oracles
    discharged on a table (gen-sflits, gen-sfdisch, gen-sfinst:
    sxf-h-ok-is-f-ex-list, gs-sem-holds-h under the decidable sfd-ok only);
-   hpg-next-tail and hpg-seq-op -fortran-correct under the hp_* callees' correctness (gen-st-ntail);
+   hpg-next-tail and hpg-seq-op -fortran-correct, their hp_* callees proved over fsem's externs (:extern, :xcall on hs's "%ext"; gen-st-ntail, gen-st-ext: -fortran-correct-x, no procedure hypothesis past nt-finds);
    hpg-drain (the subroutine tail loop, gen-st-drain) and hpg-run-from-batch (an
    INTENT(OUT) result, gen-st-rfb) -fortran-correct under their CALLed callees'
    correctness (p-sorc-d, p-sorc-r), the externs a ghost component of hs;
    hpg-run-take (function calls in assignments, gen-st-take) under p-sorc-t.
    Left, in order: the rest of stobj calls and mv (4a: updates, dests, the
-   mv lambda on sxc), the `hp_*` externs (4c, designed in model/GEN.md); values and the
+   mv lambda on sxc), the `hp_*` externs (4c step 3: gen-st emitting :xcall, then p-sorc-d/-r/-t; model/GEN.md); values and the
    runtime shims (two lanes); then acl2-fortran prints g-module's output
    (and its lambda scoping, which leaks a binding to later siblings,
    fixed or shown harmless). About 6 lanes.

@@ -1,14 +1,14 @@
-; gen-st-ntail: hpg-next-tail-fortran-correct (GEN.md "What remains" 4b).
+; gen-st-ntail: hpg-next-tail-fortran-correct (GEN.md "What remains" 4b, 4c).
 ; hpg-next-tail is a value function given the stobj; it reads the stobj only
 ; through its callees hpg-ot, hpg-or, hpg-obj-at, hpg-okd, hpg-oi, whose
-; Fortran reads the `hp_*` externs (4c), so they cannot be sfd-ok entries.
+; Fortran reads the `hp_*` externs, so they cannot be sfd-ok entries.
 ; Their correctness is the named hypothesis `p-sflits-n`: the oracle
-; s-fn-val-n answers each callee's ACL2 value on hpg0 (the externs' state;
-; the heap entry of the object passed is not read), and p-sflits-n says the
-; procedures answer it (gen-sflits' p-sflits on that oracle). svf/sxf are
-; copied with the oracle's parameters (hpg0, nms: the names it answers), and
+; s-fn-val-n answers each callee's ACL2 value on the stobj the entry s of the
+; object passed holds (hs-hpg s, where nt-ent-ok s), and p-sflits-n says the
+; procedures answer it (gen-sflits' p-sflits on that oracle); gen-st-ext
+; proves it of the printed callees over fsem's externs. svf/sxf are copied
+; with the oracle's parameter (nms: the names it answers), and
 ; sxf-lits-ok-is-f-ex-list instantiated; the body's run is symbolic.
-; (hpg-next-tail is not recursive: no tail loop is needed.)
 
 (in-package "ACL2")
 
@@ -77,13 +77,109 @@
                           (t 0)))
                    (t 0))))))
 
-; ---- the oracle: the callees' ACL2 values on hpg0, for the names in nms
+; ---- the heap entry: heap_state's twelve fields from the stobj, the rest in "%ext"
+
+(defconst *hs-vis* '((0 "err" nil) (10 "mtag" t) (11 "mref" t) (12 "msp" nil) (13 "nobj" nil) (14 "nvec" nil)
+                     (15 "nstr" nil) (16 "alive" nil) (31 "nswo" nil) (32 "nswv" nil) (33 "nsws" nil) (34 "afree" nil)))
+(defconst *hs-keys* '("%ext" "err" "mtag" "mref" "msp" "nobj" "nvec" "nstr" "alive" "nswo" "nswv" "nsws" "afree"))
+
+
+(defun hs-gen (i mode)
+  (declare (xargs :mode :program))
+  (if (<= 57 i) nil
+    (let ((v (assoc i *hs-vis*)))
+      (cons (cond ((eq mode :ext) (if v ''nil `(nth ,i hpg)))
+                  ((null v) `(nth ,i x))
+                  ((caddr v) `(cddr (lkp ,(cadr v) e)))
+                  (t `(cdr (lkp ,(cadr v) e))))
+            (hs-gen (1+ i) mode)))))
+
+(defmacro hs-gen-list (mode) (cons 'list (hs-gen 0 mode)))
+
+; the externs' part of the stobj (heap_state's fields nil)
+(defun hs-ext (hpg) (hs-gen-list :ext))
+
+; the entry without the keys hs-rep writes
+(defun hs-del (al)
+  (cond ((atom al) nil)
+        ((and (consp (car al)) (member-equal (caar al) *hs-keys*)) (hs-del (cdr al)))
+        (t (cons (car al) (hs-del (cdr al))))))
+
+(defun hs-rep (c hpg)
+  (put "msp" (nth 12 hpg) (put "mref" (cons :array (nth 11 hpg)) (put "mtag" (cons :array (nth 10 hpg))
+   (put "err" (nth 0 hpg) (put "nobj" (nth 13 hpg) (put "nvec" (nth 14 hpg) (put "nstr" (nth 15 hpg)
+   (put "alive" (nth 16 hpg) (put "nswo" (nth 31 hpg) (put "nswv" (nth 32 hpg) (put "nsws" (nth 33 hpg)
+   (put "afree" (nth 34 hpg) (put "%ext" (hs-ext hpg) (hs-del c)))))))))))))))
+
+; the stobj an entry holds
+(defun hs-hpg (e) (let ((x (cdr (lkp "%ext" e)))) (hs-gen-list :hpg)))
+
+(defthm hs-del-put
+  (implies (member-equal k *hs-keys*) (equal (hs-del (put k v al)) (hs-del al)))
+  :hints (("Goal" :in-theory (enable put))))
+
+(defthm hs-del-hs-del (equal (hs-del (hs-del al)) (hs-del al)))
+
+(defthm hs-rep-rep (equal (hs-rep (hs-rep c h1) h2) (hs-rep c h2))
+  :hints (("Goal" :in-theory (disable put hs-ext))))
+
+(defun nth-list (i n x) (if (zp n) nil (cons (nth i x) (nth-list (1+ i) (1- n) x))))
+
+(defthm car-nthcdr-d (implies (natp i) (equal (car (nthcdr i x)) (nth i x))) :hints (("Goal" :in-theory (enable nth nthcdr))))
+(defthm cdr-nthcdr-d (implies (natp i) (equal (cdr (nthcdr i x)) (nthcdr (1+ i) x))) :hints (("Goal" :induct (nthcdr i x) :in-theory (enable nthcdr))))
+(defthm consp-nthcdr-d (implies (natp i) (iff (consp (nthcdr i x)) (< i (len x)))) :hints (("Goal" :induct (nthcdr i x) :in-theory (enable nthcdr))))
+(defthm nthcdr-len-d (implies (true-listp x) (equal (nthcdr (len x) x) nil)) :hints (("Goal" :in-theory (enable nthcdr))))
+
+(defthm nth-list-nthcdr
+  (implies (and (true-listp x) (natp i) (natp n) (equal (+ i n) (len x)))
+           (equal (nth-list i n x) (nthcdr i x)))
+  :hints (("Goal" :induct (nth-list i n x) :in-theory (disable nthcdr))
+          ("Subgoal *1/2" :use ((:instance consp-nthcdr-d)) :in-theory (disable nthcdr consp-nthcdr-d))))
+
+(defthm hpgp-shape (implies (hpgp hpg) (and (true-listp hpg) (equal (len hpg) 57)))
+  :rule-classes :forward-chaining
+  :hints (("Goal" :in-theory (enable hpgp))))
+
+(defthm hs-hpg-rep (implies (hpgp hpg) (equal (hs-hpg (hs-rep c hpg)) hpg))
+  :hints (("Goal" :in-theory (e/d (nth-list) (put hpgp nth-list-nthcdr))
+           :expand ((:free (i n) (nth-list i n hpg)))
+           :use ((:instance nth-list-nthcdr (x hpg) (i 0) (n 57))))))
+
+(defthm hs-rep-msp (equal (put "msp" v (hs-rep c hpg)) (hs-rep c (update-nth 12 v hpg)))
+  :hints (("Goal" :in-theory (disable put))))
+
+(defthm hs-rep-reads
+  (and (equal (lkp "msp" (hs-rep c hpg)) (cons "msp" (nth 12 hpg)))
+       (equal (lkp "err" (hs-rep c hpg)) (cons "err" (nth 0 hpg)))
+       (equal (lkp "mtag" (hs-rep c hpg)) (list* "mtag" :array (nth 10 hpg)))
+       (equal (lkp "mref" (hs-rep c hpg)) (list* "mref" :array (nth 11 hpg))))
+  :hints (("Goal" :in-theory (disable put hs-ext hs-del))))
+
+(in-theory (disable hs-rep hs-hpg hs-ext))
+
+; ---- the oracle's domain: an entry holding an hpg (hs-hpg), its externs' lists true lists, and the
+; lengths one GC.f90 size answers equal (hp_n_oslot: otag, oref; hp_n_obj: okind, oi1)
+
+(defun nt-lens (h)
+  (and (equal (len (nth *h-orefi* h)) (len (nth *h-otagi* h)))
+       (equal (len (nth *h-oi1i* h)) (len (nth *h-okindi* h)))))
+
+(defun nt-ent-ok (s)
+  (declare (xargs :verify-guards nil))
+  (and (true-listp (cdr (lkp "%ext" s))) (hpgp (hs-hpg s)) (nt-lens (hs-hpg s))))
+
+(defthm nt-ent-ok-hpgp (implies (nt-ent-ok s) (hpgp (hs-hpg s))) :rule-classes (:rewrite :forward-chaining))
+
+(in-theory (disable nt-ent-ok))
+
+; ---- the oracle: the callees' ACL2 values on the stobj the entry s holds, for the names in nms
 
 (defun nt-ks (ks n) (and (int64-listp ks) (equal (len ks) n)))
 
-(defun-nx s-fn-val-n (name s ks hpg0 nms)
-  (declare (ignorable s))
+(defun-nx s-fn-val-n (name s ks nms)
+  (let ((hpg0 (hs-hpg s)))
   (cond ((not (member-equal name nms)) (mv :orc nil))
+        ((not (nt-ent-ok s)) (mv :orc nil))
         ((and (equal name "hpg_ot") (nt-ks ks 1)) (mv nil (hpg-ot (car ks) hpg0)))
         ((and (equal name "hpg_or") (nt-ks ks 1)) (mv nil (hpg-or (car ks) hpg0)))
         ((and (equal name "hpg_okd") (nt-ks ks 1)) (mv nil (hpg-okd (car ks) hpg0)))
@@ -91,12 +187,12 @@
         ((and (equal name "hpg_obj_at") (nt-ks ks 2)) (mv nil (hpg-obj-at (car ks) (cadr ks) hpg0)))
         ((and (equal name "hpg_next_tail") (nt-ks ks 1) (natp (car ks)) (< (car ks) *hb40*))
          (mv nil (hpg-next-tail (car ks) hpg0)))
-        (t (mv :orc nil))))
+        (t (mv :orc nil)))))
 
 ; ---- svf/svlf/sxf/sxf-list on it (gen-sfinst's copies, renamed)
 
 (mutual-recursion
- (defun svf-n (e fr heap hpg0 nms)
+ (defun svf-n (e fr heap nms)
   (declare (xargs :measure (acl2-count e)))
   (case (kar e)
     (:int (if (int-lit-p (kadr e)) (mv nil (kadr e)) (mv :syntax nil)))
@@ -111,41 +207,41 @@
              (cond (err (mv err nil)) ((int64p v) (mv nil v)) (t (mv :type nil)))))
     (:size (mv-let (err v) (comp-of (kadr e) (kaddr e) fr heap)
              (cond (err (mv err nil)) ((farrayp v) (mv nil (len (cdr v)))) (t (mv :type nil)))))
-    (:elem (mv-let (err i) (svf-n (kadddr e) fr heap hpg0 nms)
+    (:elem (mv-let (err i) (svf-n (kadddr e) fr heap nms)
              (if err (mv err nil)
                (mv-let (err v) (comp-of (kadr e) (kaddr e) fr heap)
                  (if err (mv err nil) (read-elem v i))))))
-    (:neg (mv-let (err a) (svf-n (kadr e) fr heap hpg0 nms) (if err (mv err nil) (arith :sub 0 a))))
-    (:not (mv-let (err a) (svf-n (kadr e) fr heap hpg0 nms)
+    (:neg (mv-let (err a) (svf-n (kadr e) fr heap nms) (if err (mv err nil) (arith :sub 0 a))))
+    (:not (mv-let (err a) (svf-n (kadr e) fr heap nms)
             (cond (err (mv err nil)) ((booleanp a) (mv nil (not a))) (t (mv :type nil)))))
     ((:add :sub :mul :eq :lt :le :ge :max)
-     (mv-let (err a) (svf-n (kadr e) fr heap hpg0 nms)
+     (mv-let (err a) (svf-n (kadr e) fr heap nms)
        (if err (mv err nil)
-         (mv-let (err b) (svf-n (kaddr e) fr heap hpg0 nms)
+         (mv-let (err b) (svf-n (kaddr e) fr heap nms)
            (if err (mv err nil) (binop (kar e) a b))))))
     (:fcall (let ((a (kaddr e)))
               (mv-let (err key intent) (obj-of (kadr (kar a)) fr)
                 (declare (ignore intent))
                 (cond ((not (eq (kar (kar a)) :var)) (mv :syntax nil))
                       (err (mv err nil))
-                      (t (mv-let (err ks) (svlf-n (kdr a) fr heap hpg0 nms)
+                      (t (mv-let (err ks) (svlf-n (kdr a) fr heap nms)
                            (if err (mv err nil)
-                             (mv-let (err v) (s-fn-val-n (kadr e) (cdr (lkp key heap)) ks hpg0 nms) (mv err v)))))))))
+                             (mv-let (err v) (s-fn-val-n (kadr e) (cdr (lkp key heap)) ks nms) (mv err v)))))))))
     (otherwise (mv :syntax nil))))
- (defun svlf-n (cs fr heap hpg0 nms)
+ (defun svlf-n (cs fr heap nms)
   (declare (xargs :measure (acl2-count cs)))
   (if (atom cs) (mv nil nil)
-    (mv-let (err v) (svf-n (car cs) fr heap hpg0 nms)
+    (mv-let (err v) (svf-n (car cs) fr heap nms)
       (if err (mv err nil)
-        (mv-let (err vs) (svlf-n (cdr cs) fr heap hpg0 nms)
+        (mv-let (err vs) (svlf-n (cdr cs) fr heap nms)
           (if err (mv err nil) (mv nil (cons v vs)))))))))
 
 (mutual-recursion
- (defun sxf-n (x frame heap hpg0 nms)
+ (defun sxf-n (x frame heap nms)
    (declare (xargs :measure (acl2-count x)))
    (case (kar x)
      (:assign
-      (mv-let (err v) (svf-n (kaddr x) frame heap hpg0 nms)
+      (mv-let (err v) (svf-n (kaddr x) frame heap nms)
         (if err (mv (errst err) frame heap)
           (let ((d (kadr x)))
             (case (kar d)
@@ -164,7 +260,7 @@
                                    (if (int64p (cdr p))
                                        (mv :normal frame (put key (put (kaddr d) v comps) heap))
                                      (mv (errst :type) frame heap)))
-                                  (t (mv-let (err i) (svf-n (kadddr d) frame heap hpg0 nms)
+                                  (t (mv-let (err i) (svf-n (kadddr d) frame heap nms)
                                        (cond (err (mv (errst err) frame heap))
                                              ((not (and (farrayp (cdr p)) (integerp i))) (mv (errst :type) frame heap))
                                              ((not (and (<= 0 i) (< i (len (cddr p))))) (mv (errst :bounds) frame heap))
@@ -172,63 +268,63 @@
                                                     (put key (put (kaddr d) (cons :array (update-nth i v (cddr p))) comps)
                                                          heap))))))))))))
               (otherwise (mv (errst :syntax) frame heap)))))))
-     (:if (mv-let (err c) (svf-n (kadr x) frame heap hpg0 nms)
+     (:if (mv-let (err c) (svf-n (kadr x) frame heap nms)
             (cond (err (mv (errst err) frame heap))
                   ((not (booleanp c)) (mv (errst :type) frame heap))
-                  (c (sxf-list-n (kaddr x) frame heap hpg0 nms))
-                  (t (sxf-list-n (kadddr x) frame heap hpg0 nms)))))
-     (:select (mv-let (err k) (svf-n (kadr x) frame heap hpg0 nms)
+                  (c (sxf-list-n (kaddr x) frame heap nms))
+                  (t (sxf-list-n (kadddr x) frame heap nms)))))
+     (:select (mv-let (err k) (svf-n (kadr x) frame heap nms)
                 (cond (err (mv (errst err) frame heap))
                       ((not (integerp k)) (mv (errst :type) frame heap))
                       (t (let ((arm (lkp k (kaddr x))))
-                           (sxf-list-n (if arm (kadr arm) (kadddr x)) frame heap hpg0 nms))))))
+                           (sxf-list-n (if arm (kadr arm) (kadddr x)) frame heap nms))))))
      ((:cycle :exit :return) (mv (kar x) frame heap))
      (otherwise (mv (errst :syntax) frame heap))))
- (defun sxf-list-n (ss frame heap hpg0 nms)
+ (defun sxf-list-n (ss frame heap nms)
    (declare (xargs :measure (acl2-count ss)))
    (if (atom ss) (mv :normal frame heap)
-     (mv-let (st fr2 h2) (sxf-n (car ss) frame heap hpg0 nms)
-       (if (eq st :normal) (sxf-list-n (cdr ss) fr2 h2 hpg0 nms) (mv st fr2 h2))))))
+     (mv-let (st fr2 h2) (sxf-n (car ss) frame heap nms)
+       (if (eq st :normal) (sxf-list-n (cdr ss) fr2 h2 nms) (mv st fr2 h2))))))
 
 (in-theory (disable svf-n svlf-n sxf-n sxf-list-n))
 
 ; ---- the named hypothesis: the callees' procedures answer the oracle
 
-(defun-sk p-sflits-n (procs b hpg0 nms)
+(defun-sk p-sflits-n (procs b nms)
   (forall (name s ks ob caller heap fuel)
     (let ((p (find-proc name procs)))
-      (implies (and (not (mv-nth 0 (s-fn-val-n name s ks hpg0 nms))) (not (mv-nth 0 (obj-of ob caller)))
+      (implies (and (not (mv-nth 0 (s-fn-val-n name s ks nms))) (not (mv-nth 0 (obj-of ob caller)))
                     (equal (cdr (lkp (mv-nth 1 (obj-of ob caller)) heap)) s)
                     (integerp fuel) (< b fuel))
                (and (eq (kar p) :function) (int64-listp ks) (< (+ 4 (len ks)) b)
                     (sfl-dums (nth 4 (true-list-fix p)) ks)
                     (equal (f-invoke p (cons (list :var ob) (g-lits ks)) caller heap procs fuel)
-                           (mv nil (mv-nth 1 (s-fn-val-n name s ks hpg0 nms)) heap)))))))
+                           (mv nil (mv-nth 1 (s-fn-val-n name s ks nms)) heap)))))))
 
 (in-theory (disable p-sflits-n))
 
 ;; sxf-lits-ok-is-f-ex-list on the copies (gen-sfinst's sxf-h-ok-generic)
 (defthm sxf-n-ok-is-f-ex-list
-  (implies (and (p-sflits-n procs b hpg0 nms) (natp b)
-                (not (errstp (mv-nth 0 (sxf-list-n ss fr heap hpg0 nms))))
+  (implies (and (p-sflits-n procs b nms) (natp b)
+                (not (errstp (mv-nth 0 (sxf-list-n ss fr heap nms))))
                 (integerp k) (< (+ b (acl2-count ss)) k))
-           (equal (f-ex-list ss fr heap procs k) (sxf-list-n ss fr heap hpg0 nms)))
+           (equal (f-ex-list ss fr heap procs k) (sxf-list-n ss fr heap nms)))
   :hints (("Goal" :do-not-induct t
            :in-theory (theory 'minimal-theory)
            :use ((:functional-instance sxf-lits-ok-is-f-ex-list
-                  (s-fn-val (lambda (name s ks) (s-fn-val-n name s ks hpg0 nms)))
-                  (svf (lambda (e fr heap) (svf-n e fr heap hpg0 nms)))
-                  (svlf (lambda (cs fr heap) (svlf-n cs fr heap hpg0 nms)))
-                  (sxf (lambda (x frame heap) (sxf-n x frame heap hpg0 nms)))
-                  (sxf-list (lambda (ss frame heap) (sxf-list-n ss frame heap hpg0 nms)))
-                  (p-sflits (lambda (procs b) (p-sflits-n procs b hpg0 nms)))
-                  (p-sflits-witness (lambda (procs b) (p-sflits-n-witness procs b hpg0 nms))))))
+                  (s-fn-val (lambda (name s ks) (s-fn-val-n name s ks nms)))
+                  (svf (lambda (e fr heap) (svf-n e fr heap nms)))
+                  (svlf (lambda (cs fr heap) (svlf-n cs fr heap nms)))
+                  (sxf (lambda (x frame heap) (sxf-n x frame heap nms)))
+                  (sxf-list (lambda (ss frame heap) (sxf-list-n ss frame heap nms)))
+                  (p-sflits (lambda (procs b) (p-sflits-n procs b nms)))
+                  (p-sflits-witness (lambda (procs b) (p-sflits-n-witness procs b nms))))))
           (sfi-hint id clause '(f-ex-list) '(p-sflits-n-witness) '(p-sflits-n)
            '(:in-theory (union-theories '(p-sflits-n) (theory 'minimal-theory)))
            '(:in-theory (theory 'minimal-theory) :use ((:instance p-sflits-n-necc)))
            '(:in-theory (disable s-fn-val-n svf-n svlf-n sxf-n sxf-list-n p-sflits-n)
-             :expand ((svf-n e fr heap hpg0 nms) (svlf-n cs fr heap hpg0 nms) (sxf-n x frame heap hpg0 nms)
-                      (sxf-list-n ss frame heap hpg0 nms))))))
+             :expand ((svf-n e fr heap nms) (svlf-n cs fr heap nms) (sxf-n x frame heap nms)
+                      (sxf-list-n ss frame heap nms))))))
 
 ; ---- f-invoke of a FUNCTION given the stobj, on its body's run (gen-stretfn's f-invoke-sret on sxf-list-n)
 
@@ -236,10 +332,10 @@
   :hints (("Goal" :induct (fb vs ks fr) :in-theory (e/d (kar kadr fb fbv g-dummies) (g-formal)))))
 
 (defthm f-invoke-sret-n
-  (implies (and (p-sflits-n procs b hpg0 nms) (natp b)
-                (equal (car (sxf-list-n body (rfr rt) heap hpg0 nms)) :return)
-                (equal (mv-nth 2 (sxf-list-n body (rfr rt) heap hpg0 nms)) heap)
-                (sret-ok (mv-nth 1 (sxf-list-n body (rfr rt) heap hpg0 nms)) rt v)
+  (implies (and (p-sflits-n procs b nms) (natp b)
+                (equal (car (sxf-list-n body (rfr rt) heap nms)) :return)
+                (equal (mv-nth 2 (sxf-list-n body (rfr rt) heap nms)) heap)
+                (sret-ok (mv-nth 1 (sxf-list-n body (rfr rt) heap nms)) rt v)
                 (equal (cdr (lkp ob caller)) (list* :obj intent key))
                 (int64-listp ks) (equal (len ks) (len vs))
                 (integerp fuel) (< (+ 7 b (len ks) (acl2-count body)) fuel))
@@ -329,34 +425,34 @@
   '(undef-locals (cons (list "r" :int64) (g-locals *nt-locs*)) (fb '(o) (list o) (put "hs" (list* :obj :in key) nil))))
 
 (defthm nt-run
-  (implies (and (hpgp hpg0) (natp o) (< o *hb40*))
-           (let ((r (sxf-list-n *nt-body* (nt-frame) heap hpg0 *nt-callees*)))
+  (implies (and (nt-ent-ok (cdr (lkp key heap))) (natp o) (< o *hb40*))
+           (let ((r (sxf-list-n *nt-body* (nt-frame) heap *nt-callees*)))
              (and (equal (car r) :return) (equal (mv-nth 2 r) heap)
-                  (sret-ok (mv-nth 1 r) :int64 (hpg-next-tail o hpg0)))))
+                  (sret-ok (mv-nth 1 r) :int64 (hpg-next-tail o (hs-hpg (cdr (lkp key heap))))))))
   :hints (("Goal" :do-not-induct t
            :in-theory (e/d (sret-ok s-fn-val-n fb) (hpgp))
-           :expand ((:free (x fr h) (sxf-n x fr h hpg0 *nt-callees*))
-                    (:free (ss fr h) (sxf-list-n ss fr h hpg0 *nt-callees*))
-                    (:free (e fr h) (svf-n e fr h hpg0 *nt-callees*))
-                    (:free (cs fr h) (svlf-n cs fr h hpg0 *nt-callees*))))))
+           :expand ((:free (x fr h) (sxf-n x fr h *nt-callees*))
+                    (:free (ss fr h) (sxf-list-n ss fr h *nt-callees*))
+                    (:free (e fr h) (svf-n e fr h *nt-callees*))
+                    (:free (cs fr h) (svlf-n cs fr h *nt-callees*))))))
 
 ; ---- the theorem: the callees' correctness (p-sflits-n on *nt-callees*) the only hypothesis
 ; about the procedures; hpg the externs' state, the heap entry of ob's object not read
 
 (defthm hpg-next-tail-fortran-correct
-  (implies (and (p-sflits-n procs b hpg *nt-callees*) (natp b)
-                (hpgp hpg) (natp o) (< o *hb40*)
+  (implies (and (p-sflits-n procs b *nt-callees*) (natp b)
+                (nt-ent-ok (cdr (lkp key heap))) (natp o) (< o *hb40*)
                 (equal (cdr (lkp ob caller)) (list* :obj intent key))
                 (integerp fuel) (< (+ 8 b (acl2-count *nt-body*)) fuel))
            (equal (f-invoke *nt-proc* (cons (list :var ob) (g-lits (list o))) caller heap procs fuel)
-                  (mv nil (hpg-next-tail o hpg) heap)))
+                  (mv nil (hpg-next-tail o (hs-hpg (cdr (lkp key heap)))) heap)))
   :hints (("Goal" :do-not-induct t
            :in-theory (e/d (int64p) (f-invoke sxf-list-n hpg-next-tail hpgp g-dummies g-locals g-lits undef-locals fb
                                      f-invoke-sret-n nt-run p-sflits-n))
            :use (nt-proc-shape
-                 (:instance nt-run (hpg0 hpg))
-                 (:instance f-invoke-sret-n (hpg0 hpg) (nms *nt-callees*) (body *nt-body*) (rt :int64)
-                            (v (hpg-next-tail o hpg)) (ks (list o)) (vs '(o)) (o "hs") (c "heap_state")
+                 nt-run
+                 (:instance f-invoke-sret-n (nms *nt-callees*) (body *nt-body*) (rt :int64)
+                            (v (hpg-next-tail o (hs-hpg (cdr (lkp key heap))))) (ks (list o)) (vs '(o)) (o "hs") (c "heap_state")
                             (nm "hpg_next_tail") (rec (nth 3 *nt-proc*)) (locs *nt-locs*))))))
 
 ; ==== hpg-seq-op: its callees hpg-obj-at, hpg-okd, hpg-oi (named hypothesis, as above) and
@@ -392,22 +488,22 @@
                  (fb '(op tag ref) (list op tag ref) (put "hs" (list* :obj :in key) nil))))
 
 (defthm sq-run
-  (implies (and (hpgp hpg0) (int64p op) (int64p tag) (int64p ref))
-           (let ((r (sxf-list-n *sq-body* (sq-frame) heap hpg0 *sq-callees*)))
+  (implies (and (nt-ent-ok (cdr (lkp key heap))) (int64p op) (int64p tag) (int64p ref))
+           (let ((r (sxf-list-n *sq-body* (sq-frame) heap *sq-callees*)))
              (and (equal (car r) :return) (equal (mv-nth 2 r) heap)
-                  (sret-ok (mv-nth 1 r) :int64 (hpg-seq-op op tag ref hpg0)))))
+                  (sret-ok (mv-nth 1 r) :int64 (hpg-seq-op op tag ref (hs-hpg (cdr (lkp key heap))))))))
   :hints (("Goal" :do-not-induct t
            :in-theory (e/d (sret-ok s-fn-val-n fb) (hpgp hpg-next-tail))
-           :expand ((:free (x fr h) (sxf-n x fr h hpg0 *sq-callees*))
-                    (:free (ss fr h) (sxf-list-n ss fr h hpg0 *sq-callees*))
-                    (:free (e fr h) (svf-n e fr h hpg0 *sq-callees*))
-                    (:free (cs fr h) (svlf-n cs fr h hpg0 *sq-callees*))))))
+           :expand ((:free (x fr h) (sxf-n x fr h *sq-callees*))
+                    (:free (ss fr h) (sxf-list-n ss fr h *sq-callees*))
+                    (:free (e fr h) (svf-n e fr h *sq-callees*))
+                    (:free (cs fr h) (svlf-n cs fr h *sq-callees*))))))
 
 ; the next-tail entry: hpg-next-tail-fortran-correct; the others p-sflits-n on *nt-callees*
 (defmacro sq-ent-hyps ()
-  '(and (p-sflits-n procs b hpg *nt-callees*) (natp b)
-        (equal (find-proc "hpg_next_tail" procs) *nt-proc*) (hpgp hpg)
-        (not (mv-nth 0 (s-fn-val-n name s ks hpg *sq-callees*))) (not (mv-nth 0 (obj-of ob caller)))
+  '(and (p-sflits-n procs b *nt-callees*) (natp b)
+        (equal (find-proc "hpg_next_tail" procs) *nt-proc*)
+        (not (mv-nth 0 (s-fn-val-n name s ks *sq-callees*))) (not (mv-nth 0 (obj-of ob caller)))
         (equal (cdr (lkp (mv-nth 1 (obj-of ob caller)) heap)) s)
         (integerp fuel) (< (+ 8 b (acl2-count *nt-body*)) fuel)))
 
@@ -416,7 +512,7 @@
      (and (eq (kar p) :function) (int64-listp ks) (< (+ 4 (len ks)) (+ 8 b (acl2-count *nt-body*)))
           (sfl-dums (nth 4 (true-list-fix p)) ks)
           (equal (f-invoke p (cons (list :var ob) (g-lits ks)) caller heap procs fuel)
-                 (mv nil (mv-nth 1 (s-fn-val-n name s ks hpg *sq-callees*)) heap)))))
+                 (mv nil (mv-nth 1 (s-fn-val-n name s ks *sq-callees*)) heap)))))
 
 (defthm g-lits-len1
   (implies (and (int64-listp ks) (equal (len ks) 1)) (equal (g-lits ks) (list (g-lit (car ks)))))
@@ -437,14 +533,14 @@
   :rule-classes nil
   :hints (("Goal" :do-not-induct t
            :in-theory (e/d (s-fn-val-n nt-ks) (f-invoke hpg-next-tail find-proc obj-of p-sflits-n-necc p-sflits-n))
-           :use ((:instance p-sflits-n-necc (nms *nt-callees*) (hpg0 hpg))))))
+           :use ((:instance p-sflits-n-necc (nms *nt-callees*))))))
 
-(defmacro sqw (k) `(mv-nth ,k (p-sflits-n-witness procs (+ 8 b (acl2-count *nt-body*)) hpg *sq-callees*)))
+(defmacro sqw (k) `(mv-nth ,k (p-sflits-n-witness procs (+ 8 b (acl2-count *nt-body*)) *sq-callees*)))
 
 (defthm p-sflits-n-seq
-  (implies (and (p-sflits-n procs b hpg *nt-callees*) (natp b)
-                (equal (find-proc "hpg_next_tail" procs) *nt-proc*) (hpgp hpg))
-           (p-sflits-n procs (+ 8 b (acl2-count *nt-body*)) hpg *sq-callees*))
+  (implies (and (p-sflits-n procs b *nt-callees*) (natp b)
+                (equal (find-proc "hpg_next_tail" procs) *nt-proc*))
+           (p-sflits-n procs (+ 8 b (acl2-count *nt-body*)) *sq-callees*))
   :hints (("Goal" :do-not-induct t
            :in-theory (union-theories '(p-sflits-n) (theory 'minimal-theory))
            :use ((:instance sq-ent-nt (name (sqw 0)) (s (sqw 1)) (ks (sqw 2)) (ob (sqw 3))
@@ -456,19 +552,19 @@
 ; *nt-callees*, which also gives hpg-ot and hpg-or for hpg-next-tail), hpg-next-tail's procedure *nt-proc*
 
 (defthm hpg-seq-op-fortran-correct
-  (implies (and (p-sflits-n procs b hpg *nt-callees*) (natp b)
+  (implies (and (p-sflits-n procs b *nt-callees*) (natp b)
                 (equal (find-proc "hpg_next_tail" procs) *nt-proc*)
-                (hpgp hpg) (int64p op) (int64p tag) (int64p ref)
+                (nt-ent-ok (cdr (lkp key heap))) (int64p op) (int64p tag) (int64p ref)
                 (equal (cdr (lkp ob caller)) (list* :obj intent key))
                 (integerp fuel) (< (+ 18 b (acl2-count *nt-body*) (acl2-count *sq-body*)) fuel))
            (equal (f-invoke *sq-proc* (cons (list :var ob) (g-lits (list op tag ref))) caller heap procs fuel)
-                  (mv nil (hpg-seq-op op tag ref hpg) heap)))
+                  (mv nil (hpg-seq-op op tag ref (hs-hpg (cdr (lkp key heap)))) heap)))
   :hints (("Goal" :do-not-induct t
            :in-theory (e/d (int64-listp) (f-invoke sxf-list-n hpg-seq-op hpgp g-dummies g-locals g-lits undef-locals fb
                                           f-invoke-sret-n sq-run p-sflits-n int64p p-sflits-n-seq))
            :use (sq-proc-shape p-sflits-n-seq
-                 (:instance sq-run (hpg0 hpg))
-                 (:instance f-invoke-sret-n (hpg0 hpg) (nms *sq-callees*) (b (+ 8 b (acl2-count *nt-body*)))
+                 sq-run
+                 (:instance f-invoke-sret-n (nms *sq-callees*) (b (+ 8 b (acl2-count *nt-body*)))
                             (body *sq-body*) (rt :int64)
-                            (v (hpg-seq-op op tag ref hpg)) (ks (list op tag ref)) (vs '(op tag ref)) (o "hs") (c "heap_state")
+                            (v (hpg-seq-op op tag ref (hs-hpg (cdr (lkp key heap))))) (ks (list op tag ref)) (vs '(op tag ref)) (o "hs") (c "heap_state")
                             (nm "hpg_seq_op") (rec (nth 3 *sq-proc*)) (locs *sq-locs*))))))

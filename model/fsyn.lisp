@@ -37,6 +37,16 @@
 ;                               [recursive] [pure] function f(..) result(r)
 ;                               (R1529, R1533, R1535); the result is r
 ;           (:subroutine s recursive dummies locals body)   R1538
+;           (:extern f op field)   a module procedure over the module's own
+;                               variables (GC.f90's hp_*), not printed by the
+;                               generator: op :elem :size :scalar (a FUNCTION
+;                               f(i), f()) or :set-elem :set-scalar (a
+;                               SUBROUTINE f(i, x), f(x)), on field (a
+;                               natural) of the module's variables
+;  extern call (:xcall f o args)   f(args) (an expression, R1520) or CALL
+;                               f(args) (a statement, R1521), f an :extern;
+;                               o names the object whose "%ext" component
+;                               models the module's variables (fsem ext-op)
 ;  module   (:module m procs)   R1404-R1408, its use and implicit none fixed
 
 (in-package "ACL2")
@@ -92,6 +102,7 @@
           ((:add :sub :mul :eq :lt :le :ge :max)
            (and (= (len x) 3) (fexpr-p (cadr x)) (fexpr-p (caddr x))))
           (:fcall (and (= (len x) 3) (fname-p (cadr x)) (fexpr-list-p (caddr x))))
+          (:xcall (and (= (len x) 4) (fname-p (cadr x)) (fname-p (caddr x)) (fexpr-list-p (cadddr x))))
           (otherwise nil))))
  (defun fexpr-list-p (xs)
    (declare (xargs :guard t :measure (acl2-count xs)))
@@ -122,6 +133,7 @@
           (:do (and (= (len x) 2) (fstmt-list-p (cadr x))))
           ((:cycle :exit :return) (= (len x) 1))
           (:call (and (= (len x) 3) (fname-p (cadr x)) (fexpr-list-p (caddr x))))
+          (:xcall (and (= (len x) 4) (fname-p (cadr x)) (fname-p (caddr x)) (fexpr-list-p (cadddr x))))
           (otherwise nil))))
  (defun farms-p (arms)
    (declare (xargs :guard t :measure (acl2-count arms)))
@@ -170,6 +182,8 @@
          (:subroutine (and (= (len p) 6) (fname-p (nth 1 p)) (booleanp (nth 2 p))
                            (fdummies-p (nth 3 p)) (flocals-p (nth 4 p)) (fstmt-list-p (nth 5 p))
                            (no-duplicatesp-equal (append (strip-names (nth 3 p)) (strip-names (nth 4 p))))))
+         (:extern (and (= (len p) 4) (fname-p (nth 1 p)) (member-eq (nth 2 p) '(:elem :size :scalar :set-elem :set-scalar))
+                       (natp (nth 3 p))))
          (otherwise nil))))
 
 (defun fprocs-p (ps)
