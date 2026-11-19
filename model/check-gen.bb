@@ -28,10 +28,12 @@
    ;; stobj subroutines (gen-st.lisp's g-st-module, its configuration :st)
    {:book "heapgn" :file "src/f/gen/heap_gen.inc" :fns '[hpg-spush] :bools '[] :raw "*spush-raw*" :st "*heapg-st*"}
    ;; :ctx -- callees handed over too (their formals and results), not compared
-   {:book "heapgn" :file "src/f/gen/heap_gen.inc" :fns '[hpg-drain hpg-run-from-batch hpg-run-take hpg-next-tail hpg-seq-op]
-    :ctx '[hpg-scan-obj hpg-scan-vec hpg-run-pop hpg-run-new hpg-run-take-c hpg-ot hpg-or hpg-obj-at hpg-okd hpg-oi
-           hpg-size-class hpg-class-len]
-    :bools '[hpg-obj-at] :raw "*heapg-st-raw*" :st "*heapg-st*"}])
+   ;; with the procedures on the hp_* externs (gen-st's extern roles, *heapg-xst*)
+  {:book "heapgn" :file "src/f/gen/heap_gen.inc"
+    :fns '[hpg-drain hpg-run-from-batch hpg-run-take hpg-next-tail hpg-seq-op hpg-scan-obj hpg-scan-vec hpg-run-pop
+           hpg-run-new hpg-run-take-c hpg-ot hpg-or hpg-obj-at hpg-okd hpg-oi hpg-push hpg-scan-run hpg-runs-fill hpg-run-push]
+    :ctx '[hpg-size-class hpg-class-len hpg-s64 hpg-add hpg-text-tag hpg-spush]
+    :bools '[hpg-obj-at hpg-text-tag] :raw "*heapg-st-raw*" :st "*heapg-xst*"}])
 
 (defn acl2! [dir input]
   (let [r (p/shell {:dir dir :in input :out :string :err :string :continue true} acl2)] (:out r)))
@@ -97,16 +99,6 @@
 (doseq [{:keys [book file fns bools raw st] :as b} books]
   (compare! file fns (translate (dump b) bools raw fns st)))
 
-;; procedures a book writes by hand, as acl2-fortran prints them (gen-st does not translate
-;; extern roles yet): gen-st-ext.lisp's hpg-next-tail callees, on the hp_* externs
-(def hand [["gen-st-ext" "src/f/gen/heap_gen.inc" ["*ot-proc*" "*or-proc*" "*okd-proc*" "*oi-proc*" "*oat-proc*"]]])
-(doseq [[book file consts] hand]
-  (let [out (acl2! "." (str "(include-book \"" book "\")\n(set-print-case :downcase state)\n(set-iprint nil)\n"
-                            (str/join (map #(str "(cw \"~%PROC ~x0~%\" " % ")\n") consts)) "(good-bye)\n"))
-        procs (map #(edn/read-string (form-text %)) (rest (str/split out #"\nPROC\s+")))]
-    (when (not= (count procs) (count consts))
-      (println "check-gen:" book "did not hand over" consts) (System/exit 1))
-    (compare! file consts procs)))
 ;; gen-disch.lisp's and gen-disch-loop.lisp's copies of clotran's definitions: the
 ;; formals, guard and
 ;; body ACL2 makes of each must equal what clotran's certified books make

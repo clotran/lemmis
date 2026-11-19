@@ -9,9 +9,9 @@
 ; hpg-next-tail / hpg-seq-op are correct with no hypothesis on the
 ; procedures past nt-finds (`-fortran-correct-x`).
 ;
-; The callees' procedures are written here as acl2-fortran prints them
-; (src/f/gen/heap_gen.inc; check-gen compares the text): gen-st does not
-; translate extern roles yet (4c step 2).
+; The callees' procedures are g-st-module's (gen-st's extern roles,
+; gen-st-heap's *heapg-xmod*; check-gen compares the text with
+; src/f/gen/heap_gen.inc), asserted here to have the shape the proofs expand.
 ;
 ; A fact about the state, not the procedures: hp_n_oslot answers both
 ; h-otag-length and h-oref-length, hp_n_obj both h-okind-length and
@@ -39,12 +39,20 @@
           ((:assign (:var "r") (:xcall ,ext "hs" ((:var ,a)))) (:return))
           ((:assign (:var "r") (:int -1)) (:return))))))
 
-(defconst *ot-proc* (nt-rd-proc "hpg_ot" "j_" "hp_otag" "hp_n_oslot"))
-(defconst *or-proc* (nt-rd-proc "hpg_or" "j_" "hp_oref" "hp_n_oslot"))
-(defconst *okd-proc* (nt-rd-proc "hpg_okd" "o_" "hp_okind" "hp_n_obj"))
-(defconst *oi-proc* (nt-rd-proc "hpg_oi" "o_" "hp_oi1" "hp_n_obj"))
+; g-st-module's procedures (gen-st-heap's *heapg-xmod*), each of the shape the proofs below expand
+(defconst *ot-proc* (find-proc "hpg_ot" *heapg-xmod*))
+(defconst *or-proc* (find-proc "hpg_or" *heapg-xmod*))
+(defconst *okd-proc* (find-proc "hpg_okd" *heapg-xmod*))
+(defconst *oi-proc* (find-proc "hpg_oi" *heapg-xmod*))
+(defconst *oat-proc* (find-proc "hpg_obj_at" *heapg-xmod*))
 
-(defconst *oat-proc*
+(assert-event (and (equal *ot-proc* (nt-rd-proc "hpg_ot" "j_" "hp_otag" "hp_n_oslot"))
+                   (equal *or-proc* (nt-rd-proc "hpg_or" "j_" "hp_oref" "hp_n_oslot"))
+                   (equal *okd-proc* (nt-rd-proc "hpg_okd" "o_" "hp_okind" "hp_n_obj"))
+                   (equal *oi-proc* (nt-rd-proc "hpg_oi" "o_" "hp_oi1" "hp_n_obj"))))
+
+(assert-event
+ (equal *oat-proc*
   '(:function "hpg_obj_at" t nil (("hs" :in "heap_state") ("tag_" :value :int64) ("ref_" :value :int64)) :logical nil
     ((:if (:eq (:var "tag_") (:int 8))
           ((:if (:lt (:int 0) (:var "ref_"))
@@ -55,7 +63,7 @@
                             ((:assign (:var "r") (:false)) (:return))))
                       ((:assign (:var "r") (:false)) (:return))))
                 ((:assign (:var "r") (:false)) (:return))))
-          ((:assign (:var "r") (:false)) (:return))))))
+          ((:assign (:var "r") (:false)) (:return)))))))
 
 (assert-event (fmodule-p (list :module "m" (append *nt-externs* (list *ot-proc* *or-proc* *okd-proc* *oi-proc* *oat-proc*)))))
 

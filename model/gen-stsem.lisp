@@ -33,6 +33,8 @@
          ((eq (g-role (car x) st) :elem)
           (mv-let (e i) (a-sx (kadr x) env s st defs (1- n))
             (if e (mv e nil) (read-elem (cdr (lkp (g-comp (car x) st) s)) i))))
+         ; an extern read: not modelled here (GEN.md 4c step 3), an error
+         ((member-eq (g-role (car x) st) '(:xfield :xsize :xelem)) (mv :extern nil))
          ((eq (car x) 'if)
           (mv-let (e c) (a-sx (kadr x) env s st defs (1- n))
             (cond (e (mv e nil))

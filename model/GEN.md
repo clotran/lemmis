@@ -1203,6 +1203,46 @@ Two findings from acl2-fortran's `stmt` (both fixed now, see above):
    lemmas in gen-stexp/-stnames/-sfexp/-sfnames and their induction
    schemes sn-ind/sn-ind-f), then the hand-written procedures become
    g-st-module's, then p-sorc-d/-r/-t.
+   **4c step 3, translation done (gen-st, gen-st-heap).** New roles in st:
+   `:xfield`/`:xsize`/`:xelem` (reads, g-sexpr emits `(:xcall f o nil)` /
+   `(:xcall f o (i))`, placed right after the :elem case) and `:xset`/`:xseti`
+   (writes, g-stmt emits `(:xcall f o (v))` / `(:xcall f o ((:var i) (:var
+   v)))` after :set's / :seti's settling and temporaries, before the final
+   refusal); `g-st-xfields`/`g-st-xarrays` build them from acl2-fortran's
+   `:extern-fields`/`:externs` (gen-st-heap's `*heapg-xst*` = *heapg-st* plus
+   heapgn's extern configuration, `*heapg-xmod*` its 19 procedures).
+   *heapg-st-raw* gained hpg-push, hpg-scan-run, hpg-runs-fill, hpg-run-push
+   (compared) and hpg-s64, hpg-add, hpg-text-tag, hpg-spush (context).
+   check-gen now compares 19 heapgn procedures through g-st-module (the 14 new:
+   hpg-scan-obj, -scan-vec, -run-pop, -run-new, -run-take-c, -ot, -or,
+   -obj-at, -okd, -oi, -push, -scan-run, -runs-fill, -run-push), all line for
+   line on the first try; the hand-written section of check-gen is gone and
+   gen-st-ext's `*ot-proc*` .. `*oat-proc*` are `find-proc` of *heapg-xmod*
+   (asserted equal to the old shapes, which its proofs expand). The proofs:
+   a-sx and a-sxf answer `:extern` on an extern read (they do not model
+   "%ext"), so gs-sem/gs-sem-f's extern cases are vacuous (`gs-xfield`,
+   `gs-xsize`, `gs-xelem` and -f); sn-ind/sn-ind-f got the :xfield/:xsize leaf
+   and :xelem cases, the names facts `sn-xfield-size`, `g-sexpr-xelem`,
+   `sn-xelem` (and -f), `not-leaf` excludes the extern roles; a-st already
+   answers an error on :xset/:xseti (st-plain excludes them). So the general
+   theorems (gs-sem-holds, g-st-fn-sem, ...) still cover only extern-free
+   terms: a-sx reading "%ext" needs sv/svf to evaluate :xcall, and sv has no
+   procs (the field index is in the :extern entry) -- left (see below).
+   **p-sorc-r, the callees (gen-st-xrfb).** hpg_run_pop and hpg_run_new (the
+   generated procedures) run symbolically on hs's entry `hs-rep cm hpg`
+   (`dr-heap-at`): an "%ext" write is an hs-rep again (`put-ext-hs-rep`; per
+   field `xw-*`), so `rp-run`/`rn-run` (28 s / 212 s; rn-run runs hpg_add and
+   hpg_s64 too, g-module's) give the body's result, and `rp-ok`/`rn-ok`
+   f-invoke on literals answers `(mv nil (put d (:int64 . off) caller) (put
+   key (hs-rep cm hpg') heap))`, `(mv off hpg')` the ACL2 value, under
+   `xr-finds` (the 19 externs hpg_run_pop/new use, hp_n_arena read as
+   h-aival's length, and the four procedures found in procs), hpgp,
+   hpg-rn-ok. p-sorc-r itself is not yet discharged: its oracle
+   s-call-val-r answers on any entry e, but the procedures' write leaves
+   `put "%ext" .. e`, equal to the oracle's `hs-rep e hpg'` only when e is
+   canonical (e = hs-rep e (hs-hpg e)); next: add that (and true-listp args)
+   to s-call-val-r's domain, prove the CALL from argument codes, then
+   `p-sorc-r-holds` and hpg-run-from-batch-fortran-correct-x.
    **Hypotheses still to discharge** (milestone 2, stobj layer): tab-ok
    (CALL) and sfd-ok (value functions given the stobj), o not a formal's
    name, o not "r", `(g-role nil st)` not :stobj -- each a ground fact

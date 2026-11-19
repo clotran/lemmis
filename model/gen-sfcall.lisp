@@ -180,7 +180,7 @@
   :hints (("Goal" :in-theory (disable g-st-free g-mvnth g-role g-scall-args g-flat g-sym) :expand ((g-sexpr x em cnt locs sigs fnames st)))))
 
 (defthm a-sxf-call
-  (implies (and (consp x) (not (g-st-free x st)) (not (consp (car x))) (not (member-eq (g-role (car x) st) '(:field :size :elem)))
+  (implies (and (consp x) (not (g-st-free x st)) (not (consp (car x))) (not (member-eq (g-role (car x) st) '(:field :size :elem :xfield :xsize :xelem)))
                 (not (eq (car x) 'if)) (not (zp n)))
            (equal (a-sxf x env s st defs n)
                   (mv-let (e vs) (a-sxf-list (cdr x) env s st defs (1- n))

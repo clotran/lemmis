@@ -7,8 +7,8 @@
 ; Taken today: field and array reads, `-length`, value functions given the
 ; stobj, if and let reading it; field and array updates, `if`, `let`
 ; (lambda), calls answering stobjs (CALL), `mv`/`mv-nth`, the tuple of the
-; results, tail self-calls (a DO loop). Refused: extern fields and arrays,
-; a case (SELECT) in statement or return position, tail self-calls of
+; results, tail self-calls (a DO loop), extern fields and arrays (:xcall
+; reads and writes, the roles :xfield .. :xseti below). Refused: a case (SELECT) in statement or return position, tail self-calls of
 ; value functions.
 ;
 ; The configuration st, one alist from symbol to its role:
@@ -57,6 +57,31 @@
 
 (defun g-st-cfg (stobjs fields arrays)
   (append (g-st-stobjs stobjs) (g-st-fields fields) (g-st-arrays arrays)))
+
+; extern fields and arrays (acl2-fortran's :extern-fields, :externs): the
+; runtime's own variables, read and written through its accessors, printed
+; without the stobj; an :xcall names the object o whose "%ext" fsem reads.
+;   (h-areu :xfield "hs" "hp_areu")            hp_areu()
+;   (update-h-areu :xset "hs" "hp_set_areu")    call hp_set_areu(v)
+;   (h-otagi :xelem "hs" "hp_otag")            hp_otag(i)
+;   (update-h-omarki :xseti "hs" "hp_set_omark") call hp_set_omark(i, v)
+;   (h-otag-length :xsize "hs" "hp_n_oslot")   hp_n_oslot()
+; fs ((acc obj reader writer) ...), as ((name obj reader writer sizer) ...);
+; a nil accessor has no role
+(defun g-st-xfields (fs)
+  (if (atom fs) nil
+    (let ((f (car fs)))
+      (append (and (kaddr f) (list (list (kar f) :xfield (kadr f) (kaddr f))))
+              (and (kadddr f) (list (list (g-cat "UPDATE-" (kar f) nil) :xset (kadr f) (kadddr f))))
+              (g-st-xfields (cdr fs))))))
+
+(defun g-st-xarrays (as)
+  (if (atom as) nil
+    (let ((a (car as)))
+      (append (and (kaddr a) (list (list (g-cat nil (kar a) "I") :xelem (kadr a) (kaddr a))))
+              (and (kadddr a) (list (list (g-cat "UPDATE-" (kar a) "I") :xseti (kadr a) (kadddr a))))
+              (and (kar (cddddr a)) (list (list (g-cat nil (kar a) "-LENGTH") :xsize (kadr a) (kar (cddddr a)))))
+              (g-st-xarrays (cdr as))))))
 
 (defun g-role (x st) (declare (xargs :guard t)) (if (symbolp x) (kar (cdr (lkp x st))) nil))
 (defun g-obj (x st) (declare (xargs :guard t)) (kadr (cdr (lkp x st))))
@@ -115,6 +140,18 @@
        (mv-let (e s c ty cnt locs) (g-sexpr (cadr x) em cnt locs sigs fnames st)
          (if (or e (not (eq ty :int64))) (mv (or e :type) nil nil nil cnt locs)
            (mv nil s (list :elem (g-obj (car x) st) (g-comp (car x) st) c) :int64 cnt locs)))))
+    ((member-eq (g-role (car x) st) '(:xfield :xsize))
+     ; an extern scalar or length: hp_f()
+     (if (and (= (len x) 2) (eq (g-role (cadr x) st) :stobj) (equal (g-obj (cadr x) st) (g-obj (car x) st)))
+         (mv nil nil (list :xcall (g-comp (car x) st) (g-obj (car x) st) nil) :int64 cnt locs)
+       (mv :stobj nil nil nil cnt locs)))
+    ((eq (g-role (car x) st) :xelem)
+     ; an extern array's element: hp_f(i)
+     (if (not (and (= (len x) 3) (eq (g-role (caddr x) st) :stobj) (equal (g-obj (caddr x) st) (g-obj (car x) st))))
+         (mv :stobj nil nil nil cnt locs)
+       (mv-let (e s c ty cnt locs) (g-sexpr (cadr x) em cnt locs sigs fnames st)
+         (if (or e (not (eq ty :int64))) (mv (or e :type) nil nil nil cnt locs)
+           (mv nil s (list :xcall (g-comp (car x) st) (g-obj (car x) st) (list c)) :int64 cnt locs)))))
     ((member-eq (car x) '(if implies))
      ; g-expr's if, on terms reading the stobj
      (mv-let (e sc cc tc cnt locs) (g-sexpr (cadr x) em cnt locs sigs fnames st)
@@ -424,6 +461,36 @@
      ; a call answering the results wanted: CALL f(stobjs, args, dests)
      (if (not (equal (g-comp (car x) st) outs)) (mv :stobj nil cnt locs)
        (g-callst x em cnt locs sigs fnames st dests)))
+    ((eq (g-role (car x) st) :xset)
+     ; (update-f v s) of an extern field: as :set, then call hp_set_f(v)
+     (if (not (and (= (len x) 3) (equal outs (list (caddr x))) (equal (g-obj (car x) st) (g-obj (caddr x) st)))) (mv :stobj nil cnt locs)
+       (mv-let (e s c ty cnt locs) (g-sexpr (cadr x) em cnt locs sigs fnames st)
+         (if (or e (not (eq ty :int64))) (mv (or e :type) nil cnt locs)
+           (mv-let (e s cs cnt locs) (if (symbolp (caddr x)) (mv nil s (list c) cnt locs)
+                                       (g-settle (list s) (list c) cnt locs (append fnames (em-names em))))
+             (if e (mv e nil cnt locs)
+               (mv-let (e si cnt locs) (g-stmt (caddr x) em cnt locs sigs fnames st outs dests nil)
+                 (if e (mv e nil cnt locs)
+                   (mv nil (append s si (list (list :xcall (g-comp (car x) st) (g-obj (car x) st) (list (car cs)))))
+                       cnt locs)))))))))
+    ((eq (g-role (car x) st) :xseti)
+     ; (update-fi i v s) of an extern array: as :seti, then call hp_set_f(i, v)
+     (if (not (and (= (len x) 4) (equal outs (list (cadddr x))) (equal (g-obj (car x) st) (g-obj (cadddr x) st)))) (mv :stobj nil cnt locs)
+       (mv-let (e si ci ti cnt locs) (g-sexpr (cadr x) em cnt locs sigs fnames st)
+         (if (or e (not (eq ti :int64))) (mv (or e :type) nil cnt locs)
+           (mv-let (e sv cv tv cnt locs) (g-sexpr (caddr x) em cnt locs sigs fnames st)
+             (if (or e (not (eq tv :int64))) (mv (or e :type) nil cnt locs)
+               (mv-let (e tmi cnt locs) (g-fresh 'i :int64 cnt locs (append fnames (em-names em)))
+                 (if e (mv e nil cnt locs)
+                   (mv-let (e tmv cnt locs) (g-fresh 'v :int64 cnt locs (append fnames (em-names em)))
+                     (if e (mv e nil cnt locs)
+                       (mv-let (e ss cnt locs) (g-stmt (cadddr x) em cnt locs sigs fnames st outs dests nil)
+                         (if e (mv e nil cnt locs)
+                           (mv nil (append si (list (list :assign (list :var tmi) ci)) sv
+                                           (list (list :assign (list :var tmv) cv)) ss
+                                           (list (list :xcall (g-comp (car x) st) (g-obj (car x) st)
+                                                       (list (list :var tmi) (list :var tmv)))))
+                               cnt locs)))))))))))))
     (t (mv :stobj nil cnt locs))))
  (defun g-callst (x em cnt locs sigs fnames st dests)
    ; acl2-fortran's call-stmt: the value arguments' statements (settled,

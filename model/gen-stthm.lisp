@@ -160,6 +160,22 @@
                                       no-calls-call-nil gs-nocalls))
            :use (gs-prim gs-err g-sexpr-role-err no-calls-call-nil gs-nocalls))))
 
+; an extern read: a-sx answers an error (it does not model the externs)
+(defthm gs-xfield
+  (implies (and (consp x) (eq (g-role (car x) st) :xfield) (not (g-st-free x st)))
+           (gs-sem x em cnt locs sigs fnames st env s defs n fr heap o))
+  :hints (("Goal" :in-theory (e/d (gs-sem) (g-sexpr g-st-free g-role)) :expand ((a-sx x env s st defs n)))))
+
+(defthm gs-xsize
+  (implies (and (consp x) (eq (g-role (car x) st) :xsize) (not (g-st-free x st)))
+           (gs-sem x em cnt locs sigs fnames st env s defs n fr heap o))
+  :hints (("Goal" :in-theory (e/d (gs-sem) (g-sexpr g-st-free g-role)) :expand ((a-sx x env s st defs n)))))
+
+(defthm gs-xelem
+  (implies (and (consp x) (eq (g-role (car x) st) :xelem) (not (g-st-free x st)))
+           (gs-sem x em cnt locs sigs fnames st env s defs n fr heap o))
+  :hints (("Goal" :in-theory (e/d (gs-sem) (g-sexpr g-st-free g-role)) :expand ((a-sx x env s st defs n)))))
+
 (defthm gsa-cons-any
   (implies (and (consp xs) (sn-hyps)
                 (gs-sem (car xs) em cnt locs sigs fnames st env s defs (1- n) fr heap o)
@@ -191,7 +207,7 @@
   :hints (("Goal" :induct (sn-ind flag x vars em cnt locs sigs fnames st env s defs n fr heap) :do-not-induct t
            :in-theory (union-theories
                        '((:induction sn-ind) sx-fr a-sv a-svs em-nostobj-append em-nostobj-g-svals
-                         gs-err gs-nocalls gsa-nocalls gsb-nocalls gs-bad gs-mvnth gs-free gs-free-any gs-field gs-size gs-elem
+                         gs-err gs-nocalls gsa-nocalls gsb-nocalls gs-bad gs-mvnth gs-free gs-free-any gs-xfield gs-xsize gs-xelem gs-field gs-size gs-elem
                          gs-if-any gs-imp-any gsx-the-check gs-rest gsa-nil gsa-cons-any gsb-nil gsb-skip gsb-cons
                          gs-lam-any)
                        (theory 'minimal-theory)))

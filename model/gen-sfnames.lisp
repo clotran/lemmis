@@ -48,6 +48,8 @@
    ((or (g-mvnth x) (g-st-free x st) (atom x) (not (true-listp x))) nil)
    ((member-eq (g-role (car x) st) '(:field :size)) nil)
    ((eq (g-role (car x) st) :elem) (sn-ind-f :expr (cadr x) nil em cnt locs sigs fnames st env s defs (1- n) fr heap))
+   ((member-eq (g-role (car x) st) '(:xfield :xsize)) nil)
+   ((eq (g-role (car x) st) :xelem) (sn-ind-f :expr (cadr x) nil em cnt locs sigs fnames st env s defs (1- n) fr heap))
    ((member-eq (car x) '(if implies))
     (let ((imp (eq (car x) 'implies)))
       (mv-let (e sc cc tc cnt1 locs1) (g-sexpr (cadr x) em cnt locs sigs fnames st)
@@ -92,6 +94,20 @@
 
 (defthm sn-elem-f
   (implies (and (consp x) (eq (g-role (car x) st) :elem) (not (g-mvnth x)) (not (g-st-free x st)) (sobjs) (sn-ok-f (cadr x) em cnt locs sigs fnames st))
+           (sn-ok-f x em cnt locs sigs fnames st))
+  :hints (("Goal" :do-not-induct t :expand ((sn-ok-f x em cnt locs sigs fnames st))
+           :in-theory (disable g-sexpr g-obj g-comp g-role g-st-free g-mvnth sn-ok-use-f)
+           :use ((:instance sn-ok-use-f (x (cadr x)))))))
+
+; the extern reads (:xcall)
+(defthm sn-xfield-size-f
+  (implies (and (consp x) (member-eq (g-role (car x) st) '(:xfield :xsize)))
+           (sn-ok-f x em cnt locs sigs fnames st))
+  :hints (("Goal" :in-theory (e/d (sn-ok-f) (g-obj g-comp g-role))
+           :expand ((g-sexpr x em cnt locs sigs fnames st) (g-st-free x st)))))
+
+(defthm sn-xelem-f
+  (implies (and (consp x) (eq (g-role (car x) st) :xelem) (not (g-mvnth x)) (not (g-st-free x st)) (sn-ok-f (cadr x) em cnt locs sigs fnames st))
            (sn-ok-f x em cnt locs sigs fnames st))
   :hints (("Goal" :do-not-induct t :expand ((sn-ok-f x em cnt locs sigs fnames st))
            :in-theory (disable g-sexpr g-obj g-comp g-role g-st-free g-mvnth sn-ok-use-f)

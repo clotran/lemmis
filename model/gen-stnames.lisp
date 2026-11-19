@@ -43,6 +43,8 @@
    ((or (g-mvnth x) (g-st-free x st) (atom x) (not (true-listp x))) nil)
    ((member-eq (g-role (car x) st) '(:field :size)) nil)
    ((eq (g-role (car x) st) :elem) (sn-ind :expr (cadr x) nil em cnt locs sigs fnames st env s defs (1- n) fr heap))
+   ((member-eq (g-role (car x) st) '(:xfield :xsize)) nil)
+   ((eq (g-role (car x) st) :xelem) (sn-ind :expr (cadr x) nil em cnt locs sigs fnames st env s defs (1- n) fr heap))
    ((member-eq (car x) '(if implies))
     (let ((imp (eq (car x) 'implies)))
       (mv-let (e sc cc tc cnt1 locs1) (g-sexpr (cadr x) em cnt locs sigs fnames st)
@@ -108,7 +110,7 @@
 
 (defmacro not-leaf ()
   '(and (consp x) (true-listp x) (not (g-mvnth x)) (not (g-st-free x st))
-        (not (member-eq (g-role (car x) st) '(:field :size :elem)))))
+        (not (member-eq (g-role (car x) st) '(:field :size :elem :xfield :xsize :xelem)))))
 
 (defthm g-sexpr-elem
   (implies (and (consp x) (eq (g-role (car x) st) :elem) (not (g-mvnth x)) (not (g-st-free x st)))
@@ -124,6 +126,35 @@
            :expand ((g-sexpr x em cnt locs sigs fnames st)))
           (and stable-under-simplificationp '(:in-theory (e/d (g-mvnth) (g-st-free g-if g-expr g-sargs g-scall-args g-svals
                                                                 g-unop g-binop g-st-ident g-role g-obj g-comp em-names))))))
+
+; the extern reads (:xcall): as :field/:size and :elem, the code hp_f() / hp_f(i)
+(defthm sn-xfield-size
+  (implies (and (consp x) (member-eq (g-role (car x) st) '(:xfield :xsize)))
+           (sn-ok x em cnt locs sigs fnames st))
+  :hints (("Goal" :in-theory (e/d (sn-ok) (g-obj g-comp g-role))
+           :expand ((g-sexpr x em cnt locs sigs fnames st) (g-st-free x st)))))
+
+(defthm g-sexpr-xelem
+  (implies (and (consp x) (eq (g-role (car x) st) :xelem) (not (g-mvnth x)) (not (g-st-free x st)))
+           (equal (g-sexpr x em cnt locs sigs fnames st)
+                  (if (not (and (true-listp x) (= (len x) 3) (eq (g-role (caddr x) st) :stobj)
+                                (equal (g-obj (caddr x) st) (g-obj (car x) st))))
+                      (mv :stobj nil nil nil cnt locs)
+                    (mv-let (e s c ty cnt locs) (g-sexpr (cadr x) em cnt locs sigs fnames st)
+                      (if (or e (not (eq ty :int64))) (mv (or e :type) nil nil nil cnt locs)
+                        (mv nil s (list :xcall (g-comp (car x) st) (g-obj (car x) st) (list c)) :int64 cnt locs))))))
+  :hints (("Goal" :in-theory (disable g-st-free g-if g-mvnth g-expr g-sargs g-scall-args g-svals g-unop g-binop
+                                g-st-ident g-role g-obj g-comp em-names)
+           :expand ((g-sexpr x em cnt locs sigs fnames st)))
+          (and stable-under-simplificationp '(:in-theory (e/d (g-mvnth) (g-st-free g-if g-expr g-sargs g-scall-args g-svals
+                                                                g-unop g-binop g-st-ident g-role g-obj g-comp em-names))))))
+
+(defthm sn-xelem
+  (implies (and (consp x) (eq (g-role (car x) st) :xelem) (not (g-mvnth x)) (not (g-st-free x st)) (sn-ok (cadr x) em cnt locs sigs fnames st))
+           (sn-ok x em cnt locs sigs fnames st))
+  :hints (("Goal" :do-not-induct t :expand ((sn-ok x em cnt locs sigs fnames st))
+           :in-theory (disable g-sexpr g-obj g-comp g-role g-st-free g-mvnth sn-ok-use)
+           :use ((:instance sn-ok-use (x (cadr x)))))))
 
 (defthm g-sexpr-the-check
   (implies (and (not-leaf) (eq (car x) 'the-check))

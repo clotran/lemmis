@@ -113,6 +113,22 @@
                                       gs-call-f))
            :use (gs-prim-f gs-err-f g-sexpr-role-err gs-call-f))))
 
+; an extern read: a-sxf answers an error (it does not model the externs)
+(defthm gs-xfield-f
+  (implies (and (consp x) (eq (g-role (car x) st) :xfield) (not (g-st-free x st)))
+           (gs-sem-f x em cnt locs sigs fnames st env s defs n fr heap o))
+  :hints (("Goal" :in-theory (e/d (gs-sem-f) (g-sexpr g-st-free g-role)) :expand ((a-sxf x env s st defs n)))))
+
+(defthm gs-xsize-f
+  (implies (and (consp x) (eq (g-role (car x) st) :xsize) (not (g-st-free x st)))
+           (gs-sem-f x em cnt locs sigs fnames st env s defs n fr heap o))
+  :hints (("Goal" :in-theory (e/d (gs-sem-f) (g-sexpr g-st-free g-role)) :expand ((a-sxf x env s st defs n)))))
+
+(defthm gs-xelem-f
+  (implies (and (consp x) (eq (g-role (car x) st) :xelem) (not (g-st-free x st)))
+           (gs-sem-f x em cnt locs sigs fnames st env s defs n fr heap o))
+  :hints (("Goal" :in-theory (e/d (gs-sem-f) (g-sexpr g-st-free g-role)) :expand ((a-sxf x env s st defs n)))))
+
 (defthm gsa-cons-any-f
   (implies (and (consp xs) (sn-hyps)
                 (gs-sem-f (car xs) em cnt locs sigs fnames st env s defs (1- n) fr heap o)
@@ -142,7 +158,7 @@
   :hints (("Goal" :induct (sn-ind-f flag x vars em cnt locs sigs fnames st env s defs n fr heap) :do-not-induct t
            :in-theory (union-theories
                        '((:induction sn-ind-f) sx-fr-f a-sv-f a-svs-f em-nostobj-append em-nostobj-g-svals
-                         gs-err-f gs-nocalls-f gsa-nocalls-f gsb-nocalls-f gs-bad-f gs-mvnth-f gs-free-f gs-free-any-f gs-field-f gs-size-f gs-elem-f
+                         gs-err-f gs-nocalls-f gsa-nocalls-f gsb-nocalls-f gs-bad-f gs-mvnth-f gs-free-f gs-free-any-f gs-xfield-f gs-xsize-f gs-xelem-f gs-field-f gs-size-f gs-elem-f
                          gs-if-any-f gs-imp-any-f gsx-the-check-f gs-rest-f gsa-nil-f gsa-cons-any-f gsb-nil-f gsb-skip-f gsb-cons-f
                          gs-lam-any-f)
                        (theory 'minimal-theory)))
