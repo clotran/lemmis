@@ -7,7 +7,8 @@
 ; hpg_run_take_c's body. p-sorc-t holds of any procs holding these
 ; procedures, gen-st-xrfb's and the externs (`xt-finds`), and
 ; hpg-run-take is correct with no hypothesis on the procedures past that and
-; the ground rt-finds (`hpg-run-take-fortran-correct-x`).
+; the ground rt-finds (`hpg-run-take-fortran-correct-x`). runs_fill's body is
+; run one statement at a time (rf-s1, rf-e1, rf-e2, rf-f) and composed by :use.
 
 (in-package "ACL2")
 

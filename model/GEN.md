@@ -1251,11 +1251,14 @@ Two findings from acl2-fortran's `stmt` (both fixed now, see above):
    p-sorc-r replaced by xr-finds (fuel past 91 + the body). Trap met: with an
    entry `e = (cdr (lkp key heap))`, `dr-heap-at-lkp` rewrites inside its own
    result and loops (disable it there).
-   **Left of 4c step 3.** (i) p-sorc-t: hpg_run_take_c CALLs
-   hpg_runs_fill (a tail DO loop: hpg_run_new, then hpg_run_push, two
-   hp_set_* writes), hpg_run_from_batch (now -x) and hpg_run_new (rn-ok):
-   the same recipe (s-call-val-t restricted to the call shape and a canonical
-   entry, the loop by induction on fuel as gen-st-drain's). (ii) p-sorc-d:
+   **Left of 4c step 3.** (i) p-sorc-t: DONE (gen-st-xtake:
+   p-sorc-t-holds, hpg-run-take-fortran-correct-x under the ground xt-finds
+   and rt-finds; s-call-val-t now asks the call shape, a canonical entry and
+   int64 c/batching first). Recipe that kept proofs fast there: one lemma per
+   statement of a loop body, composed by :use (their free variables are not
+   bound by rewriting), with every f-ex/f-ex-list rewriter disabled while
+   composing (rf-c-thy); CALL statements in an rtv-style form (no free vars),
+   proved in a minimal theory -- this book's default theory is slow. (ii) p-sorc-d:
    hpg_scan_obj (DO loop CALLing hpg_push) and hpg_scan_vec (CALLs
    hpg_scan_run, a loop CALLing hpg_push); hpg_push writes components (nobj,
    nvec, alive, nstr: an hs-rep put of a visible field) and externs, and
