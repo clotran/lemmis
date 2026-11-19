@@ -1237,19 +1237,44 @@ Two findings from acl2-fortran's `stmt` (both fixed now, see above):
    key (hs-rep cm hpg') heap))`, `(mv off hpg')` the ACL2 value, under
    `xr-finds` (the 19 externs hpg_run_pop/new use, hp_n_arena read as
    h-aival's length, and the four procedures found in procs), hpgp,
-   hpg-rn-ok. p-sorc-r itself is not yet discharged: its oracle
-   s-call-val-r answers on any entry e, but the procedures' write leaves
-   `put "%ext" .. e`, equal to the oracle's `hs-rep e hpg'` only when e is
-   canonical (e = hs-rep e (hs-hpg e)); next: add that (and true-listp args)
-   to s-call-val-r's domain, prove the CALL from argument codes, then
-   `p-sorc-r-holds` and hpg-run-from-batch-fortran-correct-x.
+   hpg-rn-ok. **p-sorc-r discharged**: s-call-val-r (gen-st-rfb) now answers
+   only on the generated call shape (`rfb-shape`: `((:var ob) c (:var d))`,
+   `((:var ob) c l (:var d))`), an int64 c, and a canonical entry
+   (`dr-heap-at heap key e (hs-hpg e)`, e the entry itself: the procedures
+   leave `put "%ext" .. e`, which is the oracle's `hs-rep e hpg'` only then;
+   `dr-heap-at-self` gives it at rfb's own CALLs, whose proof is unchanged).
+   `rp-okc`/`rn-okc` (argument codes answering by sv, through
+   `f-invoke-same-bind` and `xr-bind1`/`-2`), `xr-ex-rp`/`-rn` (the CALL
+   statement), `xr-scv-rp`/`-rn` (what the oracle answering says), then
+   `xr-call-ok`, **`p-sorc-r-holds`** `(implies (xr-finds) (p-sorc-r procs
+   80))` and **`hpg-run-from-batch-fortran-correct-x`**: rfb's theorem with
+   p-sorc-r replaced by xr-finds (fuel past 91 + the body). Trap met: with an
+   entry `e = (cdr (lkp key heap))`, `dr-heap-at-lkp` rewrites inside its own
+   result and loops (disable it there).
+   **Left of 4c step 3.** (i) p-sorc-t: hpg_run_take_c CALLs
+   hpg_runs_fill (a tail DO loop: hpg_run_new, then hpg_run_push, two
+   hp_set_* writes), hpg_run_from_batch (now -x) and hpg_run_new (rn-ok):
+   the same recipe (s-call-val-t restricted to the call shape and a canonical
+   entry, the loop by induction on fuel as gen-st-drain's). (ii) p-sorc-d:
+   hpg_scan_obj (DO loop CALLing hpg_push) and hpg_scan_vec (CALLs
+   hpg_scan_run, a loop CALLing hpg_push); hpg_push writes components (nobj,
+   nvec, alive, nstr: an hs-rep put of a visible field) and externs, and
+   CALLs hpg_spush. Needs state facts like nt-lens: hp_n_obj is one extern
+   for h-omark/h-okind/h-oi1's lengths, hp_n_vec for voff/vlen/vmark,
+   hp_n_arena for atag/aref (and aival: xr-finds reads it as aival's, so
+   the arena's three lengths must be equal once both are in one table).
+   (iii) the general theorems: a-sx answering "%ext" for extern reads needs
+   sv/svf to evaluate :xcall, but sv takes no procs (the field index lives
+   in the :extern entry): either sv takes an extern table or :xcall carries
+   the field (an fsyn/fsem change); then gs-xfield/-xsize/-xelem become real
+   per-case lemmas (gs-field's shape on "%ext") and gst-* get :xset/:xseti.
    **Hypotheses still to discharge** (milestone 2, stobj layer): tab-ok
    (CALL) and sfd-ok (value functions given the stobj), o not a formal's
    name, o not "r", `(g-role nil st)` not :stobj -- each a ground fact
    decided on a given table/configuration; for hpg-next-tail/hpg-seq-op,
    none past the ground `nt-finds` and the state fact `nt-lens`
    (gen-st-ext, 4c (1)+(2) above), for hpg-drain `p-sorc-d` (hpg_scan_obj,
-   hpg_scan_vec), for hpg-run-from-batch `p-sorc-r` (hpg_run_pop, hpg_run_new), for
+   hpg_scan_vec), for hpg-run-from-batch none past the ground `xr-finds` (p-sorc-r discharged, gen-st-xrfb), for
    hpg-run-take `p-sorc-t` (hpg_run_take_c) and the ground `rt-finds` (4c: once
    fsem has the externs, prove their procedures answer the oracles).
    Left of 4, restated (2026-11-18): (4a) sx's `:do` and `:call` cases and

@@ -347,7 +347,7 @@ extension starts before Stage A is done.
    correctness (p-sorc-d, p-sorc-r), the externs a ghost component of hs;
    hpg-run-take (function calls in assignments, gen-st-take) under p-sorc-t.
    Left, in order: the rest of stobj calls and mv (4a: updates, dests, the
-   mv lambda on sxc), the `hp_*` externs (4c step 3: gen-st emits :xcall, done; hpg_run_pop/new proved, gen-st-xrfb; p-sorc-r/-d/-t left; model/GEN.md); values and the
+   mv lambda on sxc), the `hp_*` externs (4c step 3: gen-st emits :xcall, done; p-sorc-r discharged, hpg-run-from-batch-fortran-correct-x, gen-st-xrfb; p-sorc-t/-d left; model/GEN.md); values and the
    runtime shims (two lanes); then acl2-fortran prints g-module's output
    (and its lambda scoping, which leaks a binding to later siblings,
    fixed or shown harmless). About 6 lanes.

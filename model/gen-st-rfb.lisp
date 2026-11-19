@@ -156,20 +156,35 @@
 (defun rfb-res (fr heap key e d r)
   (mv nil (put d (cons :int64 (car r)) fr) (put key (hs-rep e (mv-nth 1 r)) heap)))
 
+; an entry laid out by hs-rep is an hs-rep of itself (s-call-val-r asks it of the entry)
+(defthm dr-heap-at-self
+  (implies (and (dr-heap-at heap key c hpg) (hpgp hpg)) (dr-heap-at heap key (hs-rep c hpg) hpg))
+  :hints (("Goal" :in-theory (e/d (dr-heap-at) (hs-rep hpgp)))))
+
+; the CALL's arguments as the generated code passes them: the object, the values, the result variable
+(defun rfb-shape (name args)
+  (cond ((equal name "hpg_run_pop")
+         (equal args (list (list :var (kadr (car args))) (cadr args) (list :var (kadr (caddr args))))))
+        ((equal name "hpg_run_new")
+         (equal args (list (list :var (kadr (car args))) (cadr args) (caddr args) (list :var (kadr (cadddr args))))))
+        (t nil)))
+
 (defun-nx s-call-val-r (name args fr heap)
+  (if (not (rfb-shape name args)) (mv :orc fr heap)
   (mv-let (err key intent) (obj-of (kadr (kar args)) fr)
     (let* ((e (cdr (lkp key heap))) (hpg (hs-hpg e)) (d (car (last args))) (db (cdr (lkp (kadr d) fr))))
       (mv-let (e1 c) (sv (kadr args) fr heap)
         (mv-let (e2 l) (sv (kaddr args) fr heap)
-          (cond ((or err (not (eq (kar (kar args)) :var)) (not (eq intent :inout)) e1
+          ; the entry canonical (an hs-rep of its own stobj): the procedures leave "%ext" written in it
+          (cond ((or err (not (eq (kar (kar args)) :var)) (not (eq intent :inout)) e1 (not (dr-heap-at heap key e hpg))
                      (not (eq (kar d) :var)) (not (consp db)) (not (eq (car db) :int64))
-                     (not (hpgp hpg)) (not (hpg-rn-ok hpg)) (not (natp c)))
+                     (not (hpgp hpg)) (not (hpg-rn-ok hpg)) (not (natp c)) (not (int64p c)))
                  (mv :orc fr heap))
                 ((and (equal name "hpg_run_pop") (equal (len args) 3))
                  (rfb-res fr heap key e (kadr d) (hpg-run-pop c hpg)))
                 ((and (equal name "hpg_run_new") (equal (len args) 4) (not e2) (natp l) (<= l *hb40*))
                  (rfb-res fr heap key e (kadr d) (hpg-run-new c l hpg)))
-                (t (mv :orc fr heap))))))))
+                (t (mv :orc fr heap)))))))))
 
 (mutual-recursion
  (defun sxc-r (x frame heap)
