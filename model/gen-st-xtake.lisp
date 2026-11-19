@@ -404,7 +404,7 @@
 (defmacro rf-k () '(* (+ 1 (nfix n)) (+ 2 (rf-kb))))
 
 (defun-nx rf-ind (c l n hpg fr heap procs k key cm)
-  (declare (xargs :measure (nfix n)))
+  (declare (xargs :measure (nfix n) :hints (("Goal" :in-theory (enable rf-go)))))
   (if (or (not (rf-go c l n hpg)) (zp k)) (list fr heap)
     (rf-ind c l (1- n) (rf-next c l hpg) (mv-nth 1 (f-ex-list *rf-b* fr heap procs (1- k)))
             (put key (hs-rep cm (rf-next c l hpg)) heap) procs (1- k) key cm)))
