@@ -37,7 +37,7 @@ fuzz: model
 # gen.lisp's translation against clotran's acl2-fortran, on clotran's functions
 # (model/check-gen.bb; reads clotran's certified books, writes nothing there)
 CLOTRAN ?= /Users/james/clotran/clotran
-check-gen: model/gen-disch-loop.cert model/gen-st-spush.cert model/gen-st-heap.cert model/gen-st-ntail.cert model/gen-st-drain.cert
+check-gen: model/gen-disch-loop.cert model/gen-st-spush.cert model/gen-st-heap.cert model/gen-st-ntail.cert model/gen-st-drain.cert model/gen-st-rfb.cert
 	@mkdir -p build; bb model/quiet.bb check-gen sh -c "cd model && ACL2=\"$(ACL2)\" CLOTRAN=\"$(CLOTRAN)\" bb check-gen.bb"
 
 build/deps.mk: $(BOOKS:%=model/%.lisp)
