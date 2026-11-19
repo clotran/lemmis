@@ -42,6 +42,6 @@ check-gen: model/gen-disch-loop.cert model/gen-st-spush.cert model/gen-st-heap.c
 
 build/deps.mk: $(BOOKS:%=model/%.lisp)
 	@mkdir -p build
-	@for b in $(BOOKS); do for d in $$(sed -n 's/^(include-book "\([^"/]*\)".*/\1/p' model/$$b.lisp); do \
+	@for b in $(BOOKS); do for d in $$(sed -n 's/^\(.local \)\{0,1\}(include-book "\([^"/]*\)".*/\2/p' model/$$b.lisp); do \
 	  echo "model/$$b.cert: model/$$d.cert"; done; done > $@
 -include build/deps.mk

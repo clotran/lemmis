@@ -9,7 +9,7 @@
 (require '[clojure.string :as str] '[babashka.fs :as fs] '[babashka.process :as p] '[clojure.java.io :as io])
 (def here (str (fs/parent (fs/absolutize *file*))))
 (def acl2 (or (System/getenv "ACL2") "/Users/james/clotran/acl2/saved_acl2"))
-(def kinds #"^\((?:defthmd?|defund?|defun-sk|defmacro|defconst|defun-nx|defund-nx|defabbrev|defstobj|defrec)\s+([^\s()]+)")
+(def kinds #"^\((?:make-event\s+`\()?(?:defthmd?|defund?|defun-sk|defmacro|defconst|defun-nx|defund-nx|defabbrev|defstobj|defrec)\s+([^\s()]+)")
 
 (defn forms
   "top-level forms of a Lisp source string, as [start end) offsets (skips ; and #| |# comments, strings, #\\x, |sym|)"
