@@ -321,8 +321,8 @@
 
 (defmacro rf-c-thy (&rest en)
   `(e/d (h-nrbi h-nrb-length h-rb-length rf-go rf-next ,@en)
-        (f-ev f-bind hs-rep hpgp hpg-rn-ok dr-heap-at hpg-run-new hpg-run-push scv-pu rf-s1 rf-e1 rf-e2 rf-f dr-frp
-         xt-ex-pu rt-call xr-call-ok xr-call-rn xr-call-rp xr-ex-rn xr-ex-rp g-st-fn-call f-ex-do-exit2 f-ex-do-cycle sxc-assign-f-ex sxc-call-f-ex f-ex-xcall-set-elem f-ex-xcall-set-scalar sxf-assign-f-ex f-ex-do-exit sx-ok-assign-f-ex sx-is-f-ex f-ex-jump f-ex-assign-obj fx-is-f-ex fx-f-ex-select fx-f-ex-if fx-f-ex-cycle fx-f-ex-return fx-f-ex-assign f-ex-return f-ex-select f-ex-if f-ex-assign-var f-ex sxc-r-ok-is-f-ex-list sxc-d-ok-is-f-ex-list sxc-ok-is-f-ex-list sxf-n-ok-is-f-ex-list sxf-h-ok-is-f-ex-list sxf-lits-ok-is-f-ex-list sxf-ok-is-f-ex-list f-ex-list-do-exit f-ex-list-one-normal f-ex-list-exit-tail sx-ok-is-f-ex-list sx-list-is-f-ex-list fx-list-is-f-ex-list fx-f-ex-list-cons fx-f-ex-list-nil f-ex-list-open f-ex-list pu-run rt-run rn-run rp-run dr-body-run dr-loop stfn-body)))
+        ,(set-difference-eq '(f-ev f-bind hs-rep hpgp hpg-rn-ok dr-heap-at hpg-run-new hpg-run-push scv-pu rf-s1 rf-e1 rf-e2 rf-f dr-frp
+         xt-ex-pu rt-call xr-call-ok xr-call-rn xr-call-rp xr-ex-rn xr-ex-rp g-st-fn-call f-ex-do-exit2 f-ex-do-cycle sxc-assign-f-ex sxc-call-f-ex f-ex-xcall-set-elem f-ex-xcall-set-scalar sxf-assign-f-ex f-ex-do-exit sx-ok-assign-f-ex sx-is-f-ex f-ex-jump f-ex-assign-obj fx-is-f-ex fx-f-ex-select fx-f-ex-if fx-f-ex-cycle fx-f-ex-return fx-f-ex-assign f-ex-return f-ex-select f-ex-if f-ex-assign-var f-ex sxc-r-ok-is-f-ex-list sxc-d-ok-is-f-ex-list sxc-ok-is-f-ex-list sxf-n-ok-is-f-ex-list sxf-h-ok-is-f-ex-list sxf-lits-ok-is-f-ex-list sxf-ok-is-f-ex-list f-ex-list-do-exit f-ex-list-one-normal f-ex-list-exit-tail sx-ok-is-f-ex-list sx-list-is-f-ex-list fx-list-is-f-ex-list fx-f-ex-list-cons fx-f-ex-list-nil f-ex-list-open f-ex-list pu-run rt-run rn-run rp-run dr-body-run dr-loop stfn-body) en)))
 
 (defmacro rf-pre () '(and (rf-hyps) (<= 1 c) (<= c 8) (< c (len (nth *h-nrbi* hpg)))))
 (defmacro rf-ok-m () '(and (<= 0 (rf-m)) (< (rf-m) 64) (< (rb-at c (+ 1 (rf-m))) (len (nth *h-rbi* hpg)))))
@@ -398,3 +398,23 @@
              :use ((:instance rf-s1 (k (- k 1)))
                    (:instance rf-t1 (fr (mv-nth 1 (f-ex *rf-s1* fr heap procs (- k 1)))) (k (- k 3))))
              :expand ,(rf-c-expands)))))
+
+; ---- the DO, by induction on the fuel
+
+(defmacro rf-k () '(* (+ 1 (nfix n)) (+ 2 (rf-kb))))
+
+(defun-nx rf-ind (c l n hpg fr heap procs k key cm)
+  (declare (xargs :measure (nfix n)))
+  (if (or (not (rf-go c l n hpg)) (zp k)) (list fr heap)
+    (rf-ind c l (1- n) (rf-next c l hpg) (mv-nth 1 (f-ex-list *rf-b* fr heap procs (1- k)))
+            (put key (hs-rep cm (rf-next c l hpg)) heap) procs (1- k) key cm)))
+
+(defthm rf-go-n (implies (rf-go c l n hpg) (and (integerp n) (< 0 n)))
+  :rule-classes :forward-chaining :hints (("Goal" :in-theory (enable rf-go))))
+
+(defthm rf-loop
+  (implies (and (rf-hyps) (integerp k) (< (rf-k) k))
+           (and (equal (mv-nth 0 (f-ex (list :do *rf-b*) fr heap procs k)) :normal)
+                (equal (mv-nth 2 (f-ex (list :do *rf-b*) fr heap procs k)) (put key (hs-rep cm (hpg-runs-fill c l n hpg)) heap))))
+  :hints (("Goal" :induct (rf-ind c l n hpg fr heap procs k key cm) :do-not-induct t
+           :in-theory (rf-c-thy f-ex-do-cycle f-ex-do-exit2 rf-iter-exit rf-iter-cycle rf-fill-step rf-next-ok dr-heap-at-put))))

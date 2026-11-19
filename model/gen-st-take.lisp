@@ -95,10 +95,11 @@
       (mv-let (e1 c) (sv (kadr args) fr heap)
         (mv-let (e2 l) (sv (kaddr args) fr heap)
           (mv-let (e3 bt) (sv (kadddr args) fr heap)
-            (if (or err (not (eq (kar (kar args)) :var)) (not (eq intent :inout)) e1 e2 e3
+            ; the entry canonical (an hs-rep of its own stobj): the procedures leave "%ext" written in it
+            (if (or err (not (eq (kar (kar args)) :var)) (not (eq intent :inout)) e1 e2 e3 (not (dr-heap-at heap key e hpg))
                     (not (eq (kar d) :var)) (not (consp db)) (not (eq (car db) :int64))
-                    (not (hpgp hpg)) (not (hpg-rn-ok hpg)) (not (natp c)) (not (natp l)) (< *hb40* l)
-                    (not (integerp bt)) (not (equal name "hpg_run_take_c")) (not (equal (len args) 5)))
+                    (not (hpgp hpg)) (not (hpg-rn-ok hpg)) (not (natp c)) (not (int64p c)) (not (natp l)) (< *hb40* l)
+                    (not (int64p bt)) (not (equal name "hpg_run_take_c")) (not (equal (len args) 5)))
                 (mv :orc fr heap)
               (rfb-res fr heap key e (kadr d) (hpg-run-take-c c l bt hpg)))))))))
 
@@ -159,8 +160,8 @@
   (implies (and (p-sorc-t procs b) (natp b)
                 (equal (lkp "hs" fr) (list* "hs" :obj :inout (rt-key)))
                 (rt-int "c_1") (rt-int "l_2") (rt-int "batching_") (rt-int "r")
-                (natp (rtv "c_1")) (natp (rtv "l_2")) (<= (rtv "l_2") *hb40*) (integerp (rtv "batching_"))
-                (hpgp (rt-hpg)) (hpg-rn-ok (rt-hpg))
+                (natp (rtv "c_1")) (int64p (rtv "c_1")) (natp (rtv "l_2")) (<= (rtv "l_2") *hb40*) (int64p (rtv "batching_"))
+                (hpgp (rt-hpg)) (hpg-rn-ok (rt-hpg)) (dr-heap-at heap (rt-key) (cdr (lkp (rt-key) heap)) (rt-hpg))
                 (integerp k) (< (+ b (acl2-count *rt-call*)) k))
            (equal (f-ex *rt-call* fr heap procs k)
                   (let ((r (hpg-run-take-c (rtv "c_1") (rtv "l_2") (rtv "batching_") (rt-hpg))))
