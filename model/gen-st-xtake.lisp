@@ -664,3 +664,118 @@
                           caller nil nil heap procs k)))
   :hints (("Goal" :do-not-induct t :in-theory (disable f-bind sv g-lit put obj-of f-ev f-invoke f-ex f-ex-list)
            :expand ((:free (as) (f-bind ',(tc-ds) as caller nil nil heap procs k)))))))
+
+(defmacro tcv (cc) `(mv-nth 1 (sv ,cc caller heap)))
+
+(defthm tc-same
+  (implies (and (xr-cv cc) (xr-cv cl) (xr-cv cb) (integerp fuel) (< (+ 12 (acl2-count cc) (acl2-count cl) (acl2-count cb)) fuel))
+           (equal (f-invoke *tc-proc* (list (list :var ob) cc cl cb (list :var d)) caller heap procs fuel)
+                  (f-invoke *tc-proc* (list (list :var ob) (g-lit (tcv cc)) (g-lit (tcv cl)) (g-lit (tcv cb)) (list :var d)) caller heap procs fuel)))
+  :rule-classes nil
+  :hints (("Goal" :do-not-induct t
+           :in-theory (union-theories '((nth) (true-list-fix) (kar) (g-lit) car-cons cdr-cons posp int64p natp (acl2-count) (binary-+)
+                                         (unary--) (equal) (cons) (posp) (natp) (int64p) (:type-prescription acl2-count) (tc-ds))
+                                      (theory 'minimal-theory))
+           :use ((:instance f-invoke-same-bind (p *tc-proc*) (a1 (list (list :var ob) cc cl cb (list :var d)))
+                            (a2 (list (list :var ob) (g-lit (tcv cc)) (g-lit (tcv cl)) (g-lit (tcv cb)) (list :var d))))
+                 (:instance xt-bind3 (k (1- fuel)))))))
+
+(defthm tc-okc
+  (implies (and (xt-finds) (xr-hyps) (xr-cv cc) (xr-cv cl) (xr-cv cb) (natp (tcv cc)) (natp (tcv cl)) (<= (tcv cl) *hb40*)
+                (< (+ 12 (tc-k) (acl2-count cc) (acl2-count cl) (acl2-count cb)) fuel))
+           (equal (f-invoke *tc-proc* (list (list :var ob) cc cl cb (list :var d)) caller heap procs fuel)
+                  (mv nil (put d (cons :int64 (mv-nth 0 (hpg-run-take-c (tcv cc) (tcv cl) (tcv cb) hpg))) caller)
+                      (put key (hs-rep cm (mv-nth 1 (hpg-run-take-c (tcv cc) (tcv cl) (tcv cb) hpg))) heap))))
+  :hints (("Goal" :do-not-induct t
+           :in-theory (union-theories '((nth) (true-list-fix) (kar) (g-lit) car-cons cdr-cons posp int64p natp (acl2-count) (binary-+)
+                                         (unary--) (equal) (cons) (posp) (natp) (int64p) (:type-prescription acl2-count) (tc-ds))
+                                      (theory 'minimal-theory))
+           :use ((:instance tc-ok (c (tcv cc)) (l (tcv cl)) (bt (tcv cb)))
+                 tc-same))))
+
+; ---- p-sorc-t: a CALL the oracle answers, f-ex answers the same
+
+(defthm xt-ex-tc
+  (implies (and (xt-finds) (xr-hyps) (equal (kar x) :call) (equal (kadr x) "hpg_run_take_c")
+                (equal (kaddr x) (list (list :var ob) cc cl cb (list :var d)))
+                (xr-cv cc) (xr-cv cl) (xr-cv cb) (natp (tcv cc)) (natp (tcv cl)) (<= (tcv cl) *hb40*)
+                (< (+ 13 (tc-k) (acl2-count cc) (acl2-count cl) (acl2-count cb)) fuel))
+           (equal (f-ex x caller heap procs fuel)
+                  (mv :normal (put d (cons :int64 (mv-nth 0 (hpg-run-take-c (tcv cc) (tcv cl) (tcv cb) hpg))) caller)
+                      (put key (hs-rep cm (mv-nth 1 (hpg-run-take-c (tcv cc) (tcv cl) (tcv cb) hpg))) heap))))
+  :hints (("Goal" :do-not-induct t
+           :in-theory (union-theories '(car-cons cdr-cons mv-nth-01-cons posp (kar) (eq) (equal) (member-equal) (:type-prescription acl2-count))
+                                      (theory 'minimal-theory))
+           :expand ((f-ex x caller heap procs fuel))
+           :use ((:instance tc-okc (fuel (1- fuel)))))))
+
+(defthm xt-scv-shape
+  (implies (not (mv-nth 0 (s-call-val-t name a fr heap)))
+           (and (equal name "hpg_run_take_c")
+                (equal a (list (list :var (kadr (car a))) (cadr a) (caddr a) (cadddr a) (list :var (kadr (car (cddddr a))))))))
+  :rule-classes nil
+  :hints (("Goal" :in-theory (union-theories '(s-call-val-t tc-shape mv-nth-01-cons) (theory 'minimal-theory)))))
+
+(defthm xt-scv-tc
+  (implies (and (equal a (list (list :var ob) cc cl cb (list :var d)))
+                (not (mv-nth 0 (s-call-val-t name a fr heap))))
+           (let ((hpg (hs-hpg (xs-e))) (caller fr))
+             (and (equal (cdr (lkp ob fr)) (list* :obj :inout (xs-key)))
+                  (consp (cdr (lkp d fr))) (equal (cadr (lkp d fr)) :int64)
+                  (dr-heap-at heap (xs-key) (xs-e) hpg) (hpgp hpg) (hpg-rn-ok hpg)
+                  (xr-cv cc) (xr-cv cl) (xr-cv cb) (natp (tcv cc)) (natp (tcv cl)) (<= (tcv cl) *hb40*)
+                  (equal (mv-nth 1 (s-call-val-t name a fr heap))
+                         (put d (cons :int64 (mv-nth 0 (hpg-run-take-c (tcv cc) (tcv cl) (tcv cb) hpg))) fr))
+                  (equal (mv-nth 2 (s-call-val-t name a fr heap))
+                         (put (xs-key) (hs-rep (xs-e) (mv-nth 1 (hpg-run-take-c (tcv cc) (tcv cl) (tcv cb) hpg))) heap)))))
+  :rule-classes nil
+  :hints (("Goal" :do-not-induct t
+           :in-theory (e/d (s-call-val-t rfb-res) (hs-rep hpgp hpg-rn-ok sv hpg-run-take-c hs-hpg dr-heap-at tc-shape
+                                                   dr-heap-at-lkp dr-heap-at-self put obj-of))
+           :use ((:instance obj-of-binding (caller fr))))))
+
+(defthm xt-count-args
+  (implies (equal (kar x) :call)
+           (< (+ (acl2-count (cadr (kaddr x))) (acl2-count (caddr (kaddr x))) (acl2-count (cadddr (kaddr x)))) (acl2-count x)))
+  :rule-classes :linear
+  :hints (("Goal" :in-theory (enable kaddr kar))))
+
+(defconst *xt-b* (max (+ 13 (tc-k)) *rt-b0*))
+
+(defthm xt-call-ok
+  (implies (and (xt-finds) (eq (kar x) :call) (not (mv-nth 0 (s-call-val-t (kadr x) (kaddr x) fr heap)))
+                (integerp fuel) (< (+ *xt-b* (acl2-count x)) fuel))
+           (equal (f-ex x fr heap procs fuel)
+                  (mv :normal (mv-nth 1 (s-call-val-t (kadr x) (kaddr x) fr heap))
+                      (mv-nth 2 (s-call-val-t (kadr x) (kaddr x) fr heap)))))
+  :hints (("Goal" :do-not-induct t
+           :in-theory (union-theories '(xt-count-args (:type-prescription acl2-count) (max) eq (acl2-count) (binary-*) (binary-+))
+                                      (theory 'minimal-theory))
+           :use ((:instance xt-scv-shape (name (kadr x)) (a (xa)))
+                 (:instance xt-scv-tc (name (kadr x)) (a (xa)) (ob (x-ob)) (cc (cadr (xa))) (cl (caddr (xa))) (cb (cadddr (xa)))
+                            (d (kadr (car (cddddr (xa))))))
+                 (:instance xt-ex-tc (caller fr) (ob (x-ob)) (cc (cadr (xa))) (cl (caddr (xa))) (cb (cadddr (xa)))
+                            (d (kadr (car (cddddr (xa))))) (key (x-key)) (cm (x-e)) (hpg (hs-hpg (x-e))))))))
+
+(defmacro xtw (k) `(mv-nth ,k (p-sorc-t-witness procs *xt-b*)))
+
+(defthm p-sorc-t-holds
+  (implies (xt-finds) (p-sorc-t procs *xt-b*))
+  :hints (("Goal" :do-not-induct t :in-theory (union-theories '(p-sorc-t) (theory 'minimal-theory))
+           :use ((:instance xt-call-ok (x (xtw 0)) (fr (xtw 1)) (heap (xtw 2)) (fuel (xtw 3)))))))
+
+; ---- the theorem: no hypothesis on the procedures past the ground xt-finds and rt-finds
+
+(defthm hpg-run-take-fortran-correct-x
+  (implies (and (xt-finds) (rt-finds)
+                (hpgp hpg) (hpg-rn-ok hpg) (natp n) (<= n *hb40*) (int64p bt)
+                (equal (cdr (lkp ob caller)) (list* :obj :inout key))
+                (consp (cdr (lkp d caller))) (equal (cadr (lkp d caller)) :int64)
+                (dr-heap-at heap key comps hpg)
+                (integerp fuel) (< (+ 11 *xt-b* (acl2-count *rt-body*)) fuel))
+           (equal (f-invoke *rt-proc* (list (list :var ob) (g-lit n) (g-lit bt) (list :var d)) caller heap procs fuel)
+                  (mv nil (put d (cons :int64 (mv-nth 0 (hpg-run-take n bt hpg))) caller)
+                      (put key (hs-rep comps (mv-nth 1 (hpg-run-take n bt hpg))) heap))))
+  :hints (("Goal" :do-not-induct t
+           :in-theory (disable f-invoke hpg-run-take hpgp hpg-rn-ok hs-rep dr-heap-at p-sorc-t-holds hpg-run-take-fortran-correct)
+           :use (p-sorc-t-holds (:instance hpg-run-take-fortran-correct (b *xt-b*))))))

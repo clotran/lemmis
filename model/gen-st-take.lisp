@@ -94,6 +94,7 @@
   (equal args (list (list :var (kadr (car args))) (cadr args) (caddr args) (cadddr args) (list :var (kadr (car (cddddr args)))))))
 
 (defun-nx s-call-val-t (name args fr heap)
+  (if (or (not (equal name "hpg_run_take_c")) (not (tc-shape args))) (mv :orc fr heap)
   (mv-let (err key intent) (obj-of (kadr (kar args)) fr)
     (let* ((e (cdr (lkp key heap))) (hpg (hs-hpg e)) (d (car (last args))) (db (cdr (lkp (kadr d) fr))))
       (mv-let (e1 c) (sv (kadr args) fr heap)
@@ -103,9 +104,9 @@
             (if (or err (not (eq (kar (kar args)) :var)) (not (eq intent :inout)) e1 e2 e3 (not (dr-heap-at heap key e hpg))
                     (not (eq (kar d) :var)) (not (consp db)) (not (eq (car db) :int64))
                     (not (hpgp hpg)) (not (hpg-rn-ok hpg)) (not (natp c)) (not (int64p c)) (not (natp l)) (< *hb40* l)
-                    (not (int64p bt)) (not (equal name "hpg_run_take_c")) (not (tc-shape args)))
+                    (not (int64p bt)))
                 (mv :orc fr heap)
-              (rfb-res fr heap key e (kadr d) (hpg-run-take-c c l bt hpg)))))))))
+              (rfb-res fr heap key e (kadr d) (hpg-run-take-c c l bt hpg))))))))))
 
 ; ---- the named hypothesis: hpg_run_take_c's procedure answers the oracle (p-sorc on it)
 
