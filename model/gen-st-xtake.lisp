@@ -197,6 +197,10 @@
                  (:instance hpg-run-push-ok (hpg (mv-nth 1 (hpg-run-new c l hpg))) (n (rf-m))
                             (off (mv-nth 0 (hpg-run-new c l hpg))))))))
 
+(defthm rf-fill-zero
+  (implies (zp n) (equal (hpg-runs-fill c l n hpg) hpg))
+  :hints (("Goal" :expand ((hpg-runs-fill c l n hpg)))))
+
 (in-theory (disable rf-go rf-next))
 
 ; ---- one iteration, symbolically on f-ex
@@ -230,16 +234,157 @@
                      h-nrbi h-nrb-length h-rb-length rf-go rf-next)
                     (f-ev f-bind f-ex hs-rep hpgp hpg-rn-ok dr-heap-at hpg-run-new hpg-run-push hpg-runs-fill))))
 
+(defconst *rf-s1* (nth 0 *rf-b*))
+(defconst *rf-s2* (nth 1 *rf-b*))
+(defconst *rf-e* (nth 3 *rf-s2*))
+
+(defmacro rf-fr (fr) `(and (dr-frp ,fr *rf-ls*) (dr-hs-at ,fr key) (rf-v-at ,fr "c_" c) (rf-v-at ,fr "l_" l) (rf-v-at ,fr "fuel_" n)))
+
+(make-event
+ `(defthm rf-s1
+    (implies (and (rf-hyps) (integerp k) (< 40 k))
+             (let ((r (f-ex *rf-s1* fr heap procs k)))
+               (and (equal (car r) :normal) (equal (mv-nth 2 r) heap) (rf-fr (mv-nth 1 r))
+                    (equal (lkp "t_3" (mv-nth 1 r))
+                           (list* "t_3" :logical (not (and (not (zp n)) (<= 1 c) (<= c 8) (< c (len (nth *h-nrbi* hpg))))))))))
+    :hints (("Goal" :do-not-induct t ,@(rf-iter-hints)
+             :expand ((:free (ds as cl ce outs h k) (f-bind ds as cl ce outs h procs k))
+                      (:free (x frame heap) (sx x frame heap)) (:free (e fr heap) (sv e fr heap))
+                      ,@(xr-expands (list *rf-proc*)))))))
+
+(make-event
+ `(defthm rf-e1
+    (implies (and (rf-hyps) (<= 1 c) (<= c 8) (< c (len (nth *h-nrbi* hpg))) (integerp k) (< 40 k))
+             (let ((r (f-ex (nth 0 *rf-e*) fr heap procs k)))
+               (and (equal (car r) :normal) (equal (mv-nth 2 r) heap) (rf-fr (mv-nth 1 r))
+                    (rf-v-at (mv-nth 1 r) "n_4" (rf-m)))))
+    :hints (("Goal" :do-not-induct t ,@(rf-iter-hints)
+             :expand ((:free (ds as cl ce outs h k) (f-bind ds as cl ce outs h procs k))
+                      (:free (x frame heap) (sx x frame heap)) (:free (e fr heap) (sv e fr heap))
+                      ,@(xr-expands (list *rf-proc*)))))))
+
+(make-event
+ `(defthm rf-e2
+    (implies (and (rf-hyps) (<= 1 c) (<= c 8) (< c (len (nth *h-nrbi* hpg))) (rf-v-at fr "n_4" (rf-m)) (integerp k) (< 40 k))
+             (let ((r (f-ex (nth 1 *rf-e*) fr heap procs k)))
+               (and (equal (car r) :normal) (equal (mv-nth 2 r) heap) (rf-fr (mv-nth 1 r))
+                    (rf-v-at (mv-nth 1 r) "n_4" (rf-m))
+                    (equal (lkp "t_6" (mv-nth 1 r))
+                           (list* "t_6" :logical (and (<= 0 (rf-m)) (< (rf-m) 64)
+                                                     (< (rb-at c (+ 1 (rf-m))) (len (nth *h-rbi* hpg)))))))))
+    :hints (("Goal" :do-not-induct t
+             :in-theory (e/d (obj-of s-call-val-r rfb-res rfb-shape scv-pu rf-go rf-next int64p ext-op ext-read-p ext-write-p ext-dums h-nrbi h-nrb-length h-rb-length)
+                             (f-ev f-bind f-ex hs-rep hpgp hpg-rn-ok dr-heap-at hpg-run-new hpg-run-push hpg-runs-fill))
+             :expand ((:free (ds as cl ce outs h k) (f-bind ds as cl ce outs h procs k))
+                      (:free (x frame heap) (sx x frame heap)) (:free (e fr heap) (sv e fr heap))
+                      ,@(xr-expands (list *rf-proc*)))))))
+
+(defmacro rf-lv (nm) `(cddr (lkp ,nm fr)))
+(defmacro rf-lt (nm) `(and (consp (cdr (lkp ,nm fr))) (equal (cadr (lkp ,nm fr)) :int64)))
+
+(defthm rf-scv-pu
+  (implies (and (dr-hs-at fr key) (rf-lt "c_") (rf-lt "n_4") (rf-lt "off_8") (hpgp hpg) (hpg-rn-ok hpg)
+                (let ((c (rf-lv "c_")) (n (rf-lv "n_4")) (off (rf-lv "off_8"))) (pu-pre)))
+           (equal (scv-pu "hs" '(:var "c_") '(:var "n_4") '(:var "off_8") fr (put key (hs-rep cm hpg) h))
+                  (mv nil fr (put key (hs-rep cm (hpg-run-push (rf-lv "c_") (rf-lv "n_4") (rf-lv "off_8") hpg))
+                                  (put key (hs-rep cm hpg) h)))))
+  :hints (("Goal" :do-not-induct t :in-theory (e/d (scv-pu obj-of int64p) (hs-rep hpgp hpg-rn-ok hpg-run-push))
+           :expand ((:free (e) (sv e fr (put key (hs-rep cm hpg) h)))))))
+
+(defconst *rf-f* (nth 3 (nth 2 *rf-e*)))
+
+(defthm hpg-run-new-car
+  (implies (and (hpgp hpg) (hpg-rn-ok hpg) (natp c) (natp l) (<= l *hb40*))
+           (and (natp (car (hpg-run-new c l hpg))) (<= (car (hpg-run-new c l hpg)) *hb40*)
+                (integerp (car (hpg-run-new c l hpg))) (<= 0 (car (hpg-run-new c l hpg))) (int64p (car (hpg-run-new c l hpg)))
+                (<= -9223372036854775808 (car (hpg-run-new c l hpg))) (<= (car (hpg-run-new c l hpg)) 9223372036854775807)
+                (not (equal (car (hpg-run-new c l hpg)) :undef))))
+  :hints (("Goal" :in-theory (disable hpg-run-new hpg-run-new-ok hpgp hpg-rn-ok) :use hpg-run-new-ok)))
+
+(make-event
+ `(defthm rf-f
+    (implies (and (rf-hyps) (<= 1 c) (<= c 8) (< c (len (nth *h-nrbi* hpg))) (rf-v-at fr "n_4" (rf-m))
+                  (<= 0 (rf-m)) (< (rf-m) 64) (< (rb-at c (+ 1 (rf-m))) (len (nth *h-rbi* hpg)))
+                  (integerp k) (< 200 k))
+             (let ((r (f-ex-list *rf-f* fr heap procs k)) (off (mv-nth 0 (hpg-run-new c l hpg))))
+               (and (equal (car r) (if (equal off 0) :normal :cycle))
+                    (equal (mv-nth 2 r) (put key (hs-rep cm (if (equal off 0) (mv-nth 1 (hpg-run-new c l hpg)) (rf-next c l hpg)))
+                                             heap))
+                    (implies (not (equal off 0))
+                             (and (dr-frp (mv-nth 1 r) *rf-ls*) (dr-hs-at (mv-nth 1 r) key)
+                                  (rf-v-at (mv-nth 1 r) "c_" c) (rf-v-at (mv-nth 1 r) "l_" l) (rf-v-at (mv-nth 1 r) "fuel_" (1- n)))))))
+    :hints (("Goal" :do-not-induct t
+             :in-theory (e/d (obj-of int64p ext-op ext-read-p ext-write-p ext-dums h-nrbi h-nrb-length h-rb-length rf-next)
+                             (f-ev f-bind f-ex hs-rep hpgp hpg-rn-ok dr-heap-at hpg-run-new hpg-run-push hpg-runs-fill scv-pu))
+             :expand ((:free (x frame heap) (sx x frame heap)) (:free (e fr heap) (sv e fr heap))
+                      ,@(xr-expands (list *rf-proc*)))))))
+
+(defmacro rf-c-thy (&rest en)
+  `(e/d (h-nrbi h-nrb-length h-rb-length rf-go rf-next ,@en)
+        (f-ev f-bind hs-rep hpgp hpg-rn-ok dr-heap-at hpg-run-new hpg-run-push scv-pu rf-s1 rf-e1 rf-e2 rf-f dr-frp
+         xt-ex-pu rt-call xr-call-ok xr-call-rn xr-call-rp xr-ex-rn xr-ex-rp g-st-fn-call f-ex-do-exit2 f-ex-do-cycle sxc-assign-f-ex sxc-call-f-ex f-ex-xcall-set-elem f-ex-xcall-set-scalar sxf-assign-f-ex f-ex-do-exit sx-ok-assign-f-ex sx-is-f-ex f-ex-jump f-ex-assign-obj fx-is-f-ex fx-f-ex-select fx-f-ex-if fx-f-ex-cycle fx-f-ex-return fx-f-ex-assign f-ex-return f-ex-select f-ex-if f-ex-assign-var f-ex sxc-r-ok-is-f-ex-list sxc-d-ok-is-f-ex-list sxc-ok-is-f-ex-list sxf-n-ok-is-f-ex-list sxf-h-ok-is-f-ex-list sxf-lits-ok-is-f-ex-list sxf-ok-is-f-ex-list f-ex-list-do-exit f-ex-list-one-normal f-ex-list-exit-tail sx-ok-is-f-ex-list sx-list-is-f-ex-list fx-list-is-f-ex-list fx-f-ex-list-cons fx-f-ex-list-nil f-ex-list-open f-ex-list pu-run rt-run rn-run rp-run dr-body-run dr-loop stfn-body)))
+
+(defmacro rf-pre () '(and (rf-hyps) (<= 1 c) (<= c 8) (< c (len (nth *h-nrbi* hpg)))))
+(defmacro rf-ok-m () '(and (<= 0 (rf-m)) (< (rf-m) 64) (< (rb-at c (+ 1 (rf-m))) (len (nth *h-rbi* hpg)))))
+(defmacro rf-off () '(car (hpg-run-new c l hpg)))
+; what the rest of the body does once c is in range
+(defmacro rf-tail (r)
+  `(and (equal (car ,r) (if (and (rf-ok-m) (not (equal (rf-off) 0))) :cycle :normal))
+        (equal (mv-nth 2 ,r) (if (rf-ok-m)
+                                 (put key (hs-rep cm (if (equal (rf-off) 0) (mv-nth 1 (hpg-run-new c l hpg)) (rf-next c l hpg))) heap)
+                               heap))
+        (implies (and (rf-ok-m) (not (equal (rf-off) 0)))
+                 (and (dr-frp (mv-nth 1 ,r) *rf-ls*) (dr-hs-at (mv-nth 1 ,r) key)
+                      (rf-v-at (mv-nth 1 ,r) "c_" c) (rf-v-at (mv-nth 1 ,r) "l_" l) (rf-v-at (mv-nth 1 ,r) "fuel_" (1- n))))))
+
+(make-event
+ `(defthm rf-t3
+    (implies (and (rf-pre) (rf-v-at fr "n_4" (rf-m)) (equal (lkp "t_6" fr) (list* "t_6" :logical (rf-ok-m)))
+                  (integerp k) (< 210 k))
+             (rf-tail (f-ex-list (cddr *rf-e*) fr heap procs k)))
+    :hints (("Goal" :do-not-induct t :in-theory (rf-c-thy)
+             :use ((:instance rf-f (k (- k 2))))
+             :expand ((f-ex-list ',(cddr *rf-e*) fr heap procs k)
+                      (f-ex ',(nth 2 *rf-e*) fr heap procs (- k 1))
+                      (:free (fr h k) (f-ev '(:var "t_6") fr h procs k))
+                      (:free (fr h k) (f-ev '(:not (:var "t_6")) fr h procs k)))))))
+
+(make-event
+ `(defthm rf-t2
+    (implies (and (rf-pre) (rf-v-at fr "n_4" (rf-m)) (integerp k) (< 220 k))
+             (rf-tail (f-ex-list (cdr *rf-e*) fr heap procs k)))
+    :hints (("Goal" :do-not-induct t :in-theory (rf-c-thy)
+             :expand ((f-ex-list ',(cdr *rf-e*) fr heap procs k))
+             :use ((:instance rf-e2 (k (- k 1)))
+                   (:instance rf-t3 (fr (mv-nth 1 (f-ex (nth 1 *rf-e*) fr heap procs (- k 1)))) (k (- k 1))))))))
+
+(make-event
+ `(defthm rf-t1
+    (implies (and (rf-pre) (integerp k) (< 230 k))
+             (rf-tail (f-ex-list *rf-e* fr heap procs k)))
+    :hints (("Goal" :do-not-induct t :in-theory (rf-c-thy)
+             :expand ((f-ex-list ',*rf-e* fr heap procs k))
+             :use ((:instance rf-e1 (k (- k 1)))
+                   (:instance rf-t2 (fr (mv-nth 1 (f-ex (nth 0 *rf-e*) fr heap procs (- k 1)))) (k (- k 1))))))))
+
+(defun rf-c-expands ()
+  (declare (xargs :mode :program))
+  `((f-ex-list ',*rf-b* fr heap procs k) (:free (fr h) (f-ex-list ',(cdr *rf-b*) fr h procs (- k 1)))
+    (:free (fr h) (f-ex ',*rf-s2* fr h procs (- k 2)))
+    (:free (fr h) (f-ev '(:var "t_3") fr h procs (- k 3)))
+    (:free (fr h) (f-ex-list ',(cddr *rf-b*) fr h procs (- k 2)))
+    (:free (fr h) (f-ex '(:exit) fr h procs (- k 3)))))
+
 (make-event
  `(defthm rf-iter-exit
     (implies (and (rf-hyps) (not (rf-go c l n hpg)) (integerp k) (< (rf-kb) k))
              (let ((r (f-ex-list *rf-b* fr heap procs k)))
                (and (equal (mv-nth 0 r) :exit)
                     (equal (mv-nth 2 r) (put key (hs-rep cm (hpg-runs-fill c l n hpg)) heap)))))
-    :hints (("Goal" :do-not-induct t ,@(rf-iter-hints)
-             :expand ((:free (ds as cl ce outs h k) (f-bind ds as cl ce outs h procs k))
-                      (hpg-runs-fill c l n hpg)
-                      ,@(xr-expands (list *rf-proc*)))))))
+    :hints (("Goal" :do-not-induct t :in-theory (rf-c-thy dr-heap-at-put-same)
+             :use ((:instance rf-s1 (k (- k 1)))
+                   (:instance rf-t1 (fr (mv-nth 1 (f-ex *rf-s1* fr heap procs (- k 1)))) (k (- k 3))))
+             :expand ((hpg-runs-fill c l n hpg) ,@(rf-c-expands))))))
 
 (make-event
  `(defthm rf-iter-cycle
@@ -249,6 +394,7 @@
                     (equal (mv-nth 2 r) (put key (hs-rep cm (rf-next c l hpg)) heap))
                     (dr-frp (mv-nth 1 r) *rf-ls*) (dr-hs-at (mv-nth 1 r) key)
                     (rf-v-at (mv-nth 1 r) "c_" c) (rf-v-at (mv-nth 1 r) "l_" l) (rf-v-at (mv-nth 1 r) "fuel_" (1- n)))))
-    :hints (("Goal" :do-not-induct t ,@(rf-iter-hints)
-             :expand ((:free (ds as cl ce outs h k) (f-bind ds as cl ce outs h procs k))
-                      ,@(xr-expands (list *rf-proc*)))))))
+    :hints (("Goal" :do-not-induct t :in-theory (rf-c-thy)
+             :use ((:instance rf-s1 (k (- k 1)))
+                   (:instance rf-t1 (fr (mv-nth 1 (f-ex *rf-s1* fr heap procs (- k 1)))) (k (- k 3))))
+             :expand ,(rf-c-expands)))))
