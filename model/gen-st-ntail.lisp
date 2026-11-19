@@ -57,6 +57,26 @@
              (otherwise 0)))
           (t 0))))
 
+(defun hpg-seq-op (op tag ref hpg)
+  (declare (xargs :stobjs hpg :guard (and (sb64p op) (sb64p tag) (sb64p ref)) :verify-guards nil))
+  (cond ((not (or (equal op 9) (equal op 39) (equal op 27) (equal op 10))) 0)
+        ((equal tag 0) (if (equal op 10) 0 1))
+        ((not (hpg-obj-at tag ref hpg)) 0)
+        (t (let ((kd (hpg-okd ref hpg))
+                 (n (hpg-oi ref hpg))
+                 (b (* 5 ref)))
+             (cond ((equal kd 6)
+                    (cond ((equal op 27) (case n (1 2) (2 1) (3 (+ 1 b)) (otherwise 0)))
+                          ((equal op 9) (case n (1 (+ 1 b)) (2 1) (otherwise 0)))
+                          ((equal op 10) (if (equal n 1) (+ 2 b) 0))
+                          ((equal op 39) (case n (1 (hpg-next-tail ref hpg)) (2 1) (otherwise 0)))
+                          (t 0)))
+                   ((equal kd 1)
+                    (cond ((equal op 9) (if (< 0 n) b 1))
+                          ((equal op 27) (if (< 0 n) 2 1))
+                          (t 0)))
+                   (t 0))))))
+
 ; ---- the oracle: the callees' ACL2 values on hpg0, for the names in nms
 
 (defun nt-ks (ks n) (and (int64-listp ks) (equal (len ks) n)))
@@ -338,3 +358,117 @@
                  (:instance f-invoke-sret-n (hpg0 hpg) (nms *nt-callees*) (body *nt-body*) (rt :int64)
                             (v (hpg-next-tail o hpg)) (ks (list o)) (vs '(o)) (o "hs") (c "heap_state")
                             (nm "hpg_next_tail") (rec (nth 3 *nt-proc*)) (locs *nt-locs*))))))
+
+; ==== hpg-seq-op: its callees hpg-obj-at, hpg-okd, hpg-oi (named hypothesis, as above) and
+; hpg-next-tail (discharged by hpg-next-tail-fortran-correct, its procedure *nt-proc*)
+
+(defconst *sq-proc*
+  (mv-let (e ps) (g-st-module *heapg-st-raw* '(hpg-obj-at) '(hpg-drain hpg-run-from-batch hpg-run-take hpg-next-tail hpg-seq-op)
+                              *heapg-st*)
+    (and (not e) (find-proc "hpg_seq_op" ps))))
+
+(defconst *sq-callees* '("hpg_obj_at" "hpg_okd" "hpg_oi" "hpg_next_tail"))
+
+(defconst *sq-locs* (reverse (nt-unloc (nth 6 *sq-proc*))))
+(defconst *sq-body* (nth 7 *sq-proc*))
+
+(defthm sq-proc-shape
+  (equal *sq-proc*
+         (list :function "hpg_seq_op" t (nth 3 *sq-proc*) (cons (list "hs" :in "heap_state") (g-dummies '(op tag ref)))
+               :int64 (g-locals *sq-locs*) *sq-body*))
+  :rule-classes nil)
+
+(defthm hpg-next-tail-int-tp
+  (implies (and (hpgp hpg) (natp o) (< o *hb40*)) (integerp (hpg-next-tail o hpg)))
+  :rule-classes :type-prescription)
+
+(defthm hpg-next-tail-bounds
+  (implies (and (hpgp hpg) (natp o) (< o *hb40*))
+           (and (<= -9223372036854775808 (hpg-next-tail o hpg)) (<= (hpg-next-tail o hpg) 9223372036854775807)))
+  :rule-classes :linear)
+
+(defmacro sq-frame ()
+  '(undef-locals (cons (list "r" :int64) (g-locals *sq-locs*))
+                 (fb '(op tag ref) (list op tag ref) (put "hs" (list* :obj :in key) nil))))
+
+(defthm sq-run
+  (implies (and (hpgp hpg0) (int64p op) (int64p tag) (int64p ref))
+           (let ((r (sxf-list-n *sq-body* (sq-frame) heap hpg0 *sq-callees*)))
+             (and (equal (car r) :return) (equal (mv-nth 2 r) heap)
+                  (sret-ok (mv-nth 1 r) :int64 (hpg-seq-op op tag ref hpg0)))))
+  :hints (("Goal" :do-not-induct t
+           :in-theory (e/d (sret-ok s-fn-val-n fb) (hpgp hpg-next-tail))
+           :expand ((:free (x fr h) (sxf-n x fr h hpg0 *sq-callees*))
+                    (:free (ss fr h) (sxf-list-n ss fr h hpg0 *sq-callees*))
+                    (:free (e fr h) (svf-n e fr h hpg0 *sq-callees*))
+                    (:free (cs fr h) (svlf-n cs fr h hpg0 *sq-callees*))))))
+
+; the next-tail entry: hpg-next-tail-fortran-correct; the others p-sflits-n on *nt-callees*
+(defmacro sq-ent-hyps ()
+  '(and (p-sflits-n procs b hpg *nt-callees*) (natp b)
+        (equal (find-proc "hpg_next_tail" procs) *nt-proc*) (hpgp hpg)
+        (not (mv-nth 0 (s-fn-val-n name s ks hpg *sq-callees*))) (not (mv-nth 0 (obj-of ob caller)))
+        (equal (cdr (lkp (mv-nth 1 (obj-of ob caller)) heap)) s)
+        (integerp fuel) (< (+ 8 b (acl2-count *nt-body*)) fuel)))
+
+(defmacro sq-ent-concl ()
+  '(let ((p (find-proc name procs)))
+     (and (eq (kar p) :function) (int64-listp ks) (< (+ 4 (len ks)) (+ 8 b (acl2-count *nt-body*)))
+          (sfl-dums (nth 4 (true-list-fix p)) ks)
+          (equal (f-invoke p (cons (list :var ob) (g-lits ks)) caller heap procs fuel)
+                 (mv nil (mv-nth 1 (s-fn-val-n name s ks hpg *sq-callees*)) heap)))))
+
+(defthm g-lits-len1
+  (implies (and (int64-listp ks) (equal (len ks) 1)) (equal (g-lits ks) (list (g-lit (car ks)))))
+  :hints (("Goal" :expand ((g-lits ks) (g-lits (cdr ks)) (int64-listp ks) (int64-listp (cdr ks))))))
+
+(defthm sq-ent-nt
+  (implies (and (sq-ent-hyps) (equal name "hpg_next_tail")) (sq-ent-concl))
+  :rule-classes nil
+  :hints (("Goal" :do-not-induct t
+           :in-theory (e/d (s-fn-val-n nt-ks sfl-dums val-dums int64-listp)
+                           (f-invoke hpg-next-tail obj-of hpg-next-tail-fortran-correct p-sflits-n))
+           :use ((:instance obj-of-binding)
+                 (:instance hpg-next-tail-fortran-correct (o (car ks)) (intent (mv-nth 2 (obj-of ob caller)))
+                            (key (mv-nth 1 (obj-of ob caller))))))))
+
+(defthm sq-ent-other
+  (implies (and (sq-ent-hyps) (not (equal name "hpg_next_tail"))) (sq-ent-concl))
+  :rule-classes nil
+  :hints (("Goal" :do-not-induct t
+           :in-theory (e/d (s-fn-val-n nt-ks) (f-invoke hpg-next-tail find-proc obj-of p-sflits-n-necc p-sflits-n))
+           :use ((:instance p-sflits-n-necc (nms *nt-callees*) (hpg0 hpg))))))
+
+(defmacro sqw (k) `(mv-nth ,k (p-sflits-n-witness procs (+ 8 b (acl2-count *nt-body*)) hpg *sq-callees*)))
+
+(defthm p-sflits-n-seq
+  (implies (and (p-sflits-n procs b hpg *nt-callees*) (natp b)
+                (equal (find-proc "hpg_next_tail" procs) *nt-proc*) (hpgp hpg))
+           (p-sflits-n procs (+ 8 b (acl2-count *nt-body*)) hpg *sq-callees*))
+  :hints (("Goal" :do-not-induct t
+           :in-theory (union-theories '(p-sflits-n) (theory 'minimal-theory))
+           :use ((:instance sq-ent-nt (name (sqw 0)) (s (sqw 1)) (ks (sqw 2)) (ob (sqw 3))
+                            (caller (sqw 4)) (heap (sqw 5)) (fuel (sqw 6)))
+                 (:instance sq-ent-other (name (sqw 0)) (s (sqw 1)) (ks (sqw 2)) (ob (sqw 3))
+                            (caller (sqw 4)) (heap (sqw 5)) (fuel (sqw 6)))))))
+
+; ---- the theorem: hpg-obj-at, hpg-okd, hpg-oi's correctness the hypothesis (p-sflits-n on
+; *nt-callees*, which also gives hpg-ot and hpg-or for hpg-next-tail), hpg-next-tail's procedure *nt-proc*
+
+(defthm hpg-seq-op-fortran-correct
+  (implies (and (p-sflits-n procs b hpg *nt-callees*) (natp b)
+                (equal (find-proc "hpg_next_tail" procs) *nt-proc*)
+                (hpgp hpg) (int64p op) (int64p tag) (int64p ref)
+                (equal (cdr (lkp ob caller)) (list* :obj intent key))
+                (integerp fuel) (< (+ 18 b (acl2-count *nt-body*) (acl2-count *sq-body*)) fuel))
+           (equal (f-invoke *sq-proc* (cons (list :var ob) (g-lits (list op tag ref))) caller heap procs fuel)
+                  (mv nil (hpg-seq-op op tag ref hpg) heap)))
+  :hints (("Goal" :do-not-induct t
+           :in-theory (e/d (int64-listp) (f-invoke sxf-list-n hpg-seq-op hpgp g-dummies g-locals g-lits undef-locals fb
+                                          f-invoke-sret-n sq-run p-sflits-n int64p p-sflits-n-seq))
+           :use (sq-proc-shape p-sflits-n-seq
+                 (:instance sq-run (hpg0 hpg))
+                 (:instance f-invoke-sret-n (hpg0 hpg) (nms *sq-callees*) (b (+ 8 b (acl2-count *nt-body*)))
+                            (body *sq-body*) (rt :int64)
+                            (v (hpg-seq-op op tag ref hpg)) (ks (list op tag ref)) (vs '(op tag ref)) (o "hs") (c "heap_state")
+                            (nm "hpg_seq_op") (rec (nth 3 *sq-proc*)) (locs *sq-locs*))))))

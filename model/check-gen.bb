@@ -105,8 +105,8 @@
                    ;; field's place and type) and of hpg-spush with its guard's functions
                    ["heapgn" '[hpgp hpg-lens hpg-ok hpg-spush h-err h-msp h-mtagi h-mrefi h-mtag-length h-mref-length
                                update-h-err update-h-msp update-h-mtagi update-h-mrefi] "gen-st-spush"]
-                   ;; gen-st-ntail.lisp's copies of hpg-next-tail and its callees
-                   ["heapgn" '[hpg-next-tail hpg-ot hpg-or hpg-okd hpg-oi hpg-obj-at h-otagi h-orefi h-okindi h-oi1i
+                   ;; gen-st-ntail.lisp's copies of hpg-next-tail, hpg-seq-op and their callees
+                   ["heapgn" '[hpg-next-tail hpg-seq-op hpg-ot hpg-or hpg-okd hpg-oi hpg-obj-at h-otagi h-orefi h-okindi h-oi1i
                                h-otag-length h-oref-length h-okind-length h-oi1-length] "gen-st-ntail"]])
 (defn defs-text [dir book fns]
   (let [fs (str/join " " fns)
