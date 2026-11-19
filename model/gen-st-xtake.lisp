@@ -567,3 +567,100 @@
            :use ((:instance sv-var-int (nm "c_")) (:instance sv-var-int (nm "l_"))
                  (:instance xr-ex-rn (x *tc-rn*) (ob "hs") (cc '(:var "c_")) (cl '(:var "l_")) (d "r") (caller fr) (key (rt-key))
                             (cm (cdr (lkp (rt-key) heap))) (hpg (rt-hpg)))))))
+
+; ---- hpg_run_take_c: its body's run, its invocation
+
+(defconst *tc-ls* (nth 4 *tc-proc*))
+(defconst *tc-body* (nth 5 *tc-proc*))
+
+(defthm tc-proc-shape
+  (equal *tc-proc* (list :subroutine "hpg_run_take_c" (nth 2 *tc-proc*)
+                         (list '("hs" :inout "heap_state") (list "c_" :value :int64) (list "l_" :value :int64)
+                               (list "batching_" :value :int64) '("r" :out :int64))
+                         *tc-ls* *tc-body*))
+  :rule-classes nil)
+
+(defmacro tc-fr0 (ls o)
+  `(undef-locals ,ls (put "r" (cons :int64 :undef) (put "batching_" (cons :int64 bt) (put "l_" (cons :int64 l) (put "c_" (cons :int64 c)
+                                                                                   (put ,o (list* :obj :inout key) nil)))))))
+
+(defthm f-invoke-sub-tc
+  (implies (and (equal (cdr (lkp ob caller)) (list* :obj :inout key))
+                (consp (cdr (lkp d caller))) (equal (cadr (lkp d caller)) :int64)
+                (int64p c) (int64p l) (int64p bt) (integerp fuel) (< 12 fuel)
+                (equal (mv-nth 0 (f-ex-list body (tc-fr0 ls o) heap procs (1- fuel))) :normal))
+           (equal (f-invoke (list :subroutine nm rec
+                                  (list (list o :inout cc) (list "c_" :value :int64) (list "l_" :value :int64)
+                                        (list "batching_" :value :int64) (list "r" :out :int64))
+                                  ls body)
+                            (list (list :var ob) (g-lit c) (g-lit l) (g-lit bt) (list :var d)) caller heap procs fuel)
+                  (mv nil (copy-out (list (cons "r" d)) (mv-nth 1 (f-ex-list body (tc-fr0 ls o) heap procs (1- fuel))) caller)
+                      (mv-nth 2 (f-ex-list body (tc-fr0 ls o) heap procs (1- fuel))))))
+  :hints (("Goal" :do-not-induct t
+           :in-theory (disable f-ex-list undef-locals g-lit copy-out put)
+           :expand ((:free (p) (f-invoke p (list (list :var ob) (g-lit c) (g-lit l) (g-lit bt) (list :var d)) caller heap procs fuel))
+                    (:free (ds as callee outs f) (f-bind ds as caller callee outs heap procs f))))))
+
+(defmacro tc-k () '(+ 200 (tc-rf-k) (acl2-count *rfb-body*)))
+
+(make-event
+ `(defthm tc-run
+    (implies (and (xt-finds) (hpgp hpg) (hpg-rn-ok hpg) (natp c) (int64p c) (natp l) (<= l *hb40*) (int64p bt)
+                  (dr-heap-at heap key cm hpg) (integerp k) (< (tc-k) k))
+             (let ((r (f-ex-list *tc-body* (tc-fr0 *tc-ls* "hs") heap procs k)))
+               (and (equal (mv-nth 0 r) :normal)
+                    (equal (cdr (lkp "r" (mv-nth 1 r))) (cons :int64 (mv-nth 0 (hpg-run-take-c c l bt hpg))))
+                    (equal (mv-nth 2 r) (put key (hs-rep cm (mv-nth 1 (hpg-run-take-c c l bt hpg))) heap)))))
+    :hints (("Goal" :do-not-induct t
+             :in-theory (e/d (hpg-run-take-c obj-of int64p ext-op ext-read-p ext-write-p ext-dums h-nrbi h-nrb-length h-rb-length)
+                             (f-ev f-bind f-ex f-invoke hs-rep hpgp hpg-rn-ok dr-heap-at hpg-run-new hpg-run-push hpg-runs-fill
+                              hpg-run-from-batch undef-locals))
+             :expand ((:free (ds as cl ce outs h k) (f-bind ds as cl ce outs h procs k))
+                      (:free (x frame heap) (sx x frame heap)) (:free (e fr heap) (sv e fr heap))
+                      (:free (ls fr) (undef-locals ls fr))
+                      ,@(xr-expands (list *tc-proc*)))))))
+
+(defthm tc-ok
+  (implies (and (xt-finds) (hpgp hpg) (hpg-rn-ok hpg) (natp c) (int64p c) (natp l) (<= l *hb40*) (int64p bt)
+                (equal (cdr (lkp ob caller)) (list* :obj :inout key))
+                (consp (cdr (lkp d caller))) (equal (cadr (lkp d caller)) :int64)
+                (dr-heap-at heap key cm hpg) (integerp fuel) (< (+ 1 (tc-k)) fuel))
+           (equal (f-invoke *tc-proc* (list (list :var ob) (g-lit c) (g-lit l) (g-lit bt) (list :var d)) caller heap procs fuel)
+                  (mv nil (put d (cons :int64 (mv-nth 0 (hpg-run-take-c c l bt hpg))) caller)
+                      (put key (hs-rep cm (mv-nth 1 (hpg-run-take-c c l bt hpg))) heap))))
+  :hints (("Goal" :do-not-induct t
+           :in-theory (e/d (int64p) (f-invoke f-ex-list hpg-run-take-c hpgp hpg-rn-ok g-lit undef-locals put
+                                     f-invoke-sub-tc tc-run hs-rep dr-heap-at f-ex-list-open f-ex-list-nil))
+           :expand ((:free (fr) (copy-out (list (cons "r" d)) fr caller)) (:free (fr) (copy-out nil fr caller)))
+           :use (tc-proc-shape (:instance tc-run (k (1- fuel)))
+                 (:instance f-invoke-sub-tc (o "hs") (cc "heap_state") (nm "hpg_run_take_c")
+                            (rec (nth 2 *tc-proc*)) (ls *tc-ls*) (body *tc-body*))))))
+
+(defun tc-ds () '(("hs" :inout "heap_state") ("c_" :value :int64) ("l_" :value :int64) ("batching_" :value :int64) ("r" :out :int64)))
+(defmacro tc-dsm () (list 'quote (tc-ds)))
+
+(defthm bind-v-code
+  (implies (and (xr-cv a) (integerp k) (< (+ 2 (acl2-count a)) k))
+           (equal (f-bind (cons (list nm :value :int64) ds) (cons a as) caller callee outs heap procs k)
+                  (f-bind ds as caller (put nm (cons :int64 (mv-nth 1 (sv a caller heap))) callee) outs heap procs (1- k))))
+  :hints (("Goal" :do-not-induct t
+           :in-theory (union-theories '(sv-ok-is-f-ev kadr kar kdr (member-equal) (equal) (eq) car-cons cdr-cons mv-nth-01-cons posp atom (:type-prescription acl2-count)) (theory 'minimal-theory))
+           :expand ((f-bind (cons (list nm :value :int64) ds) (cons a as) caller callee outs heap procs k)))))
+
+(defthm bind-v-lit
+  (implies (and (int64p v) (integerp k) (< 4 k))
+           (equal (f-bind (cons (list nm :value :int64) ds) (cons (g-lit v) as) caller callee outs heap procs k)
+                  (f-bind ds as caller (put nm (cons :int64 v) callee) outs heap procs (1- k))))
+  :hints (("Goal" :do-not-induct t
+           :in-theory (union-theories '(f-ev-g-lit kadr kar kdr (member-equal) (equal) (eq) car-cons cdr-cons mv-nth-01-cons posp atom) (theory 'minimal-theory))
+           :expand ((f-bind (cons (list nm :value :int64) ds) (cons (g-lit v) as) caller callee outs heap procs k)))))
+
+(make-event
+ `(defthm xt-bind3
+  (implies (and (xr-cv cc) (xr-cv cl) (xr-cv cb) (integerp k) (< (+ 10 (acl2-count cc) (acl2-count cl) (acl2-count cb)) k))
+           (equal (f-bind (tc-dsm) (list (list :var ob) cc cl cb (list :var d)) caller nil nil heap procs k)
+                  (f-bind (tc-dsm) (list (list :var ob) (g-lit (mv-nth 1 (sv cc caller heap))) (g-lit (mv-nth 1 (sv cl caller heap)))
+                                        (g-lit (mv-nth 1 (sv cb caller heap))) (list :var d))
+                          caller nil nil heap procs k)))
+  :hints (("Goal" :do-not-induct t :in-theory (disable f-bind sv g-lit put obj-of f-ev f-invoke f-ex f-ex-list)
+           :expand ((:free (as) (f-bind ',(tc-ds) as caller nil nil heap procs k)))))))
