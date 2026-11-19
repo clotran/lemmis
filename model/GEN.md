@@ -986,36 +986,53 @@ Two findings from acl2-fortran's `stmt` (both fixed now, see above):
    joined in `gs-call-core` in the minimal theory), `sn-call-f` (names).
    sn-ind-f's last branch also recurses on g-cvals; gs-rest-f takes the call
    case by gs-call-f.
-   **Next (step 3): discharge p-sforc and sf-orc on a table**, as gen-stdisch/
-   gen-stinst did for CALL. Design: a table `ftab` of value functions
-   `(fn formals (nil) t x)` (one stobj formal, x call-free), `ftab-ok`
-   decidable (each entry translates by g-st-fn, its procedure is procs',
-   its sig/def agree with sigs/defs, g-sret-fn-sem's side conditions);
-   the concrete oracle `s-fn-val-h name s ks` = a-sx of the entry's body on
-   ks at a fuel chosen (defchoose) where a-sx answers no error, else :orc
-   (sf-orc quantifies over every n; a-sx-mono makes all non-error fuels
-   agree). sf-orc-h: by a-sxf-is-a-sx (call-free body) and the env with nil
-   at the stobj formal vs g-st-vals' env (a-sx ignores the stobj binding --
-   a lemma). p-sforc-h: by induction on the call code's size -- a bounded
-   p-sforc (codes below m) gives f-ev of the argument codes = svlf by a
-   bounded svf-ok-is-f-ev, then f-ev of the :fcall is f-invoke of the
-   generated FUNCTION on codes, which a codes form of g-sret-fn-sem answers
-   (f-invoke-same-bind for :function, as gen-stcsorc did for subroutines).
-   Then the functional instance of sxf-ok-is-f-ex-list and gs-sem-thm-f
-   with s-fn-val := s-fn-val-h (every function defined from s-fn-val --
-   svf, svlf, sxf, sxf-list, the -f predicates, p-sforc, sf-orc --
-   replaced; stinst-hint's pattern). Then hpg-next-tail: its callees
-   (hpg-ot, hpg-or, hpg-obj-at, hpg-okd, hpg-oi) read `hp_*` externs, so
-   until 4c their correctness is a named oracle hypothesis of the instance.
-   **Hypotheses still to discharge** (milestone 2, stobj layer): the oracle
-   hypotheses p-sorc/c-sorc/a-call-ok of gst-callst (discharged by tab-ok in
-   gst-callst-h); p-sforc (sxf-ok-is-f-ex-list) and sf-orc (gs-sem-holds-f),
-   to be discharged together from g-sret-fn-sem on a table, as gen-stdisch
-   did for CALL (the :fcall's arguments are svf codes, so that discharge is
-   an induction on the code, f-ev of the arguments svf's by the hypothesis
-   at smaller codes); tab-ok, `(not (g-role nil st))`, o not a formal's name, o
-   not "r" -- each a ground fact decided on a given table/configuration;
-   per heapgn instance, its callees' correctness while they read `hp_*`.
+   **Step 3 done: p-sforc and sf-orc discharged on a table** (gen-sflits,
+   gen-sfdisch, gen-sfinst, all certified). Two repairs on the way in:
+   sf-orc now also asks `(len ks)` = the sig's value formals' count (an
+   oracle checking arity could not answer otherwise; gs-call-src gives it by
+   `len-a-sxf-list`/`len-g-cvals`), and g-sret-fn-sem asks only `(cdr (lkp
+   key heap))` = S (svf reads a heap entry that need not exist).
+   **gen-sflits** (generic, on s-fn-val): `p-sflits procs b` -- wherever the
+   oracle answers on f, S, ks (S ob's entry), f's procedure is a FUNCTION
+   with dummies the object (intent in) then (len ks) value dummies, ks int64,
+   b > 4 + (len ks), and f-invoke on `((:var ob) . (g-lits ks))` at any
+   fuel past b answers the oracle's value, the heap unchanged.
+   **`p-sflits-p-sforc`**: p-sflits gives p-sforc, by induction on the code's
+   size (`p-sforc-b`, p-sforc below a bound; `svf-ok-is-f-ev-b`;
+   `f-bind-codes-lits`: the codes bind as their values' literals;
+   `f-invoke-same-bind-fn`); `sxf-lits-ok-is-f-ex-list`.
+   **gen-sfdisch** (concrete): the table is defs itself; `sfd-ok defs gdefs
+   sigs st procs o b` (decidable) -- every entry `(fn formals x)`
+   translates by g-st-fn as `(fn formals (nil) t x)` with one stobj formal
+   (its dummy `(o :in c)`), its sig's formals its own, x calls nothing of
+   sigs or defs, procs' procedure for it the FUNCTION, g-sret-fn-sem's side
+   conditions, `(g-role nil st)` not :stobj, b > 7 + values + body size;
+   names distinct. `s-fn-val-h name s ks defs st o` = a-sx of the entry's
+   body on the value formals bound to ks at the fuel `sfn-fuel` (defchoose)
+   chooses, when ks are int64 and as many, and S has st-ok; else :orc.
+   **`sf-orc-h-holds`** (a-sxf of a body calling nothing in defs is a-sx,
+   `a-sxf-nodefs`; a-sx reads env only at non-stobj names, `a-sx-sf-vals`,
+   so nil at the stobj formal is the value formals' env; fuels agree by
+   a-sx-mono, `sfn-fuel-agrees`; the type by rfn-run, `g-sret-fn-ty`) and
+   **`p-sflits-h-holds`** (g-sret-fn-sem).
+   **gen-sfinst**: svf-h/svlf-h/sxf-h/sxf-list-h/gs-sem-f-h (the copies on
+   s-fn-val-h) and the functional instances: **`sxf-h-ok-is-f-ex-list`**
+   (sfd-ok: wherever sxf-list-h answers no error, f-ex-list is it) and
+   **`gs-sem-holds-h`** (sfd-ok: gs-sem on svf-h against a-sxf, sf-orc gone).
+   No oracle hypothesis left on value functions given the stobj; sfd-ok is a
+   ground fact. Constraint hints: the instance's subgoal in the minimal
+   theory, a witness constraint by the defun-sk's definition plus its necc,
+   the copies' definitions by an :expand of exactly the constraint's term.
+   **Next: hpg-next-tail**: its callees (hpg-ot, hpg-or, hpg-obj-at,
+   hpg-okd, hpg-oi) read `hp_*` externs, so until 4c they cannot be sfd-ok
+   entries; the instance takes their correctness as a named hypothesis (the
+   oracle on them = what their procedures answer), and hpg-next-tail is tail
+   recursive (the self-call is 4b's tail loop, not yet in gs-sem).
+   **Hypotheses still to discharge** (milestone 2, stobj layer): tab-ok
+   (CALL) and sfd-ok (value functions given the stobj), o not a formal's
+   name, o not "r", `(g-role nil st)` not :stobj -- each a ground fact
+   decided on a given table/configuration; per heapgn instance, its callees'
+   correctness while they read `hp_*`.
    Left of 4, restated (2026-11-18): (4a) sx's `:do` and `:call` cases and
    f-invoke of a generated subroutine under a heap-aware oracle (as
    f-call-val is for functions), then gst-sem for g-callst and the mv lambda

@@ -84,7 +84,8 @@
   (forall (f s ks n)
     (let* ((d (lkp f defs)) (sig (cdr (lkp f sigs)))
            (r (a-sxf (kaddr d) (pairlis$ (true-list-fix (kadr d)) (sf-vals (kar sig) ks st)) s st defs n)))
-      (implies (and (consp (lkp f sigs)) (consp d) (st-ok st o s) (int64-listp ks) (not (mv-nth 0 r)))
+      (implies (and (consp (lkp f sigs)) (consp d) (st-ok st o s) (int64-listp ks)
+                    (equal (len ks) (len (g-st-vals (kar sig) st))) (not (mv-nth 0 r)))
                (and (equal (s-fn-val (g-sym f nil) s ks) (mv nil (mv-nth 1 r)))
                     (scalar-ok (kadr sig) (mv-nth 1 r)))))))
 

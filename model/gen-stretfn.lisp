@@ -88,7 +88,7 @@
 (defthm rfr-ok
   (implies (and (no-duplicatesp-equal (g-formals vs)) (lf-ok locs (append (g-formals vs) objs))
                 (member-equal o objs) (not (member-equal o (g-formals vs))) (not (equal o "r"))
-                (int64-listp ks) (equal (len ks) (len vs)) (equal (lkp key heap) (cons key s)))
+                (int64-listp ks) (equal (len ks) (len vs)) (equal (cdr (lkp key heap)) s))
            (and (em-ok (g-em vs) (pairlis$ vs ks) (rfr rt))
                 (decl-ok locs (rfr rt))
                 (equal (dty "r" (rfr rt)) (list rt))
@@ -120,7 +120,7 @@
         (not (g-role 'if st)) (not (g-role 'implies st)) (not (g-role 'mv-nth st)) (not (g-role 'mv st))
         (no-prim-defs defs) (not (consp (lkp 'mv-nth defs)))
         (not (member-equal o (g-formals vs))) (not (equal o "r")) (member-equal o (st-objs st))
-        (int64-listp ks) (equal (len ks) (len vs)) (equal (lkp key heap) (cons key s))
+        (int64-listp ks) (equal (len ks) (len vs)) (equal (cdr (lkp key heap)) s)
         (st-ok st o s) (em-nostobj (g-em vs) st) (not (car (a-sx x (pairlis$ vs ks) s st defs n)))))
 
 (defmacro rgv (k) `(mv-nth ,k (g-sret x (g-em vs) 0 nil fn sigs (append (g-formals vs) (st-objs st)) st)))
@@ -182,7 +182,7 @@
                   (not (g-role 'if st)) (not (g-role 'implies st)) (not (g-role 'mv-nth st)) (not (g-role 'mv st))
                   (no-prim-defs defs) (not (consp (lkp 'mv-nth defs)))
                   (not (member-equal o (g-formals vs))) (not (equal o "r"))
-                  (int64-listp ks) (equal (len ks) (len vs)) (equal (lkp key heap) (cons key s))
+                  (int64-listp ks) (equal (len ks) (len vs)) (equal (cdr (lkp key heap)) s)
                   (st-ok st o s) (not (car (a-sx x (pairlis$ vs ks) s st defs n)))
                   (equal (cdr (lkp ob caller)) (list* :obj intent key))
                   (integerp fuel) (< (+ 7 (len ks) (acl2-count (grf 1))) fuel))

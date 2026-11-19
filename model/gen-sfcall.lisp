@@ -274,6 +274,15 @@
                  (:instance acall-vals (formals (kar (fsig))) (xs (cdr x)) (n (1- n)) (m (1- n)))
                  (:instance a-prim-not-prim (f (car x)) (vs (mv-nth 1 (a-sxf-list (cdr x) env s st defs (1- n)))))))))
 
+; the value arguments' values are as many as the value formals (sf-orc's ks)
+(defthm len-a-sxf-list
+  (implies (not (mv-nth 0 (a-sxf-list xs env s st defs n))) (equal (len (mv-nth 1 (a-sxf-list xs env s st defs n))) (len xs)))
+  :hints (("Goal" :induct (nl-ind xs n) :in-theory (disable a-sxf) :expand ((a-sxf-list xs env s st defs n)))))
+
+(defthm len-g-cvals
+  (implies (equal (len formals) (len xs)) (equal (len (g-cvals formals xs st)) (len (g-st-vals formals st))))
+  :hints (("Goal" :induct (acv-ind formals xs st n m) :in-theory (disable g-role))))
+
 ; the source: the arguments' values, then f's body, which the oracle answers (sf-orc)
 (defthm gs-call-src
   (implies (and (sf-call-hyps) (sfc-ok :term x sigs st) (not (car (a-sxf x env s st defs n)))
@@ -290,6 +299,8 @@
            :use ((:instance sfc-ok-call)
                  (:instance acall-vals (formals (kar (fsig))) (xs (cdr x)) (n (1- n)) (m (1- n)))
                  (:instance sf-orc-necc (f (car x)) (ks (fks)) (n (1- n)))
+                 (:instance len-a-sxf-list (xs (gcv)) (n (1- n)))
+                 (:instance len-g-cvals (formals (kar (fsig))) (xs (cdr x)))
                  (:instance a-prim-not-prim (f (car x)) (vs (mv-nth 1 (a-sxf-list (cdr x) env s st defs (1- n)))))))))
 
 (defthm gst-not-quote
