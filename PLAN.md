@@ -344,10 +344,10 @@ extension starts before Stage A is done.
    hpg-next-tail and hpg-seq-op -fortran-correct under the hp_* callees' correctness (gen-st-ntail);
    hpg-drain (the subroutine tail loop, gen-st-drain) and hpg-run-from-batch (an
    INTENT(OUT) result, gen-st-rfb) -fortran-correct under their CALLed callees'
-   correctness (p-sorc-d, p-sorc-r), the externs a ghost component of hs.
+   correctness (p-sorc-d, p-sorc-r), the externs a ghost component of hs;
+   hpg-run-take (function calls in assignments, gen-st-take) under p-sorc-t.
    Left, in order: the rest of stobj calls and mv (4a: updates, dests, the
-   mv lambda on sxc), hpg-run-take (4b: needs an evaluator with both
-   function calls and CALL oracles), the `hp_*` externs (4c); values and the
+   mv lambda on sxc), the `hp_*` externs (4c, designed in model/GEN.md); values and the
    runtime shims (two lanes); then acl2-fortran prints g-module's output
    (and its lambda scoping, which leaks a binding to later siblings,
    fixed or shown harmless). About 6 lanes.

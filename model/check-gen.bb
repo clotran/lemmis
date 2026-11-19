@@ -111,7 +111,9 @@
                    ;; gen-st-drain.lisp's copies of hpg-drain and its callees
                    ["heapgn" '[hpg-drain hpg-scan-obj hpg-scan-vec hpg-scan-run hpg-push hpg-add hpg-text-tag] "gen-st-drain"]
                    ;; gen-st-rfb.lisp's copies of hpg-run-from-batch, its callees and their guards
-                   ["heapgn" '[hpg-run-from-batch hpg-run-pop hpg-run-new hpg-rn-ok hpg-al-ok hpg-sw-ok hpg-s64] "gen-st-rfb"]])
+                   ["heapgn" '[hpg-run-from-batch hpg-run-pop hpg-run-new hpg-rn-ok hpg-al-ok hpg-sw-ok hpg-s64] "gen-st-rfb"]
+                   ;; gen-st-take.lisp's copies of hpg-run-take and its callees (hpg-size-class, hpg-class-len above)
+                   ["heapgn" '[hpg-run-take hpg-run-take-c hpg-runs-fill hpg-run-push] "gen-st-take"]])
 (defn defs-text [dir book fns]
   (let [fs (str/join " " fns)
         out (acl2! dir (str "(include-book \"" book "\")\n"

@@ -1093,25 +1093,84 @@ Two findings from acl2-fortran's `stmt` (both fixed now, see above):
    `(mv nil (put d (:int64 . off) caller) (put key (hs-rep comps hpg') heap))`,
    `(mv off hpg')` = hpg-run-from-batch. Copies: hpg-run-from-batch,
    -run-pop, -run-new, hpg-rn-ok, hpg-al-ok, hpg-sw-ok, hpg-s64.
-   **hpg-run-take is not done**: its body assigns `hpg_size_class(n_,1,1)`
-   and `hpg_class_len(c_1,1,1)` (function calls, :fcall, which sv/sxc do not
-   evaluate) before CALLing hpg_run_take_c. It needs sxc with an :fcall
-   case (an oracle answering the stobj-free functions, discharged by
-   hpg-size-class/hpg-class-len -fortran-correct through gen-callarg's
-   f-invoke-args), then the same pattern with hpg_run_take_c as a p-sorc
-   callee. One short lane.
-   **4c next, for the hypotheses**: p-sflits-n, p-sorc-d, p-sorc-r can only
-   be discharged once fsem has the `hp_*` externs. hs-rep fixes the shape to
-   aim for: an extern read/write is one of the "%ext" component's arrays
-   (or scalars) of the heap_state object, so a callee's procedure is a
-   generated subroutine on hs and its p-sorc entry follows from a
-   g-st-fn-sem-style theorem. The loops did not need 4c.
+   **gen-st-tkfn, gen-st-take: `hpg-run-take-fortran-correct`.** The body
+   assigns `c_1 = hpg_size_class(n_,1,1)`, `l_2 = hpg_class_len(c_1,1,1)`
+   (:fcall right-hand sides), then CALLs hpg_run_take_c (OUT r). The
+   function-call case: `f-asg-val-t e fr heap` answers an :fcall of
+   hpg_size_class / hpg_class_len -- the arguments by sv (`svl-t`), three
+   int64s, then the callee's ACL2 value -- and **`asg-t-fcall`** (proved, no
+   hypothesis past `rt-finds`: the procedures' hpg_size_class, hpg_class_len,
+   hpg_n40 are the generated ones, `*tk-hsc*`/`*tk-hcl*`/`*tk-n40*`): f-ev of
+   such a call at fuel past `*rt-b0*` + its size is that value, by
+   `args-at-svl` (sv-answered codes are args-at), gen-callarg's
+   f-invoke-args, and hpg-size-class/hpg-class-len -fortran-correct.
+   gen-st-tkfn is its own book, including gen-disch-call locally: gen-ret's
+   macro `gc1` clashes with gen-stlst's, so no book can include both chains;
+   the generated procedures leave it as constants (make-event). The plan was
+   sxc-t (sxc-r with this :fcall case) and its bridge to f-ex-list; in
+   gen-st-rfb's theory its step lemmas took 115 s and 800 s and the flag
+   induction ran past 1800 s, so the body's run is on f-ex directly instead
+   (`rt-run`: gen-cf's openers f-ex-list-open, f-ex-if, f-ex-assign-var;
+   sv-ok-is-f-ev for the test, asg-t-fcall for the calls, `rt-call` for the
+   CALL), 20 s. The CALL: `s-call-val-t` answers hpg-run-take-c on hs-hpg of
+   the entry (its guard: natp c, natp l <= 2^40, integer batching,
+   hpg-rn-ok), the offset to the last argument, the entry hs-rep'd;
+   **`p-sorc-t`** (p-sorc on it) the named hypothesis. Statement: p-sorc-t,
+   natp b >= `*rt-b0*`, rt-finds, hpgp, hpg-rn-ok, natp n <= 2^40 (the
+   guard), int64 bt, ob INOUT at key, d an int64 variable, dr-heap-at, fuel >
+   11 + b + the body's size: f-invoke of `*rt-proc*` on `(:var ob), n, bt,
+   (:var d)` answers `(mv nil (put d (:int64 . off) caller) (put key (hs-rep
+   comps hpg') heap))`, `(mv off hpg')` = hpg-run-take. Copies (check-gen):
+   hpg-run-take, -run-take-c, -runs-fill, -run-push (hpg-size-class,
+   hpg-class-len as gen-disch-loop's). **Modelling choice, flagged**: like
+   gen-st-drain and gen-st-rfb, the `hp_*` extern state is a ghost component
+   "%ext" of hs's heap entry (hs-rep), not GC.f90's module globals; fsem has
+   no externs yet, so the oracles read the stobj from there. 4c below makes
+   this the semantics.
+   **4c design (the hypotheses p-sflits-n, p-sorc-d, p-sorc-r, p-sorc-t).**
+   What the externs are: GC.f90's module procedures over its globals
+   (obj_pool, obj_mark, vec_store, ...): pure readers `hp_<f>(i)` (an array
+   element), `hp_n_<f>()` (a size, e.g. `5*(size(obj_pool)+1)`), scalars
+   `hp_<f>()`, and writers `call hp_set_<f>(i, x)` / `hp_set_<f>(x)`. The
+   generated code calls them without hs. Plan, in order:
+   (1) fsem: a procedure entry `(:extern name op field key)`, op one of
+   :elem, :size, :scalar, :set-elem, :set-scalar; f-invoke of it evaluates
+   the arguments as for a FUNCTION/SUBROUTINE and reads or writes field of
+   the "%ext" component of the heap entry at key (the heap_state object's
+   key, fixed by the driver: the module state belongs to the one hs; the
+   `:bounds` error outside an array). No new state: the heap already
+   threads through f-invoke. check-fsem: the extern ops against a GC.f90
+   stub per op. The GC's own encodings (logical marks as 0/1, sizes + 1)
+   are op variants, written as each reader's ACL2 accessor answers.
+   (2) The oracles restated on the entry: p-sflits-n's oracle reads hpg0
+   (fixed); restate it, as s-call-val-d/-r/-t already are, on
+   `(hs-hpg (cdr (lkp key heap)))`. Then **per extern, one lemma**: f-invoke
+   of `(:extern "hp_otag" :elem "otag" key)` on an int64 literal answers
+   `(h-otagi i hpg)` when the entry is `hs-rep c hpg` (generic in the field
+   by hs-gen-list; one lemma per op). That discharges p-sflits-n outright
+   (its five callees are pure readers: hpg-ot, hpg-or, hpg-obj-at,
+   hpg-okd, hpg-oi are each one guarded read).
+   (3) For p-sorc-d/-r/-t (hpg_scan_obj, hpg_scan_vec, hpg_run_pop,
+   hpg_run_new, hpg_run_take_c: generated subroutines on hs whose bodies
+   call the externs): gen-st's translation of extern roles first -- g-st
+   refuses them now ("Still refused: extern fields/arrays") -- as
+   acl2-fortran prints them (`hp_f(i)` reads, `call hp_set_f(i, v)`
+   writes), checked by check-gen on the rest of heapgn; then sv/sx read
+   them through the f-invoke of step (1) (sv's :fcall of an extern is an
+   "%ext" read; sx's :call of hp_set_* an "%ext" write), so the per-case
+   lemmas are gs-field/gs-elem/gst-set-*/gst-seti on "%ext" (the same shape
+   as on a component); then each callee by g-st-fn-sem (st-plain bodies)
+   or the drain/rfb pattern (loops, mv), and p-sorc-* follow as
+   gen-stdisch's p-sorc-h-holds does from a table.
+   Estimated: (1)+(2) one lane (discharges p-sflits-n, so hpg-next-tail and
+   hpg-seq-op lose their last hypothesis); (3) one to two lanes.
    **Hypotheses still to discharge** (milestone 2, stobj layer): tab-ok
    (CALL) and sfd-ok (value functions given the stobj), o not a formal's
    name, o not "r", `(g-role nil st)` not :stobj -- each a ground fact
    decided on a given table/configuration; for hpg-next-tail/hpg-seq-op,
    `p-sflits-n` on the five `hp_*` readers, for hpg-drain `p-sorc-d` (hpg_scan_obj,
-   hpg_scan_vec), for hpg-run-from-batch `p-sorc-r` (hpg_run_pop, hpg_run_new) (4c: once
+   hpg_scan_vec), for hpg-run-from-batch `p-sorc-r` (hpg_run_pop, hpg_run_new), for
+   hpg-run-take `p-sorc-t` (hpg_run_take_c) and the ground `rt-finds` (4c: once
    fsem has the externs, prove their procedures answer the oracles).
    Left of 4, restated (2026-11-18): (4a) sx's `:do` and `:call` cases and
    f-invoke of a generated subroutine under a heap-aware oracle (as
@@ -1119,8 +1178,8 @@ Two findings from acl2-fortran's `stmt` (both fixed now, see above):
    (one lane); (4b) the tail self-call in subroutines (g-stail, the DO
    around the body, as g-fn-sem-loop) and g-sret's value functions reading a
    stobj (done, gen-sf*), then the instances (hpg-next-tail, hpg-seq-op: gen-st-ntail;
-   hpg-drain: gen-st-drain; hpg-run-from-batch: gen-st-rfb; left hpg-run-take, an :fcall
-   case in sxc) (a short lane); (4c) the `hp_*` extern
+   hpg-drain: gen-st-drain; hpg-run-from-batch: gen-st-rfb; hpg-run-take: gen-st-take;
+   4b done) ; (4c) the `hp_*` extern
    fields/arrays (fsyn's externs first), for the rest of heapgn (one lane).
 5. Values and the runtime shims (`type(value)`, `rt_*`): fsyn/fsem first need
    an abstract runtime. Two lanes.
