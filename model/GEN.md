@@ -1051,19 +1051,76 @@ Two findings from acl2-fortran's `stmt` (both fixed now, see above):
    (`p-sflits-n-seq`), so only hpg-obj-at, hpg-okd, hpg-oi (and hpg-ot,
    hpg-or through hpg-next-tail) are assumed. check-gen compares the
    copies (hpg-next-tail, hpg-seq-op, the five callees, the accessors).
+   **gen-st-drain: `hpg-drain-fortran-correct`** (the subroutine tail loop).
+   hpg-drain CALLs hpg_scan_obj / hpg_scan_vec, which read and write `hp_*`
+   externs (omark, vmark, smark, otag, ...). A fixed extern state (ntail's
+   hpg0) does not do here, since the loop changes them. **The externs are a ghost
+   component** of hs's heap entry: `hs-rep comps hpg` puts heap_state's
+   twelve fields (err, mtag, mref, msp, nobj, nvec, nstr, alive, nswo, nswv,
+   nsws, afree) from the stobj, and "%ext" the rest of it (`hs-ext`: those
+   twelve slots nil) over `hs-del comps`. `hs-hpg` reads the stobj back
+   (`hs-hpg-rep`), `hs-rep-msp` (a write to msp is the stobj's update-nth),
+   `hs-rep-rep`. Concrete oracle `s-call-val-d` (CALL name, argument codes,
+   frame, heap): on the object's entry e, hpg = (hs-hpg e) with hpgp/hpg-ok
+   (the guard) and the guard's arguments, it answers the frame unchanged and
+   the entry `hs-rep e (hpg-scan-obj i k hpg)` (or -scan-vec). sxc copied as
+   `sxc-d`, and **`p-sorc-d procs b`** (gen-stcall's p-sorc on that oracle)
+   is the named hypothesis; `sxc-d-ok-is-f-ex-list` its functional instance.
+   The loop: `dr-iter-stop`/`dr-iter-step` run the DO's body symbolically
+   (frame facts as disabled predicates `dr-frp`, `dr-hs-at`, `dr-fuel-at`,
+   `dr-heap-at` with rewrite rules: an equality hypothesis on `(lkp "hs" fr)`
+   is not used to rewrite), `dr-loop` the DO by induction on the drain's
+   fuel (`dr-ind`; openers `f-ex-do-cycle`, `f-ex-do-exit2`), `f-invoke-sub-d`
+   the subroutine shape. Statement: on hpgp, hpg-ok, int64 n, ob an INOUT
+   object at key, `(dr-heap-at heap key comps hpg)` (the entry is
+   `hs-rep comps hpg`), fuel > 9 + (n+1)(2 + b + the DO body's acl2-count):
+   f-invoke of `*dr-proc*` (g-st-module's) on `(:var ob), n` answers
+   `(mv nil caller (put key (hs-rep comps (hpg-drain n hpg)) heap))`.
+   Copies (check-gen compares them): hpg-drain, -scan-obj, -scan-vec,
+   -scan-run, -push, hpg-add, hpg-text-tag; the scans keep hpgp/hpg-ok
+   (clotran heapg's guard lemmas, copied). No general g-stail theorem:
+   the DO is reasoned on this procedure only (as ntail's runs are), since
+   gst-sem has no :sub call case yet (4a).
+   **gen-st-rfb: `hpg-run-from-batch-fortran-correct`.** CALLs with an
+   INTENT(OUT) result: `s-call-val-r` answers hpg-run-pop / hpg-run-new on
+   hs-hpg of the entry (guard hpg-rn-ok), the offset put to the CALL's last
+   argument (an int64 variable), the entry hs-rep'd; **`p-sorc-r`** the named
+   hypothesis. The body's run is symbolic (`rfb-run`); `f-invoke-sub-r`
+   (object, two values, an OUT r: copy-out to the caller's d). Statement:
+   hpgp, hpg-rn-ok, natp int64 c, natp l <= 2^40, ob INOUT at key, d an
+   int64 variable of the caller, dr-heap-at, fuel > 11 + b + the body's
+   size: f-invoke of `*rfb-proc*` on `(:var ob), c, l, (:var d)` answers
+   `(mv nil (put d (:int64 . off) caller) (put key (hs-rep comps hpg') heap))`,
+   `(mv off hpg')` = hpg-run-from-batch. Copies: hpg-run-from-batch,
+   -run-pop, -run-new, hpg-rn-ok, hpg-al-ok, hpg-sw-ok, hpg-s64.
+   **hpg-run-take is not done**: its body assigns `hpg_size_class(n_,1,1)`
+   and `hpg_class_len(c_1,1,1)` (function calls, :fcall, which sv/sxc do not
+   evaluate) before CALLing hpg_run_take_c. It needs sxc with an :fcall
+   case (an oracle answering the stobj-free functions, discharged by
+   hpg-size-class/hpg-class-len -fortran-correct through gen-callarg's
+   f-invoke-args), then the same pattern with hpg_run_take_c as a p-sorc
+   callee. One short lane.
+   **4c next, for the hypotheses**: p-sflits-n, p-sorc-d, p-sorc-r can only
+   be discharged once fsem has the `hp_*` externs. hs-rep fixes the shape to
+   aim for: an extern read/write is one of the "%ext" component's arrays
+   (or scalars) of the heap_state object, so a callee's procedure is a
+   generated subroutine on hs and its p-sorc entry follows from a
+   g-st-fn-sem-style theorem. The loops did not need 4c.
    **Hypotheses still to discharge** (milestone 2, stobj layer): tab-ok
    (CALL) and sfd-ok (value functions given the stobj), o not a formal's
    name, o not "r", `(g-role nil st)` not :stobj -- each a ground fact
    decided on a given table/configuration; for hpg-next-tail/hpg-seq-op,
-   `p-sflits-n` on the five `hp_*` readers (4c: once fsem has the externs,
-   prove their procedures answer s-fn-val-n).
+   `p-sflits-n` on the five `hp_*` readers, for hpg-drain `p-sorc-d` (hpg_scan_obj,
+   hpg_scan_vec), for hpg-run-from-batch `p-sorc-r` (hpg_run_pop, hpg_run_new) (4c: once
+   fsem has the externs, prove their procedures answer the oracles).
    Left of 4, restated (2026-11-18): (4a) sx's `:do` and `:call` cases and
    f-invoke of a generated subroutine under a heap-aware oracle (as
    f-call-val is for functions), then gst-sem for g-callst and the mv lambda
    (one lane); (4b) the tail self-call in subroutines (g-stail, the DO
    around the body, as g-fn-sem-loop) and g-sret's value functions reading a
-   stobj (done, gen-sf*), then the instances hpg-drain, hpg-run-from-batch, hpg-run-take
-   (hpg-next-tail, hpg-seq-op done: gen-st-ntail) (one lane); (4c) the `hp_*` extern
+   stobj (done, gen-sf*), then the instances (hpg-next-tail, hpg-seq-op: gen-st-ntail;
+   hpg-drain: gen-st-drain; hpg-run-from-batch: gen-st-rfb; left hpg-run-take, an :fcall
+   case in sxc) (a short lane); (4c) the `hp_*` extern
    fields/arrays (fsyn's externs first), for the rest of heapgn (one lane).
 5. Values and the runtime shims (`type(value)`, `rt_*`): fsyn/fsem first need
    an abstract runtime. Two lanes.
