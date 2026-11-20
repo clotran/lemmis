@@ -13,6 +13,9 @@ whole; use the headings below and `grep -n` / `sed -n`.
 - Fuzzer: `make fuzz` (seed 1, 40 programs) agrees under gfortran and flang; seeds 1-5
   clean (same SCOPE section, "The fuzzer").
 - Oracle cases: 7 fsyn cases + 65 whole programs in model/cases/, all agree.
+- FP accuracy (STUDY-fp-2026-11-20): S1-S2 proved (freal-acc, fsqrt-acc; SCOPE.md
+  freal bullets). Next: S3, a named-assumption book for libm (within N ulp,
+  ASSUME-RN, ASSUME-EVAL-ORDER); not started.
 
 ## Next lanes, in order
 

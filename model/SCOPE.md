@@ -104,6 +104,20 @@ Not a theorem: a test, run by `make check` (exit 1 on any difference).
   real kinds 4 and 8: rounding to nearest even, signed zeros, infinities,
   NaN, subnormals, a correctly rounded SQRT; `assert-event` tests against
   values clj computes, and the cost of its integer square root.
+- `freal-acc.lisp`, `fsqrt-acc.lisp` (STUDY-fp-2026-11-20 S1, S2; facts about
+  freal's definitions, fsem unchanged): fl-round is sign-symmetric, monotone,
+  fixes exactly the representable values (`fl-repr-p`) and rounds onto them,
+  is the nearest representable value with ties to even, within half an ulp,
+  2^-p |q| on the normal range and 2^(emin-p) below it, and finite up to HUGE.
+  + - * / and conversion are fl-round of the exact value (`fl-OP-round`,
+  `-err`, `-nearest`, `-exact`), Sterbenz subtraction is exact, and SQRT is
+  correctly rounded (`fl-sqrt-correct`: the root is exact, or every rational
+  in the open interval of width 2^-j holding it rounds to the result; the
+  integer square root is proved, `isqrt-correct`). Proved directly with
+  arithmetic-5, not through RTL: including kestrel/floats/rtl costs a one-time
+  certification of 666 community books (446 s wall at -j6, ~20 min CPU) plus a
+  portcullis for package RTL, and relating fl-round to rtl::rne/drnd is as
+  much work as the direct proofs.
 - `fintr.lisp`: EXP and LOG of a real, correctly rounded: constrained
   (`fl-mag-correctly-rounded`) to the common rounding of rational Taylor and
   atanh enclosures, whose soundness is proved (`enc-sound`, `ser-sound`), as
