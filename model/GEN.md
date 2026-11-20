@@ -946,16 +946,45 @@ Two findings from acl2-fortran's `stmt` (both fixed now, see above):
    `a-stc-args-upd` (a-stc-is-a-st per stobj argument, a-sx-mono for the
    values). The converse of a-stc-is-a-st fails: a nested lambda's
    (mv-nth 'k mv) argument reads mv under a-stc only.
-   Still open in 4a, in order: (1) the functional instance of gst-callst-u
-   with tab-ok (gen-stinst's pattern: copy a-stcall-u as a-stcall-u-h on
-   ac-orc; one lemma); (2) dests: g-stmt's cons case (g-tvals, g-moves'
-   temporaries "r", g-sacts of the stobj results) into a gst-sem with outs
-   and dests, and c-sorc with OUT results (s-call-val putting the dests);
-   (3) the mv lambda on sxc (g-mvtmps' mv_k temporaries, g-acts-place,
-   a-stc's mv case), gst-lam's pattern; (4) gst-ind extended to :sub calls
-   on sxc-list (gst-sem stated on sxc-list: every st-plain case lemma
-   carries over by sxc-list-is-sx-list, the call case by gst-callst and
-   gst-callst-u, the a-stc side by a-stc-sub-is-a-stcall(-u)).
+   **gen-stsettle.lisp**: gen-stcallu's first 570 lines (the set facts,
+   g-settle static and run, stu-thm), split off when gen-stcallu passed 800
+   lines; its `subsetp-append-r` renamed `subsetp-append-r2` (gen-stfn has
+   the name, so the two could not be included together).
+   **gen-stinstu.lisp** ((4a) (1), 2026-11-20): **`gst-callst-u-h`** --
+   gst-callst-u with `tab-ok` in place of c-sorc and a-call-ok, on
+   sxc-list-h and `a-stcall-u-h` (a-stcall-u copied on ac-orc), by
+   `gst-callst-u-generic`, the functional instance with gen-stinst's
+   pattern (fresh oracle parameters, stinst-hint, c-sorc-h2/a-call-ok-h2).
+   First try; no new hypothesis.
+   **gen-stcalld.lisp** ((4a) (2), first piece): the CALL with OUT results.
+   `g-rvals outs rs` (rs at the value outs), `dests-ok ds fr` (each dest a
+   `(:var v)` with dty v = (:int64), kept by sx-list: `dests-ok-after-sx`),
+   `put-dests ds vs fr` (each v put to (:int64 . value)); **`c-sorc-d o
+   st`**: c-sorc with the dests appended to the CALL's arguments, s-call-val
+   answering the frame put-dests'd with a-call-val's value results and the
+   heap entry put to S'. **`gst-callst-d`**: gst-callst with any true-list
+   dests satisfying dests-ok (no stobj argument an update): :normal, the
+   heap as gst-callst, and the frame exactly `(put-dests dests (g-rvals
+   (g-comp f st) rs) fr1)`, fr1 the frame after the value arguments'
+   statements. c-sorc-d's tab-ok discharge (as gen-stdisch's c-sorc-h) is
+   not done: it needs the generated subroutine's OUT dummies written back
+   (f-invoke's copy-out) -- a gen-stdisch-sized piece.
+   Still open in 4a, in order: (2b) dests through g-stmt: the cons case
+   (g-tvals then g-sacts outs comps then the assigns; with g-moves the values
+   go through "r" temporaries, read before the updates) against a source
+   meaning answering values (a-st plus results: `(mv e S' vs)`, vs the
+   value comps' a-sx on S, S' a-sacts of the stobj comps); g-tvals' run is
+   g-settle's shape (each comp's statements, then a temporary), so copy
+   gen-stsettle's stu-ind/stu-thm recipe; then gst-sem restated with outs
+   and dests (conclusion adds: the frame's dests hold vs) and gst-callst-u
+   with dests (as gen-stcalld); (2c) c-sorc-d (and c-sorc-u-d) under tab-ok;
+   (3) the mv lambda on sxc (g-mvtmps' mv_k temporaries are the dests:
+   dests-ok from decl-ok of the new locs; then g-acts-place, a-stc's mv
+   case reading rs by g-rvals' positions), gst-lam's pattern; (4) gst-ind
+   extended to :sub calls on sxc-list (gst-sem on sxc-list: every st-plain
+   case lemma carries over by sxc-list-is-sx-list, the call case by
+   gst-callst(-d) and gst-callst-u, the a-stc side by
+   a-stc-sub-is-a-stcall(-u)).
    **gen-stret.lisp** ((4b), value functions, first piece): **`gsr-sem-thm`**
    -- g-sret against a-sx on sx-list, unconditional as a gsr-sem fact: on
    call-free bodies, under gs-sem's hypotheses (em-ok, decl-ok, st-ok,
@@ -1371,7 +1400,7 @@ Two findings from acl2-fortran's `stmt` (both fixed now, see above):
    f-invoke of a generated subroutine under a heap-aware oracle (as
    f-call-val is for functions), then gst-sem for g-callst and the mv lambda
    (one lane; 2026-11-20: the CALL with updated stobj arguments done,
-   gen-stcallu/gen-stccallu; left (1)-(4) under gen-stccallu above); (4b) the tail self-call in subroutines (g-stail, the DO
+   gen-stcallu/gen-stccallu; tab-ok instance gen-stinstu, CALL with dests gen-stcalld; left (2b)-(4) under gen-stcalld above); (4b) the tail self-call in subroutines (g-stail, the DO
    around the body, as g-fn-sem-loop) and g-sret's value functions reading a
    stobj (done, gen-sf*), then the instances (hpg-next-tail, hpg-seq-op: gen-st-ntail;
    hpg-drain: gen-st-drain; hpg-run-from-batch: gen-st-rfb; hpg-run-take: gen-st-take;
