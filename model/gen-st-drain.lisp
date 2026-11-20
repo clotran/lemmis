@@ -149,7 +149,30 @@
   (implies (and (hpgp hpg) (hpg-ok hpg) (sb64p tag) (sb64p ref))
            (and (hpgp (hpg-push tag ref hpg)) (hpg-ok (hpg-push tag ref hpg))))
   :hints (("Goal" :in-theory (e/d (hpgp hpg-ok hpg-lens) (nth update-nth hpg-spush)))))
-(in-theory (disable hpg-push))
+; the state facts the CALLed procedures need (gen-st-xdrain): the lengths one GC.f90 size answers
+; are equal (hp_n_obj: okind, omark; hp_n_vec: vmark, vlen, voff; hp_n_arena: aival, atag, aref);
+; hpg_push keeps them, and nt-lens
+(defun xd-lens (h)
+  (and (equal (len (nth *h-omarki* h)) (len (nth *h-okindi* h)))
+       (equal (len (nth *h-vleni* h)) (len (nth *h-vmarki* h))) (equal (len (nth *h-voffi* h)) (len (nth *h-vmarki* h)))
+       (equal (len (nth *h-atagi* h)) (len (nth *h-aivali* h))) (equal (len (nth *h-arefi* h)) (len (nth *h-aivali* h)))))
+
+(defthm hpg-push-len-nth
+  (implies (and (hpg-ok hpg) (natp i) (not (member i '(0 12 13 14 15 16))))
+           (equal (len (nth i (hpg-push tag ref hpg))) (len (nth i hpg))))
+  :hints (("Goal" :in-theory (e/d (hpg-ok hpg-lens hpg-push hpg-spush update-h-omarki update-h-nobj update-h-vmarki update-h-nvec update-h-alive
+                                   update-h-smarki update-h-nstr update-h-mtagi update-h-mrefi update-h-msp update-h-err
+                                   h-omarki h-vmarki h-vleni h-omark-length h-vmark-length h-vlen-length h-smark-length
+                                   h-nobj h-nvec h-alive h-nstr h-msp h-mtag-length)
+                                  (nth update-nth)))))
+
+(defthm hpg-push-lens
+  (implies (hpg-ok hpg) (and (equal (xd-lens (hpg-push tag ref hpg)) (xd-lens hpg)) (equal (nt-lens (hpg-push tag ref hpg)) (nt-lens hpg))))
+  :hints (("Goal" :in-theory (e/d (xd-lens nt-lens) (hpg-push nth hpg-ok)))))
+
+(defthm xd-lens-msp
+  (and (equal (xd-lens (update-nth 12 v h)) (xd-lens h)) (equal (nt-lens (update-nth 12 v h)) (nt-lens h))))
+(in-theory (disable hpg-push xd-lens))
 
 (defmacro hpg-elem (fld)
   (let ((ix (intern-in-package-of-symbol (concatenate 'string "*H-" (symbol-name fld) "I*") 'hpg))
@@ -209,6 +232,21 @@
   :rule-classes :forward-chaining
   :hints (("Goal" :in-theory (enable hpgp hpg-ok hpg-lens))))
 
+(defthm hpg-scan-obj-lens
+  (implies (and (hpgp hpg) (hpg-ok hpg) (natp i) (xd-lens hpg) (nt-lens hpg))
+           (and (xd-lens (hpg-scan-obj i k hpg)) (nt-lens (hpg-scan-obj i k hpg))))
+  :hints (("Goal" :in-theory (disable hpg-ok hpgp nth update-nth h-otagp h-orefp nt-lens))))
+
+(defthm hpg-scan-run-lens
+  (implies (and (hpgp hpg) (hpg-ok hpg) (xd-lens hpg) (nt-lens hpg))
+           (and (xd-lens (hpg-scan-run j e hpg)) (nt-lens (hpg-scan-run j e hpg))))
+  :hints (("Goal" :in-theory (disable hpg-ok hpgp nth update-nth h-atagp h-arefp nt-lens))))
+
+(defthm hpg-scan-vec-lens
+  (implies (and (hpgp hpg) (hpg-ok hpg) (xd-lens hpg) (nt-lens hpg))
+           (and (xd-lens (hpg-scan-vec i hpg)) (nt-lens (hpg-scan-vec i hpg))))
+  :hints (("Goal" :in-theory (disable hpg-ok hpgp hpg-scan-run nth update-nth nt-lens))))
+
 (in-theory (disable hpg-scan-obj hpg-scan-vec hpg-scan-run hpg-ok))
 
 ; (the heap entry, hs-rep / hs-hpg: gen-st-ntail)
@@ -233,18 +271,22 @@
 
 ; ---- the oracle: the callee's ACL2 value on the stobj the entry holds
 
+(defun dr-heap-at (heap key c hpg) (equal (lkp key heap) (cons key (hs-rep c hpg))))
+
 (defun-nx s-call-val-d (name args fr heap)
   (mv-let (err key intent) (obj-of (kadr (kar args)) fr)
     (let* ((e (cdr (lkp key heap))) (hpg (hs-hpg e)))
       (mv-let (e1 i) (sv (kadr args) fr heap)
         (mv-let (e2 k) (sv (kaddr args) fr heap)
-          (cond ((or err (not (eq (kar (kar args)) :var)) (not (eq intent :inout)) e1
-                     (not (hpgp hpg)) (not (hpg-ok hpg)))
+          ; the CALL as drain writes it (the object a variable), the entry canonical, the lengths xd-lens and nt-lens say
+          (cond ((or err (not (equal (kar args) (list :var (kadr (kar args))))) (not (true-listp args))
+                     (not (eq intent :inout)) e1
+                     (not (dr-heap-at heap key e hpg)) (not (hpgp hpg)) (not (hpg-ok hpg)) (not (xd-lens hpg)) (not (nt-lens hpg)))
                  (mv :orc fr heap))
                 ((and (equal name "hpg_scan_obj") (equal (len args) 3) (not e2)
                       (natp i) (< i *hb40*) (natp k) (<= k 5))
                  (mv nil fr (put key (hs-rep e (hpg-scan-obj i k hpg)) heap)))
-                ((and (equal name "hpg_scan_vec") (equal (len args) 2) (natp i))
+                ((and (equal name "hpg_scan_vec") (equal (len args) 2) (natp i) (int64p i))
                  (mv nil fr (put key (hs-rep e (hpg-scan-vec i hpg)) heap)))
                 (t (mv :orc fr heap))))))))
 
@@ -338,6 +380,15 @@
                  (:instance hpg-scan-obj-ok (i (nth (1- (nth 12 hpg)) (nth 11 hpg))) (k 0) (hpg (update-nth 12 (1- (nth 12 hpg)) hpg)))
                  (:instance hpg-scan-vec-ok (i (nth (1- (nth 12 hpg)) (nth 11 hpg))) (hpg (update-nth 12 (1- (nth 12 hpg)) hpg)))))))
 
+(defthm dr-step-lens
+  (implies (and (hpgp hpg) (hpg-ok hpg) (not (zp (nth 12 hpg))) (xd-lens hpg) (nt-lens hpg))
+           (and (xd-lens (dr-step hpg)) (nt-lens (dr-step hpg))))
+  :hints (("Goal" :in-theory (e/d (dr-step h-msp update-h-msp h-mtagi h-mrefi)
+                                  (hpgp hpg-ok nth update-nth hpg-ok-stack hpg-pop-ok hpg-scan-obj-lens hpg-scan-vec-lens nt-lens xd-lens))
+           :use (hpg-ok-stack (:instance hpg-pop-ok (v (1- (nth 12 hpg))))
+                 (:instance hpg-scan-obj-lens (i (nth (1- (nth 12 hpg)) (nth 11 hpg))) (k 0) (hpg (update-nth 12 (1- (nth 12 hpg)) hpg)))
+                 (:instance hpg-scan-vec-lens (i (nth (1- (nth 12 hpg)) (nth 11 hpg))) (hpg (update-nth 12 (1- (nth 12 hpg)) hpg)))))))
+
 (in-theory (disable dr-step hpg-drain))
 
 ; the stack's top entry, in the forms the symbolic run meets
@@ -373,7 +424,6 @@
 
 (defun dr-hs-at (fr key) (equal (lkp "hs" fr) (list* "hs" :obj :inout key)))
 (defun dr-fuel-at (fr n) (equal (lkp "fuel_" fr) (list* "fuel_" :int64 n)))
-(defun dr-heap-at (heap key c hpg) (equal (lkp key heap) (cons key (hs-rep c hpg))))
 
 (defthm dr-hs-at-lkp (implies (dr-hs-at fr key) (equal (lkp "hs" fr) (list* "hs" :obj :inout key))))
 (defthm dr-fuel-at-lkp (implies (dr-fuel-at fr n) (equal (lkp "fuel_" fr) (list* "fuel_" :int64 n))))
@@ -387,7 +437,7 @@
 (defmacro dr-hyps ()
   '(and (dr-frp fr *dr-ls*) (dr-hs-at fr key)
         (dr-fuel-at fr n) (int64p n)
-        (hpgp hpg) (hpg-ok hpg) (dr-heap-at heap key c hpg)))
+        (hpgp hpg) (hpg-ok hpg) (xd-lens hpg) (nt-lens hpg) (dr-heap-at heap key c hpg)))
 
 (defthm dr-iter-stop
   (implies (and (dr-hyps) (dr-stop))
@@ -467,7 +517,7 @@
   :hints (("Goal" :in-theory (enable fb dr-hs-at dr-fuel-at))))
 
 (defthm dr-body-run
-  (implies (and (p-sorc-d procs b) (natp b) (hpgp hpg) (hpg-ok hpg) (int64p n)
+  (implies (and (p-sorc-d procs b) (natp b) (hpgp hpg) (hpg-ok hpg) (xd-lens hpg) (nt-lens hpg) (int64p n)
                 (dr-heap-at heap key comps hpg)
                 (integerp k) (< (+ 2 (* (+ 1 (nfix n)) (dr-k b))) k))
            (and (equal (mv-nth 0 (f-ex-list *dr-body* (dr-frame) heap procs k)) :normal)
@@ -486,7 +536,7 @@
 
 (defthm hpg-drain-fortran-correct
   (implies (and (p-sorc-d procs b) (natp b)
-                (hpgp hpg) (hpg-ok hpg) (int64p n)
+                (hpgp hpg) (hpg-ok hpg) (xd-lens hpg) (nt-lens hpg) (int64p n)
                 (equal (cdr (lkp ob caller)) (list* :obj :inout key))
                 (dr-heap-at heap key comps hpg)
                 (integerp fuel) (< (+ 9 (* (+ 1 (nfix n)) (dr-k b))) fuel))

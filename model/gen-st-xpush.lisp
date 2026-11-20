@@ -18,7 +18,11 @@
                             (mv-let (e ps) (g-module (list (assoc-eq 'hpg-text-tag *heapg-st-raw*)) '(hpg-text-tag))
                               (if e nil ps))))
 
-(assert-event (and (equal *sp-proc* *spush-proc*) *ps-proc* *x-tt*))
+(defconst *so-proc* (find-proc "hpg_scan_obj" *heapg-xmod*))
+(defconst *sr-proc* (find-proc "hpg_scan_run" *heapg-xmod*))
+(defconst *sv-proc* (find-proc "hpg_scan_vec" *heapg-xmod*))
+
+(assert-event (and (equal *sp-proc* *spush-proc*) *ps-proc* *x-tt* *so-proc* *sr-proc* *sv-proc*))
 
 (defconst *xd-externs*
   `((:extern "hp_omark" :elem ,*h-omarki*) (:extern "hp_set_omark" :set-elem ,*h-omarki*)
@@ -31,14 +35,12 @@
  `(defmacro xp-finds ()
     '(and (xt-finds) (nt-finds) ,@(xr-finds-fn *xd-externs*)
           (equal (find-proc "hpg_spush" procs) *sp-proc*) (equal (find-proc "hpg_push" procs) *ps-proc*)
-          (equal (find-proc "hpg_text_tag" procs) *x-tt*))))
+          (equal (find-proc "hpg_text_tag" procs) *x-tt*)
+          (equal (find-proc "hpg_scan_obj" procs) *so-proc*) (equal (find-proc "hpg_scan_run" procs) *sr-proc*)
+          (equal (find-proc "hpg_scan_vec" procs) *sv-proc*))))
 
-; the state fact (as nt-lens): the lengths one GC.f90 size answers are equal
-; (hp_n_obj: okind, omark; hp_n_vec: vmark, vlen, voff; hp_n_arena: aival, atag, aref)
-(defun xd-lens (h)
-  (and (equal (len (nth *h-omarki* h)) (len (nth *h-okindi* h)))
-       (equal (len (nth *h-vleni* h)) (len (nth *h-vmarki* h))) (equal (len (nth *h-voffi* h)) (len (nth *h-vmarki* h)))
-       (equal (len (nth *h-atagi* h)) (len (nth *h-aivali* h))) (equal (len (nth *h-arefi* h)) (len (nth *h-aivali* h)))))
+; the state fact xd-lens (gen-st-drain, as nt-lens): the lengths one GC.f90 size answers are equal
+(in-theory (enable xd-lens))
 
 ; ---- hs-rep: a component write is the stobj's update-nth; its reads
 
@@ -426,3 +428,16 @@
 
 (xd-ex-ps-thm xd-ex-ps-obj "hp_otag" "hp_oref" "j_2" *h-otagi* *h-orefi*
               (:extern "hp_otag" :elem 1) (:extern "hp_oref" :elem 2))
+
+; and as hpg_scan_run writes it (the arena word j_)
+(defmacro xd-arena-lin (name i el)
+  `(defthm ,name
+     (implies (and (hpgp hpg) (natp j) (< j (len (nth ,i hpg))))
+              (and (<= (nth j (nth ,i hpg)) 9223372036854775807) (<= -9223372036854775808 (nth j (nth ,i hpg)))))
+     :rule-classes :linear
+     :hints (("Goal" :in-theory (union-theories '(nfix natp) (theory 'minimal-theory)) :use ((:instance ,el))))))
+(xd-arena-lin xd-atag-lin *h-atagi* hpg-atag-elem)
+(xd-arena-lin xd-aref-lin *h-arefi* hpg-aref-elem)
+
+(xd-ex-ps-thm xd-ex-ps-run "hp_atag" "hp_aref" "j_" *h-atagi* *h-arefi*
+              (:extern "hp_atag" :elem 7) (:extern "hp_aref" :elem 8))
