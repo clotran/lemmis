@@ -969,28 +969,62 @@ Two findings from acl2-fortran's `stmt` (both fixed now, see above):
    statements. c-sorc-d's tab-ok discharge (as gen-stdisch's c-sorc-h) is
    not done: it needs the generated subroutine's OUT dummies written back
    (f-invoke's copy-out) -- a gen-stdisch-sized piece.
-   Still open in 4a, in order: (2b) dests through g-stmt: the cons case
-   (g-tvals then g-sacts outs comps then the assigns; with g-moves the values
-   go through "r" temporaries, read before the updates) against a source
-   meaning answering values (a-st plus results: `(mv e S' vs)`, vs the
-   value comps' a-sx on S, S' a-sacts of the stobj comps); g-tvals' run is
-   g-settle's shape (each comp's statements, then a temporary), so copy
-   gen-stsettle's stu-ind/stu-thm recipe; then gst-sem restated with outs
-   and dests (conclusion adds: the frame's dests hold vs) and gst-callst-u
-   with dests (as gen-stcalld); (2c) c-sorc-d (and c-sorc-u-d) under tab-ok;
+   **gen-stcons.lisp** ((4a) (2b), first piece, 2026-11-20): g-stmt's cons
+   case. **`tv-thm`** (g-tvals run, gen-stsettle's stu-ind/stu-thm recipe:
+   disabled defun-nx contexts `tv-tctx`/`tv-dctx`, shape equalities
+   `tv-ta-eq`/`tv-da-eq` as rewrite rules, fact lemmas in `mthy`, induction
+   `tv-ind2`): under gs-sem's hypotheses plus `(equal (len outs) (len
+   comps))`, dests-ok, `(len dests)` = the value components' count,
+   `(no-duplicatesp (dnames dests))` and the dests' names apart from
+   fnames, em's names and the final locs, the statements answer :normal, the
+   heap unchanged, the values (a-sx-list of `(g-rvals outs comps)`, int64s)
+   held by the dests (direct) or by the "r" temporaries (tmp = g-moves).
+   **`tvn-thm`**: its names (`tvn-ok`: locs grow; assignments within the new
+   locals, plus the dests when direct; apart from the old names; tmp: the
+   r codes stable, within the final locs, and `as` = `(asn-gen dests rs)`).
+   `asn-run`: the dests from the r temporaries. **`gst-cons`**: for x =
+   `(cons ...)`, g-stmt with dests (tself nil) against `a-tuple` (the value
+   components on S, S' = a-sacts of the stobj components): :normal, the heap
+   the object put to S', S' with st-ok/st-wf, and `(svs-is dests vs ...)`
+   -- each dest answers its value. Hypotheses: gst-sem's, the dests facts
+   above, and the updates' gsc-sem/stan-ok at the frame after the values (as
+   gst-callst-u takes them). Traps: equalities :use'd into a goal are not
+   substituted (write the step as a rewrite rule, or :use a glue lemma whose
+   own proof substitutes a variable, `tv-glue`); a rule whose LHS mentions
+   `(g-moves ...)` stops matching once a case split replaces that term by
+   T/NIL (state the two cases separately, :use them). cn-names takes ~120 s
+   in the full theory (left as is).
+   **gen-stcallud.lisp** ((4a) (2b), last piece): **`gst-callst-u-d`** --
+   gst-callst-u with dests: c-sorc-d answers the CALL, the frame exactly
+   `(put-dests dests (g-rvals (g-comp f st) rs) fr2)`, fr2 the frame after the
+   settled values and the updates, rs a-stcall-u's results. gen-stcallu's
+   facts reused through `g-callst-dests` (g-callst's error and locals do not
+   depend on dests); c-sorc stays a hypothesis (via callu-hyps) beside
+   c-sorc-d.
+   Still open in 4a, in order: (2b) the middle piece: gst-sem restated with
+   outs and dests over every case -- a source meaning answering values
+   (`(mv e S' vs)`: a-tuple for cons, a-st's cases with vs nil, if, the
+   lambda's body, a :sub call by a-stcall/a-stcall-u's results through
+   g-rvals), the conclusion adding `(svs-is dests vs fr2 heap2)`, the dests
+   facts threaded (dnames apart from the final locs; the if/lambda pass dests
+   unchanged), and stn-ok widened (a cons/call statement assigns the dests);
+   its cases are gst-cons, gst-callst-d, gst-callst-u-d and the old gst-*
+   lemmas with vs nil; (2c) c-sorc-d (and dropping c-sorc beside it in
+   gst-callst-u-d) under tab-ok, as gen-stdisch's c-sorc-h: needs the
+   generated subroutine's OUT dummies copied back to the dests (f-invoke's
+   copy-out);
    (3) the mv lambda on sxc (g-mvtmps' mv_k temporaries are the dests:
    done, `g-mvtmps-dests-ok` in gen-stcalld -- true-list and dests-ok
    wherever g-mvtmps' final locs are decl-ok, by `dests-in`; then the outer
-   lambda binding mv (g-callst with mdests, gst-callst-d) and the inner one
-   binding (mv-nth 'k mv) through em's (mv k) entries (g-sexpr reads the
-   temporary; a-sx errors on mv-nth, so the inner lambda's args are a-stc's
-   mv-nth case only -- the source side needs a-stc-args' env read of mv);
-   then g-acts-place, a-stc's mv
-   case reading rs by g-rvals' positions), gst-lam's pattern; (4) gst-ind
-   extended to :sub calls on sxc-list (gst-sem on sxc-list: every st-plain
-   case lemma carries over by sxc-list-is-sx-list, the call case by
-   gst-callst(-d) and gst-callst-u, the a-stc side by
-   a-stc-sub-is-a-stcall(-u)).
+   lambda binding mv (g-callst with mdests, gst-callst-d / gst-callst-u-d)
+   and the inner one binding (mv-nth 'k mv) through em's (mv k) entries
+   (g-sexpr reads the temporary; a-sx errors on mv-nth, so the inner
+   lambda's args are a-stc's mv-nth case only -- the source side needs
+   a-stc-args' env read of mv); then g-acts-place, a-stc's mv case reading
+   rs by g-rvals' positions), gst-lam's pattern; (4) gst-ind extended to
+   :sub calls on sxc-list (gst-sem on sxc-list: every st-plain case lemma
+   carries over by sxc-list-is-sx-list, the call case by gst-callst(-d) and
+   gst-callst-u(-d), the a-stc side by a-stc-sub-is-a-stcall(-u)).
    **gen-stret.lisp** ((4b), value functions, first piece): **`gsr-sem-thm`**
    -- g-sret against a-sx on sx-list, unconditional as a gsr-sem fact: on
    call-free bodies, under gs-sem's hypotheses (em-ok, decl-ok, st-ok,
@@ -1406,7 +1440,7 @@ Two findings from acl2-fortran's `stmt` (both fixed now, see above):
    f-invoke of a generated subroutine under a heap-aware oracle (as
    f-call-val is for functions), then gst-sem for g-callst and the mv lambda
    (one lane; 2026-11-20: the CALL with updated stobj arguments done,
-   gen-stcallu/gen-stccallu; tab-ok instance gen-stinstu, CALL with dests gen-stcalld; left (2b)-(4) under gen-stcalld above); (4b) the tail self-call in subroutines (g-stail, the DO
+   gen-stcallu/gen-stccallu; tab-ok instance gen-stinstu, CALL with dests gen-stcalld, the cons case gen-stcons, CALL with updates and dests gen-stcallud; left (2b)'s gst-sem restatement, (2c)-(4), under gen-stcallud above); (4b) the tail self-call in subroutines (g-stail, the DO
    around the body, as g-fn-sem-loop) and g-sret's value functions reading a
    stobj (done, gen-sf*), then the instances (hpg-next-tail, hpg-seq-op: gen-st-ntail;
    hpg-drain: gen-st-drain; hpg-run-from-batch: gen-st-rfb; hpg-run-take: gen-st-take;
