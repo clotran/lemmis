@@ -1258,7 +1258,7 @@ Two findings from acl2-fortran's `stmt` (both fixed now, see above):
    statement of a loop body, composed by :use (their free variables are not
    bound by rewriting), with every f-ex/f-ex-list rewriter disabled while
    composing (rf-c-thy); CALL statements in an rtv-style form (no free vars),
-   proved in a minimal theory -- this book's default theory is slow. (ii) p-sorc-d:
+   proved in a minimal theory -- this book's default theory is slow. (ii) p-sorc-d: DONE (gen-st-xdrain, gen-st-xvec, below).
    hpg_scan_obj (DO loop CALLing hpg_push) and hpg_scan_vec (CALLs
    hpg_scan_run, a loop CALLing hpg_push); hpg_push writes components (nobj,
    nvec, alive, nstr: an hs-rep put of a visible field) and externs, and
@@ -1291,21 +1291,22 @@ Two findings from acl2-fortran's `stmt` (both fixed now, see above):
    hp_n_vec vmark/vlen/voff, hp_n_arena aival/atag/aref; externs `*xd-externs*`),
    then gen-st-xdrain (scan_obj/scan_run DO loops by fuel, scan_vec, the
    s-call-val-d CALLs, p-sorc-d-holds, hpg-drain-fortran-correct-x).
-   Status (aa32643): gen-st-xpush certified (~420 lines): sp-run/sp-ok/
-   xd-ex-sp (spush), ps-a/b/c-run per branch + ps-run composed with
-   f-ex-list-open/f-ex-if disabled, ps-ok, xd-ex-ps-obj (push's CALL with
-   hp_otag/hp_oref(j_2) args; the macro xd-ex-ps-thm gives scan_run's
-   hp_atag/hp_aref(j_) one). Left, in a new gen-st-xdrain: (1) scan_obj's DO:
-   so-s1 (t_1 = k<0 or 5<=k), the j_2 assign, the hp_n_oslot test (t_3, nt-lens),
-   the CALL (xd-ex-ps-obj) + the four assigns + cycle, composed like rf-t1..3 /
-   rf-iter-exit/-cycle, the loop by induction on 5-k (rf-ind/rf-loop); then
-   f-invoke (f-invoke-sub-d) and its CALL from drain's frame (as pu-okc/xt-ex-pu).
-   (2) the same for scan_run (bound by hp_n_arena = aival's size, so xd-lens'
-   atag/aref = aival), (3) scan_vec (no loop; hp_n_vec twice, voff/vlen via
-   max(0,..), CALL scan_run), (4) p-sorc-d-holds (each s-call-val-d case is one
-   of the two CALLs; drain's oracle wants hpg-ok, the CALL lemmas also xd-lens and
-   nt-lens, so s-call-val-d may need those added as gen-st-xrfb did for s-call-val-r),
-   (5) hpg-drain-fortran-correct-x under xp-finds + xd-lens + nt-lens.
+   **DONE (2026-11-20):** gen-st-xdrain (scan_obj, scan_run) and gen-st-xvec
+   (scan_vec, p-sorc-d-holds, hpg-drain-fortran-correct-x under xp-finds +
+   xd-lens + nt-lens only; xp-finds now also finds hpg_scan_obj/run/vec).
+   s-call-val-d (gen-st-drain) now asks the CALL shape (object a :var, args a
+   true list), a canonical entry (dr-heap-at), xd-lens and nt-lens; xd-lens moved
+   to gen-st-drain, hpg-push-len-nth / hpg-scan-*-lens / dr-step-lens show the
+   scans keep it, so the drain's own loop carries it. Each loop: one lemma per
+   statement (so-s1/e1/e2/f, sr-s1/e1/f), composed by :use (so-t1..3, iter-exit/
+   -cycle), DO by induction on 5-k / e-j; the frame-free hypotheses closed in a
+   disabled so-env/sr-env/sv-env (open, a :use'd lemma's xp-finds split so-t2
+   into 454 cases, 280s). CALLs on any codes via f-invoke-st-codes (so-okc,
+   sr-okc, sv-okc). scan_run's fuel bound is 2^40 (its e), so *xd-b* is too.
+   xd-ex-ps-run sits in gen-st-xpush: in gen-st-xdrain's theory it ran >9 min.
+   Trap: a rewrite rule whose free variable is bound by a (< j (len (nth atag
+   ..))) hypothesis fails once another rule rewrites that len (xd-lens-arena,
+   now disabled by default).
    Traps met: a :use'd fact whose hypothesis a rewrite rule proves is dropped
    (use :cases, or disable the rule); f-invoke of a function callee needs
    f-invoke disabled and an explicit :free expand (gen-st-xrfb rn-run);
@@ -1317,8 +1318,8 @@ Two findings from acl2-fortran's `stmt` (both fixed now, see above):
    name, o not "r", `(g-role nil st)` not :stobj -- each a ground fact
    decided on a given table/configuration; for hpg-next-tail/hpg-seq-op,
    none past the ground `nt-finds` and the state fact `nt-lens`
-   (gen-st-ext, 4c (1)+(2) above), for hpg-drain `p-sorc-d` (hpg_scan_obj,
-   hpg_scan_vec), for hpg-run-from-batch none past the ground `xr-finds` (p-sorc-r discharged, gen-st-xrfb), for
+   (gen-st-ext, 4c (1)+(2) above), for hpg-drain none past the ground `xp-finds` and the state facts
+   `xd-lens`, `nt-lens` (p-sorc-d discharged, gen-st-xvec), for hpg-run-from-batch none past the ground `xr-finds` (p-sorc-r discharged, gen-st-xrfb), for
    hpg-run-take `p-sorc-t` (hpg_run_take_c) and the ground `rt-finds` (4c: once
    fsem has the externs, prove their procedures answer the oracles).
    Left of 4, restated (2026-11-18): (4a) sx's `:do` and `:call` cases and
