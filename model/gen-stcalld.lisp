@@ -113,3 +113,38 @@
                             (c (list :call (g-sym (car x) nil) (append (g-scs (g-obj (car x) st) (cdr x) st) (gca 2) dests)))
                             (fr1 (put-dests dests (g-rvals (g-comp (car x) st) (mv-nth 2 (a-call-val (car x) (cks) s))) (cfr1)))
                             (h2 (put (okey o fr) (mv-nth 1 (a-call-val (car x) (cks) s)) heap)))))))
+
+; ---- the mv lambda's dests: g-mvtmps' temporaries, declared int64 by its locs
+
+(defthm g-mvtmps-locs-grow
+  (implies (not (mv-nth 0 (g-mvtmps outs k cnt locs used)))
+           (subsetp-equal (true-list-fix locs) (mv-nth 4 (g-mvtmps outs k cnt locs used))))
+  :hints (("Goal" :induct (g-mvtmps outs k cnt locs used) :in-theory (disable g-tmp g-used))))
+
+(defun dests-in (ds locs)
+  (if (atom ds) t
+    (and (equal (car ds) (list :var (kadr (car ds)))) (member-equal (cons (kadr (car ds)) :int64) locs)
+         (dests-in (cdr ds) locs))))
+
+(defthm dests-in-subset
+  (implies (and (dests-in ds a) (subsetp-equal a b)) (dests-in ds b)))
+
+(defthm dests-in-ok
+  (implies (and (dests-in ds locs) (decl-ok locs fr)) (dests-ok ds fr))
+  :hints (("Goal" :induct (len ds) :in-theory (disable dty))))
+
+(defthm g-mvtmps-dests-in
+  (implies (not (mv-nth 0 (g-mvtmps outs k cnt locs used)))
+           (and (true-listp (mv-nth 2 (g-mvtmps outs k cnt locs used)))
+                (dests-in (mv-nth 2 (g-mvtmps outs k cnt locs used)) (mv-nth 4 (g-mvtmps outs k cnt locs used)))))
+  :hints (("Goal" :induct (g-mvtmps outs k cnt locs used) :in-theory (disable g-tmp g-used nfix g-mvtmps-locs-grow))
+          ("Subgoal *1/4" :use ((:instance g-mvtmps-locs-grow (outs (cdr outs)) (k (1+ (nfix k))) (cnt (1+ (nfix cnt)))
+                                           (locs (cons (cons (g-tmp 'mv (1+ (nfix cnt))) :int64) (true-list-fix locs))))))))
+
+(defthm g-mvtmps-dests-ok
+  (implies (and (not (mv-nth 0 (g-mvtmps outs k cnt locs used))) (decl-ok (mv-nth 4 (g-mvtmps outs k cnt locs used)) fr))
+           (and (true-listp (mv-nth 2 (g-mvtmps outs k cnt locs used)))
+                (dests-ok (mv-nth 2 (g-mvtmps outs k cnt locs used)) fr)))
+  :hints (("Goal" :in-theory (disable g-mvtmps dests-in-ok dests-in dests-ok)
+           :use (g-mvtmps-dests-in (:instance dests-in-ok (ds (mv-nth 2 (g-mvtmps outs k cnt locs used)))
+                                              (locs (mv-nth 4 (g-mvtmps outs k cnt locs used))))))))

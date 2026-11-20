@@ -979,7 +979,13 @@ Two findings from acl2-fortran's `stmt` (both fixed now, see above):
    and dests (conclusion adds: the frame's dests hold vs) and gst-callst-u
    with dests (as gen-stcalld); (2c) c-sorc-d (and c-sorc-u-d) under tab-ok;
    (3) the mv lambda on sxc (g-mvtmps' mv_k temporaries are the dests:
-   dests-ok from decl-ok of the new locs; then g-acts-place, a-stc's mv
+   done, `g-mvtmps-dests-ok` in gen-stcalld -- true-list and dests-ok
+   wherever g-mvtmps' final locs are decl-ok, by `dests-in`; then the outer
+   lambda binding mv (g-callst with mdests, gst-callst-d) and the inner one
+   binding (mv-nth 'k mv) through em's (mv k) entries (g-sexpr reads the
+   temporary; a-sx errors on mv-nth, so the inner lambda's args are a-stc's
+   mv-nth case only -- the source side needs a-stc-args' env read of mv);
+   then g-acts-place, a-stc's mv
    case reading rs by g-rvals' positions), gst-lam's pattern; (4) gst-ind
    extended to :sub calls on sxc-list (gst-sem on sxc-list: every st-plain
    case lemma carries over by sxc-list-is-sx-list, the call case by
