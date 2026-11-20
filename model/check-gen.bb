@@ -110,7 +110,7 @@
 ;; procedures, the hpg_spush module, g-module of heapgn's value functions, and
 ;; the hp_* extern table) every ground side condition the proved theorems
 ;; take as a hypothesis must evaluate to t: names distinct, nt-finds, xr-finds,
-;; xt-finds, rt-finds, the module = the instance books' *heapg-xmod*; tab-ok on
+;; xt-finds, rt-finds, xp-finds (p-sorc-d's, gen-st-xpush), the module = the instance books' *heapg-xmod*; tab-ok on
 ;; hpg_spush and sfd-ok on hpg_ot/or/okd/oi. (gen-stdisch and gen-sfdisch clash
 ;; on g-scs-one, so tab-ok and sfd-ok are evaluated in sessions of their own.)
 (defn mod-ok! [raws]
@@ -124,15 +124,16 @@
                  "(defconst *xmod* (mv-let (e ps) (g-st-module *raw* *bools* *heapg-xfns* *heapg-xst*) (if e nil ps)))\n"
                  "(defconst *spmod* (mv-let (e ps) (g-st-module *raw* *bools* '(hpg-spush) *heapg-xst*) (if e nil ps)))\n"
                  "(defconst *procs* (append *xmod* *spmod*))\n")
-        checks [["gen-st-xtake"
-                 (str "(defconst *heapg-externs* (append *nt-externs* *xr-externs* (list (list :extern \"hp_set_rb\" :set-elem *h-rbi*))))\n"
+        checks [["gen-st-xpush"
+                 (str "(defconst *heapg-externs* (append *nt-externs* *xr-externs* (list (list :extern \"hp_set_rb\" :set-elem *h-rbi*)) *xd-externs*))\n"
                       "(defconst *mprocs* (append *procs* '" vmod " *heapg-externs*))\n"
                       "(cw \"~%MODOK names-distinct ~x0~%\" (no-duplicatesp-equal (strip-cadrs *mprocs*)))\n"
                       "(cw \"~%MODOK xmod ~x0~%\" (and *xmod* (equal *xmod* *heapg-xmod*)))\n"
                       "(cw \"~%MODOK nt-finds ~x0~%\" (let ((procs *mprocs*)) (nt-finds)))\n"
                       "(cw \"~%MODOK xr-finds ~x0~%\" (let ((procs *mprocs*)) (xr-finds)))\n"
                       "(cw \"~%MODOK xt-finds ~x0~%\" (let ((procs *mprocs*)) (xt-finds)))\n"
-                      "(cw \"~%MODOK rt-finds ~x0~%\" (let ((procs *mprocs*)) (rt-finds)))\n")]
+                      "(cw \"~%MODOK rt-finds ~x0~%\" (let ((procs *mprocs*)) (rt-finds)))\n"
+                      "(cw \"~%MODOK xp-finds ~x0~%\" (let ((procs *mprocs*)) (xp-finds)))\n")]
                 ["gen-stdisch"
                  "(cw \"~%MODOK tab-ok ~x0~%\" (tab-ok (list (assoc-eq 'hpg-spush *raw*)) (g-defs *raw*) (g-sigs *raw* *bools*) *st* (g-defs *raw*) *procs* \"hs\" 10000))\n"]
                 ["gen-sfdisch"

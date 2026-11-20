@@ -1277,6 +1277,20 @@ Two findings from acl2-fortran's `stmt` (both fixed now, see above):
    functions + the hp_* externs): names distinct, module = *heapg-xmod*,
    nt-finds, xr-finds, xt-finds, rt-finds, tab-ok (hpg_spush), sfd-ok
    (hpg_ot/or/okd/oi); all t, and the build fails on any other answer.
+   **p-sorc-d route (2026-11-19): the bespoke instance, not the general
+   module theorem** (VALIDATION-DESIGN step 3). The general `mod-ok =>
+   every procedure correct` needs each procedure's f-invoke to answer
+   a-sx/a-sxf of its source, and hpg_push/scan_obj/scan_vec/scan_run read
+   and write the hp_* externs, which a-sx cannot evaluate yet (item (iii):
+   sv takes no procs, gs-xfield/-xsize/-xelem are not real per-case lemmas,
+   gst-* lack :xset/:xseti). That is an fsyn/fsem change plus new per-construct
+   lemmas before the module theorem can even be stated for these procedures,
+   well past the ~1.5k-line bespoke budget, so p-sorc-d goes the gen-st-xtake
+   way: gen-st-xpush (hpg_spush, hpg_push run on hs's entry, push's CALL as
+   scan_obj writes it; state fact `xd-lens`: hp_n_obj sizes okind and omark,
+   hp_n_vec vmark/vlen/voff, hp_n_arena aival/atag/aref; externs `*xd-externs*`),
+   then gen-st-xdrain (scan_obj/scan_run DO loops by fuel, scan_vec, the
+   s-call-val-d CALLs, p-sorc-d-holds, hpg-drain-fortran-correct-x).
    **Hypotheses still to discharge** (milestone 2, stobj layer): tab-ok
    (CALL) and sfd-ok (value functions given the stobj), o not a formal's
    name, o not "r", `(g-role nil st)` not :stobj -- each a ground fact
