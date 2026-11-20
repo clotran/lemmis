@@ -7,6 +7,7 @@
 (in-package "ACL2")
 
 (include-book "fsem")
+(include-book "tools/flag" :dir :system)
 
 (defun cf-expr (e)
   (declare (xargs :guard t))
@@ -340,22 +341,17 @@
 (defthm lkp-agree-append
   (equal (lkp-agree (append a b) fr fr2) (and (lkp-agree a fr fr2) (lkp-agree b fr fr2))))
 
-(defun fv-agree-ind (flag e)
-  (declare (xargs :measure (acl2-count e)))
-  (if (eq flag :list) (if (atom e) nil (list (fv-agree-ind :one (car e)) (fv-agree-ind :list (cdr e))))
-    (if (atom e) nil (list (fv-agree-ind :one (kadr e)) (fv-agree-ind :one (kaddr e)) (fv-agree-ind :list (kaddr e))))))
+(make-flag flag-fv fv)
 
-(defthm fv-agree-flag
-  (if (eq flag :list)
-      (implies (lkp-agree (ev-names-list e) fr fr2) (equal (fv-list e fr2) (fv-list e fr)))
-    (implies (lkp-agree (ev-names e) fr fr2) (equal (fv e fr2) (fv e fr))))
-  :rule-classes nil
-  :hints (("Goal" :induct (fv-agree-ind flag e) :in-theory (disable binop arith)
-           :expand ((fv e fr) (fv e fr2) (fv-list e fr) (fv-list e fr2) (ev-names e) (ev-names-list e)))))
-
-(defthm fv-agree
-  (implies (lkp-agree (ev-names e) fr fr2) (equal (fv e fr2) (fv e fr)))
-  :hints (("Goal" :use (:instance fv-agree-flag (flag :one)))))
+(defthm-flag-fv fv-agree
+  (defthm fv-agree
+    (implies (lkp-agree (ev-names e) fr fr2) (equal (fv e fr2) (fv e fr)))
+    :flag fv)
+  (defthm fv-list-agree
+    (implies (lkp-agree (ev-names-list es) fr fr2) (equal (fv-list es fr2) (fv-list es fr)))
+    :flag fv-list)
+  :hints (("Goal" :in-theory (disable binop arith)
+           :expand ((fv e fr) (fv e fr2) (fv-list es fr) (fv-list es fr2) (ev-names e) (ev-names-list es)))))
 
 ; flag :list a statement list, :arms a select's arms
 (defun asg (flag x)
