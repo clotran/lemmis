@@ -10,7 +10,10 @@
 ;;
 ;;   CLOTRAN=/path/to/clotran ACL2=/path/to/saved_acl2 bb check-gen.bb   (from model/, gen certified)
 ;;
-;; Exit 1 on any difference, or a function either side refuses.
+;; Then mod-ok (VALIDATION-DESIGN.md step 1): the ground side conditions,
+;; evaluated on the regenerated module (below).
+;;
+;; Exit 1 on any difference, a function either side refuses, or a mod-ok condition not t.
 (require '[babashka.process :as p] '[babashka.fs :as fs] '[clojure.string :as str] '[clojure.edn :as edn])
 (load-file "fprint.clj")
 
@@ -96,8 +99,56 @@
               (doseq [[a t] (map vector (concat ours (repeat "<none>")) (or theirs ["<not found>"]))
                       :when (not= a t)] ; first differences only
                 (println "  gen.lisp:     " a) (println "  acl2-fortran: " t))))))))
+(def heapg-raws (atom nil))
 (doseq [{:keys [book file fns bools raw st] :as b} books]
-  (compare! file fns (translate (dump b) bools raw fns st)))
+  (let [raws (dump b)]
+    (when (= raw "*heapg-st-raw*") (reset! heapg-raws raws))
+    (compare! file fns (translate raws bools raw fns st))))
+
+;; mod-ok (VALIDATION-DESIGN.md step 1, a check, not a theorem): on the module
+;; regenerated from clotran's hand-over (g-st-module of heapgn's stobj
+;; procedures, the hpg_spush module, g-module of heapgn's value functions, and
+;; the hp_* extern table) every ground side condition the proved theorems
+;; take as a hypothesis must evaluate to t: names distinct, nt-finds, xr-finds,
+;; xt-finds, rt-finds, the module = the instance books' *heapg-xmod*; tab-ok on
+;; hpg_spush and sfd-ok on hpg_ot/or/okd/oi. (gen-stdisch and gen-sfdisch clash
+;; on g-scs-one, so tab-ok and sfd-ok are evaluated in sessions of their own.)
+(defn mod-ok! [raws]
+  (let [vout (acl2! "." (str "(include-book \"gen-inst\")\n(set-iprint nil)\n"
+                             "(cw \"~%VMOD ~x0~%\" (mv-let (e ps) (g-module *heapgn-raw* *heapgn-bools*) (if e nil ps)))\n(good-bye)\n"))
+        vmod (form-text (second (str/split vout #"\nVMOD\s+")))
+        pre (str "(include-book \"gen-st-heap\")\n(set-iprint nil)\n"
+                 "(defconst *raw* '(" (str/join "\n" raws) "))\n"
+                 "(defconst *bools* '(hpg-obj-at hpg-text-tag))\n"
+                 "(defconst *st* (append *heapg-xst* (g-st-subs *raw*)))\n"
+                 "(defconst *xmod* (mv-let (e ps) (g-st-module *raw* *bools* *heapg-xfns* *heapg-xst*) (if e nil ps)))\n"
+                 "(defconst *spmod* (mv-let (e ps) (g-st-module *raw* *bools* '(hpg-spush) *heapg-xst*) (if e nil ps)))\n"
+                 "(defconst *procs* (append *xmod* *spmod*))\n")
+        checks [["gen-st-xtake"
+                 (str "(defconst *heapg-externs* (append *nt-externs* *xr-externs* (list (list :extern \"hp_set_rb\" :set-elem *h-rbi*))))\n"
+                      "(defconst *mprocs* (append *procs* '" vmod " *heapg-externs*))\n"
+                      "(cw \"~%MODOK names-distinct ~x0~%\" (no-duplicatesp-equal (strip-cadrs *mprocs*)))\n"
+                      "(cw \"~%MODOK xmod ~x0~%\" (and *xmod* (equal *xmod* *heapg-xmod*)))\n"
+                      "(cw \"~%MODOK nt-finds ~x0~%\" (let ((procs *mprocs*)) (nt-finds)))\n"
+                      "(cw \"~%MODOK xr-finds ~x0~%\" (let ((procs *mprocs*)) (xr-finds)))\n"
+                      "(cw \"~%MODOK xt-finds ~x0~%\" (let ((procs *mprocs*)) (xt-finds)))\n"
+                      "(cw \"~%MODOK rt-finds ~x0~%\" (let ((procs *mprocs*)) (rt-finds)))\n")]
+                ["gen-stdisch"
+                 "(cw \"~%MODOK tab-ok ~x0~%\" (tab-ok (list (assoc-eq 'hpg-spush *raw*)) (g-defs *raw*) (g-sigs *raw* *bools*) *st* (g-defs *raw*) *procs* \"hs\" 10000))\n"]
+                ["gen-sfdisch"
+                 (str "(defconst *sfd* (g-defs (list (assoc-eq 'hpg-ot *raw*) (assoc-eq 'hpg-or *raw*) (assoc-eq 'hpg-okd *raw*) (assoc-eq 'hpg-oi *raw*))))\n"
+                      "(cw \"~%MODOK sfd-ok ~x0~%\" (sfd-ok *sfd* (g-defs *raw*) (g-sigs *raw* *bools*) *st* *procs* \"hs\" 10000))\n")]]]
+    (doseq [[book body] checks]
+      (let [in (str "(include-book \"" book "\")\n" pre body "(good-bye)\n")
+            _ (when-let [d (System/getenv "MODOK_DUMP")] (spit (str d "/" book ".lsp") in))
+            out (acl2! "." in)
+            res (re-seq #"MODOK (\S+) (\S+)" out)]
+        (when (empty? res) (swap! failures inc) (println "check-gen: mod-ok: no answer from the" book "session"))
+        (doseq [[_ k v] res]
+          (if (= (str/lower-case v) "t")
+            (println (format "check-gen: mod-ok %-14s t" k))
+            (do (swap! failures inc) (println "check-gen: mod-ok" k "FAILS (" v ")"))))))))
+(mod-ok! @heapg-raws)
 
 ;; gen-disch.lisp's and gen-disch-loop.lisp's copies of clotran's definitions: the
 ;; formals, guard and

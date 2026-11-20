@@ -1271,6 +1271,12 @@ Two findings from acl2-fortran's `stmt` (both fixed now, see above):
    in the :extern entry): either sv takes an extern table or :xcall carries
    the field (an fsyn/fsem change); then gs-xfield/-xsize/-xelem become real
    per-case lemmas (gs-field's shape on "%ext") and gst-* get :xset/:xseti.
+   **mod-ok (VALIDATION-DESIGN.md step 1, 2026-11-19):** `make check-gen`
+   now evaluates the ground side conditions on the module regenerated from
+   clotran's hand-over (heapgn's stobj procedures + hpg_spush + the value
+   functions + the hp_* externs): names distinct, module = *heapg-xmod*,
+   nt-finds, xr-finds, xt-finds, rt-finds, tab-ok (hpg_spush), sfd-ok
+   (hpg_ot/or/okd/oi); all t, and the build fails on any other answer.
    **Hypotheses still to discharge** (milestone 2, stobj layer): tab-ok
    (CALL) and sfd-ok (value functions given the stobj), o not a formal's
    name, o not "r", `(g-role nil st)` not :stobj -- each a ground fact
