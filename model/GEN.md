@@ -1001,30 +1001,65 @@ Two findings from acl2-fortran's `stmt` (both fixed now, see above):
    facts reused through `g-callst-dests` (g-callst's error and locals do not
    depend on dests); c-sorc stays a hypothesis (via callu-hyps) beside
    c-sorc-d.
-   Still open in 4a, in order: (2b) the middle piece: gst-sem restated with
-   outs and dests over every case -- a source meaning answering values
-   (`(mv e S' vs)`: a-tuple for cons, a-st's cases with vs nil, if, the
-   lambda's body, a :sub call by a-stcall/a-stcall-u's results through
-   g-rvals), the conclusion adding `(svs-is dests vs fr2 heap2)`, the dests
-   facts threaded (dnames apart from the final locs; the if/lambda pass dests
-   unchanged), and stn-ok widened (a cons/call statement assigns the dests);
-   its cases are gst-cons, gst-callst-d, gst-callst-u-d and the old gst-*
-   lemmas with vs nil; (2c) c-sorc-d (and dropping c-sorc beside it in
-   gst-callst-u-d) under tab-ok, as gen-stdisch's c-sorc-h: needs the
-   generated subroutine's OUT dummies copied back to the dests (f-invoke's
-   copy-out);
-   (3) the mv lambda on sxc (g-mvtmps' mv_k temporaries are the dests:
-   done, `g-mvtmps-dests-ok` in gen-stcalld -- true-list and dests-ok
-   wherever g-mvtmps' final locs are decl-ok, by `dests-in`; then the outer
-   lambda binding mv (g-callst with mdests, gst-callst-d / gst-callst-u-d)
-   and the inner one binding (mv-nth 'k mv) through em's (mv k) entries
-   (g-sexpr reads the temporary; a-sx errors on mv-nth, so the inner
-   lambda's args are a-stc's mv-nth case only -- the source side needs
-   a-stc-args' env read of mv); then g-acts-place, a-stc's mv case reading
-   rs by g-rvals' positions), gst-lam's pattern; (4) gst-ind extended to
-   :sub calls on sxc-list (gst-sem on sxc-list: every st-plain case lemma
-   carries over by sxc-list-is-sx-list, the call case by gst-callst(-d) and
-   gst-callst-u(-d), the a-stc side by a-stc-sub-is-a-stcall(-u)).
+   **gen-stv.lisp, gen-stvcase.lisp, gen-stvif.lisp, gen-stvind.lisp** ((4a) (2b)
+   restatement and (4), 2026-11-20): gst-sem restated with outs and dests on
+   sxc-list. Source: **`a-stv x outs env s st defs n`** => (mv err S' vs): a
+   tuple by a-tuple, a :sub call by a-stcall / a-stcall-u (vs = g-rvals of
+   the results, :type unless int64s), if and a lambda without mv by recursion
+   (the lambda's arguments by a-st-args), every other case a-st's with vs nil.
+   **`gstv-sem`**: gst-sem's hypotheses plus c-sorc, c-sorc-d, a-call-ok and
+   the dests facts (true-listp, dests-ok, `(len dests)` = `(nvals outs)`, the
+   value outs' count, dnames distinct and apart from fnames, em's names and
+   the final locs); conclusion: sxc-list answers :normal, the heap the object
+   put to S', S' with st-ok/st-wf, and `(svs-is dests vs fr2 h2)`.
+   `stv-grow` (the locals grow, static) replaces stn-ok in the inductions:
+   if and lambda need only that. Cases: `gstv-leaf` (the stobj, field and
+   element updates: nvals 0 forces dests nil, then gst-sem-holds and
+   sxc-list-is-sx-list), `gstv-cons` (gst-cons), `gstv-sub` (gst-callst-d /
+   gst-callst-u-d, then `svs-is-put-dests`; `g-callst-grow`), `gstv-if`
+   (`ifd-hyps`, `ifd-run`, `sifc-glue`: the if on sxc-list), `gstv-lam`
+   (lamd-binds/-acts/-run, gen-stlst's recipe with the body's gstv-sem).
+   **`gstv-sem-thm`**: by `gstv-ind`, every `stv-plain` term (leaves as
+   st-plain, a tuple of st-plain stobj components, a :sub call with st-plain
+   stobj arguments and call-free values, if, a lambda without mv) satisfies
+   gstv-sem and stv-grow at every dests, env, S, fuel, frame and heap. So gst-ind
+   is extended to :sub calls on sxc-list (4), except the mv lambdas.
+   Traps met: g-callst-dests rewrites its own instance at dests nil and loops
+   (disabled; `g-callst-dests-r` has a syntaxp guard); an :expand of a
+   gstv-sem term stops matching once a :use'd equality substitutes one of its
+   arguments (outs := (g-comp f st)) -- enable the definition instead; in
+   the minimal theory `(car x)` and `(mv-nth 0 x)` are different terms (use
+   `mthy`, which rewrites the second to the first); a :use'd lemma's
+   case split over ~300 subgoals usually hides one missing hypothesis --
+   prove the instance's hypotheses as their own lemma (`ifd-hyps`) to find it.
+   Still open in 4a, in order:
+   (2c) c-sorc-d under tab-ok. Not started: tab's entries are `(fn formals
+   (sv) t x)`, one stobj answering itself, so no callee has OUT results and
+   c-sorc-d (dests appended to the CALL) cannot hold of them. Needs first a
+   g-st-fn-sem for subroutines whose outs have values (the body's gstv-sem
+   with dests the OUT dummies `(g-rvars rs)`, f-invoke's copy-out of the
+   OUT dummies to the caller's dests), then tab entries with value outs and
+   c-sorc-d-h as gen-stdisch's c-sorc-h. Then c-sorc beside c-sorc-d drops
+   out of gst-callst-u-d / gstv-hyps.
+   (3) the mv lambdas. Not started; design: ACL2's mv-let is
+   `((lambda (mv a ..) ((lambda (v .. s ..) body) (mv-nth '0 mv) ..)) (f ..) a ..)`.
+   Outer lambda (mv in vars, the others bound to themselves): a-stv runs
+   mv's call first (a-stcall/-u, int64s of the value results), the body's env
+   adding `((mv k) . r_k)` for each value out k; g-stmt's statements are
+   g-mvtmps' temporaries as dests (g-mvtmps-dests-ok), g-callst with mdests
+   (gstv-sub's reasoning), then the body under `(append mvb em)`: em-ok
+   holds for the (mv k) entries because put-dests wrote r_k to mv_k (var-ok
+   reads env's (mv k) key) -- choose that env key, not a-stc's `(nth k mv)`.
+   Inner lambda (vars bound to `(mv-nth 'k mv)`): a-stv's lambda needs an
+   argument evaluator reading (mv-nth 'k mv) as env's (mv k) (a-sx and a-st
+   err on mv-nth, a-sacts too: gsc-skip and gsb-sem treat it as an error),
+   i.e. copies of gsb-sem (gen-stlam: gsb-cons with a gs-sem variant whose
+   mv-nth case is the em-ok read) and of a-st-args-split; stv-plain then
+   admits both lambdas. A lane.
+   (4) rest: a-stv's S' is a-stc's where both answer (a-stc's :sub case is
+   a-stcall(-u) by gen-stccall/-u; a-stc has no tuple, so the bridge is for
+   outs without values), and the function-level theorem (g-st-fn-sem on
+   sxc-list with gstv-sem-thm for the body).
    **gen-stret.lisp** ((4b), value functions, first piece): **`gsr-sem-thm`**
    -- g-sret against a-sx on sx-list, unconditional as a gsr-sem fact: on
    call-free bodies, under gs-sem's hypotheses (em-ok, decl-ok, st-ok,
@@ -1440,7 +1475,7 @@ Two findings from acl2-fortran's `stmt` (both fixed now, see above):
    f-invoke of a generated subroutine under a heap-aware oracle (as
    f-call-val is for functions), then gst-sem for g-callst and the mv lambda
    (one lane; 2026-11-20: the CALL with updated stobj arguments done,
-   gen-stcallu/gen-stccallu; tab-ok instance gen-stinstu, CALL with dests gen-stcalld, the cons case gen-stcons, CALL with updates and dests gen-stcallud; left (2b)'s gst-sem restatement, (2c)-(4), under gen-stcallud above); (4b) the tail self-call in subroutines (g-stail, the DO
+   gen-stcallu/gen-stccallu; tab-ok instance gen-stinstu, CALL with dests gen-stcalld, the cons case gen-stcons, CALL with updates and dests gen-stcallud, gst-sem restated with dests and the induction over :sub calls gen-stv*; left (2c), (3) and the rest of (4), under gen-stvind above); (4b) the tail self-call in subroutines (g-stail, the DO
    around the body, as g-fn-sem-loop) and g-sret's value functions reading a
    stobj (done, gen-sf*), then the instances (hpg-next-tail, hpg-seq-op: gen-st-ntail;
    hpg-drain: gen-st-drain; hpg-run-from-batch: gen-st-rfb; hpg-run-take: gen-st-take;
@@ -1451,4 +1486,12 @@ Two findings from acl2-fortran's `stmt` (both fixed now, see above):
 6. Switch acl2-fortran to print g-module's output, and fix or confirm the
    lambda scoping. One lane.
 
-Total: about 6 lanes (4a, 4b, 4c, 5 twice, 6).
+Total (2026-11-20, revised): about 8-10 lanes. 4a: (3) the mv lambdas one lane;
+(2c) with the function-level theorem (g-st-fn-sem with OUT results, tab
+entries with value outs, c-sorc-d-h) one to two; the a-stv/a-stc bridge and
+re-instancing the heapgn theorems half to one. 4c (iii), a-sx reading "%ext"
+(an fsyn/fsem change: sv with an extern table, real gs-xfield/-xsize/-xelem,
+gst-* with :xset/:xseti) one to two. 5 (values, runtime shims; fsyn/fsem need
+an abstract runtime first) two to three. 6 one. The old "about 6" counted 4a as
+one lane; it has taken five so far, each closing one sub-piece, and item 5 has
+not started.
