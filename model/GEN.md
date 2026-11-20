@@ -911,6 +911,51 @@ Two findings from acl2-fortran's `stmt` (both fixed now, see above):
    mv lambda) and :sub calls with dests (hpg-run-pop, hpg-run-new,
    hpg-run-take-c); hpg-drain the subroutine tail loop (g-stail);
    hpg-next-tail and hpg-seq-op g-sret's value functions reading a stobj.
+   **gen-stcallu.lisp** ((4a) (ii), first piece, 2026-11-20): **`gst-callst-u`**,
+   g-callst's CALL when some stobj argument is an update (g-upd), dests nil,
+   against the source's `a-stcall-u` (the values by a-sx-list on S, the
+   updates threaded from S by a-sacts, then a-call-val on the values and
+   the updated S). Hypotheses: gst-callst's (c-sorc, a-call-ok, no-calls of
+   all the arguments, em-ok, decl-ok of g-callst's locals, st-ok, st-wf,
+   obj-at, sn-hyps, em-nostobj) plus the updates' `gsc-sem`/`stan-ok` at
+   the frame after the settled values (as gst-lam takes them); conclusion:
+   sxc-list of the statements answers :normal, the heap the object put to
+   a-stcall-u's S', S' with st-ok/st-wf. The settling (g-settle) is proved
+   once: `stu-thm` (by `stu-ind` on the value arguments; per argument its
+   statements, then v_N = code unless g-stable) -- the settled statements
+   answer :normal, the heap unchanged, the settled codes (`stables`: each a
+   v_N or g-stable) answering the values; its static facts
+   `g-settle-static` (the v_N fresh against locs and used, within the final
+   locs; assignments within the arguments' and the v_N; code names within
+   the arguments' and the v_N) and `settle-v-not-asg`. g-scall-args' sss is
+   `g-sss` of the value arguments (`g-scall-args-sss`). How: each step's
+   context a disabled defun-nx (`stu-tctx`/`stu-sctx`, `cu-ctxp`), the
+   shape equalities as rewrite rules under it (`stu-ta-eq`, `cu-eq`:
+   equalities :use'd in the minimal theory are not substituted), fact
+   lemmas each :using the earlier ones plus 1-3 outside lemmas in
+   `(mthy ...)` = minimal theory less mv-nth's definition plus
+   mv-nth-0-car. 40 s for the book. Traps: a computed hint with :use that
+   fires on every stable subgoal loops; `subsetp-trans`, `member-subsetp`,
+   `append-nil-tl` are taken (and the first two unusable in a theory), so
+   `subsetp-trans2`/`member-subsetp2` (subsetp hypothesis first, so its
+   free variable binds).
+   **gen-stccallu.lisp**: **`a-stc-sub-is-a-stcall-u`** -- a-stc's :sub
+   call with updated stobj arguments (st-plain :acts, no-mvnth, symbol
+   formals without mv, as many as arguments) is a-stcall-u at two less fuel,
+   given a-sacts answers there (gst-callst-u assumes it anyway); by
+   `a-stc-args-upd` (a-stc-is-a-st per stobj argument, a-sx-mono for the
+   values). The converse of a-stc-is-a-st fails: a nested lambda's
+   (mv-nth 'k mv) argument reads mv under a-stc only.
+   Still open in 4a, in order: (1) the functional instance of gst-callst-u
+   with tab-ok (gen-stinst's pattern: copy a-stcall-u as a-stcall-u-h on
+   ac-orc; one lemma); (2) dests: g-stmt's cons case (g-tvals, g-moves'
+   temporaries "r", g-sacts of the stobj results) into a gst-sem with outs
+   and dests, and c-sorc with OUT results (s-call-val putting the dests);
+   (3) the mv lambda on sxc (g-mvtmps' mv_k temporaries, g-acts-place,
+   a-stc's mv case), gst-lam's pattern; (4) gst-ind extended to :sub calls
+   on sxc-list (gst-sem stated on sxc-list: every st-plain case lemma
+   carries over by sxc-list-is-sx-list, the call case by gst-callst and
+   gst-callst-u, the a-stc side by a-stc-sub-is-a-stcall(-u)).
    **gen-stret.lisp** ((4b), value functions, first piece): **`gsr-sem-thm`**
    -- g-sret against a-sx on sx-list, unconditional as a gsr-sem fact: on
    call-free bodies, under gs-sem's hypotheses (em-ok, decl-ok, st-ok,
@@ -1325,7 +1370,8 @@ Two findings from acl2-fortran's `stmt` (both fixed now, see above):
    Left of 4, restated (2026-11-18): (4a) sx's `:do` and `:call` cases and
    f-invoke of a generated subroutine under a heap-aware oracle (as
    f-call-val is for functions), then gst-sem for g-callst and the mv lambda
-   (one lane); (4b) the tail self-call in subroutines (g-stail, the DO
+   (one lane; 2026-11-20: the CALL with updated stobj arguments done,
+   gen-stcallu/gen-stccallu; left (1)-(4) under gen-stccallu above); (4b) the tail self-call in subroutines (g-stail, the DO
    around the body, as g-fn-sem-loop) and g-sret's value functions reading a
    stobj (done, gen-sf*), then the instances (hpg-next-tail, hpg-seq-op: gen-st-ntail;
    hpg-drain: gen-st-drain; hpg-run-from-batch: gen-st-rfb; hpg-run-take: gen-st-take;
