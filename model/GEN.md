@@ -1291,6 +1291,27 @@ Two findings from acl2-fortran's `stmt` (both fixed now, see above):
    hp_n_vec vmark/vlen/voff, hp_n_arena aival/atag/aref; externs `*xd-externs*`),
    then gen-st-xdrain (scan_obj/scan_run DO loops by fuel, scan_vec, the
    s-call-val-d CALLs, p-sorc-d-holds, hpg-drain-fortran-correct-x).
+   Status (aa32643): gen-st-xpush certified (~420 lines): sp-run/sp-ok/
+   xd-ex-sp (spush), ps-a/b/c-run per branch + ps-run composed with
+   f-ex-list-open/f-ex-if disabled, ps-ok, xd-ex-ps-obj (push's CALL with
+   hp_otag/hp_oref(j_2) args; the macro xd-ex-ps-thm gives scan_run's
+   hp_atag/hp_aref(j_) one). Left, in a new gen-st-xdrain: (1) scan_obj's DO:
+   so-s1 (t_1 = k<0 or 5<=k), the j_2 assign, the hp_n_oslot test (t_3, nt-lens),
+   the CALL (xd-ex-ps-obj) + the four assigns + cycle, composed like rf-t1..3 /
+   rf-iter-exit/-cycle, the loop by induction on 5-k (rf-ind/rf-loop); then
+   f-invoke (f-invoke-sub-d) and its CALL from drain's frame (as pu-okc/xt-ex-pu).
+   (2) the same for scan_run (bound by hp_n_arena = aival's size, so xd-lens'
+   atag/aref = aival), (3) scan_vec (no loop; hp_n_vec twice, voff/vlen via
+   max(0,..), CALL scan_run), (4) p-sorc-d-holds (each s-call-val-d case is one
+   of the two CALLs; drain's oracle wants hpg-ok, the CALL lemmas also xd-lens and
+   nt-lens, so s-call-val-d may need those added as gen-st-xrfb did for s-call-val-r),
+   (5) hpg-drain-fortran-correct-x under xp-finds + xd-lens + nt-lens.
+   Traps met: a :use'd fact whose hypothesis a rewrite rule proves is dropped
+   (use :cases, or disable the rule); f-invoke of a function callee needs
+   f-invoke disabled and an explicit :free expand (gen-st-xrfb rn-run);
+   `make -B` with ACL2_USELESS_RUNES=write rebuilds the whole chain in the
+   full theory (gen-stx then dies at CERT_SECS) -- write runes for one book by
+   deleting its cert, never with -B.
    **Hypotheses still to discharge** (milestone 2, stobj layer): tab-ok
    (CALL) and sfd-ok (value functions given the stobj), o not a formal's
    name, o not "r", `(g-role nil st)` not :stobj -- each a ground fact
