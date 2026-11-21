@@ -22,6 +22,12 @@ whole; use the headings below and `grep -n` / `sed -n`.
   freal bullets). Next: S3, a named-assumption book for libm (within N ulp,
   ASSUME-RN, ASSUME-EVAL-ORDER); not started.
 
+## Formalization wrapped up (2026-11-21)
+
+Stage A stops at the cutoff; 159/180 is the compiler-neutral endpoint (the 21 `:pd` are the
+standard leaving it to the processor; no processor is chosen). What is claimed, what could still
+be proved, and why we stay unbrittle: WRAPUP.md. Skipped on purpose: 180/180, S3, flang conventions.
+
 ## Next lanes, in order
 
 FCVS re-classification, 2026-11-16, 52 failing programs (128 pass), first stop by fortran-run-form (fixed driver). Internal WRITE landed (095bf6b: a whole CHARACTER scalar/array unit, formatted; element/substring unit and list-directed internal WRITE still :unit); no failing program moved by it, FM711's WRITE(UNIT=CVCOMP,FMT=C1N002) first needs a variable FMT (below). FM829: test 28 passes, the :pd is test 29, REAL((3.495,98.734)*AVC), an inexact single complex product (15.10), same class as 828 830 831: stays :pd. Sizes (52): small 15, needs file store 23, needs printing 2, needs storage-sequence 2, :pd by design 7, other (not isolated) 3.

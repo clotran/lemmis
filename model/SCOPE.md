@@ -15,6 +15,13 @@ Score: **169 of 208** Scope rules proved (81%); 39 more in part; none not yet in
 
 ## Stage A cutoff (2026-11-20)
 
+**How to read the FCVS number.** 159 of 180 is not a failure rate. fsem gives
+the standard-determined result on every FCVS program whose behaviour the
+standard determines, and stops with `:pd` where the standard leaves it to the
+processor. Reaching 180/180 would mean choosing one compiler's answers, which
+we do not do (WRAPUP.md). What is left to prove, and why not everything, is in
+WRAPUP.md.
+
 Stage A is called done at this line. **Proved:** 169 of the 208 Scope rules
 (parser sound and complete for every alternative the Scope uses: fgram, fstmt,
 fprog; the last four 2026-11-20: R929, R944 alloc-opt / dealloc-opt, R1409, R1412
