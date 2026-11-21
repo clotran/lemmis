@@ -37,6 +37,26 @@ tiers:
    clotran has no JVM and does not emulate one (its DEVIATIONS and
    PACKAGES.md say so).
 
+## Compilation: Fortran first, clotran underneath (James, 2026-11-21)
+
+A Lemmis program compiles to Fortran; it does not have to run through clotran.
+- **Valid Fortran passes through unchanged** to gfortran/flang. The rule
+  (valid Fortran keeps its meaning) then holds by construction, not by a
+  conservativity proof.
+- **Most extensions translate to plain Fortran** (a `->>` pipeline over arrays
+  to loops or array expressions, `val` to a typed local, `do x in coll` to a DO).
+  Most programs hoist to tier A (clotran's term: plain Fortran at Fortran's
+  speed). What cannot (lazy sequences, values of several types) is tier B: Fortran
+  calling clotran's runtime, as clotran's own compiler does.
+- **Compiler hints**, as clotran gives: the compiler says which tier each
+  function landed in and why (an unknown type, a lazy value, a boxed compare),
+  and what to add (a declaration) to hoist it to tier A.
+- **Two paths, one oracle.** Source to Fortran directly, and source to Clojure
+  forms run by clotran, must agree: the fuzzer compares them, with flang and
+  gfortran underneath. This replaces the Stage B proofs (see model/WRAPUP.md).
+- (Terms: "tier A/B" is clotran's compile tiers; "Tier 1/2" in COORDINATION.md is
+  the proof scope. They are unrelated.)
+
 ## The rule
 
 **Every valid Fortran program means exactly what Fortran says. Every

@@ -23,7 +23,17 @@ could still be proved, and why we stop short of some of it on purpose.
   `:pd` where the standard leaves the result to the processor. It is not
   "159/180 pass, 21 fail": 180/180 would need a choice of processor.
 
-## What we could still prove
+## Decision (2026-11-21, user): ship first, model on demand
+
+Proof is not a gate for shipping clotran or Lemmis. Theorems 4-7 (Stage B:
+grammar and meaning conservativity, one theorem per extension, the crossing)
+are NOT required; the Lemmis rule "every valid Fortran program means what
+Fortran says" is held by Stage A's proved parser, the oracle cases, the fuzzer
+and flang's tree, not by a conservativity proof. When something turns up that
+even fuzzing cannot catch, we model that thing then. Formal proof stays a
+bonus, not an asterisk on the language.
+
+## What we could still prove (optional, none needed to ship)
 
 In rough order of value for the cost; none is needed for the claims above.
 
