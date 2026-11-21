@@ -217,6 +217,20 @@
                 ((member loc (st-dovars st)) (mv (err :do-var) st))
                 (t (let ((n (assign-val (st-get loc st) (let ((x (car vals))) (cond ((integerp x) (vi 4 x)) ((stringp x) (vc x)) (t (vl 4 (and x t))))))))
                      (if (errp n) (mv n st) (fc-puts (cdr outs) (cdr vals) env (st-put loc n (st-log (list (list :w loc :all)) st))))))))))))
+; R928/R943 alloc-opts (fstmt-base alloc-opts-p): option k's expression, the objects
+(defun alloc-opt (k as)
+  (cond ((atom as) nil) ((and (eq (kar (car as)) :kw) (equal (kadr (car as)) (kw k))) (kaddr (car as))) (t (alloc-opt k (cdr as)))))
+(defun alloc-os (as)
+  (if (or (atom as) (eq (kar (car as)) :kw)) nil (cons (car as) (alloc-os (cdr as)))))
+; 9.7.4: STAT= becomes 0 when the statement succeeds; an error condition with
+; STAT= gives it a processor-dependent positive value (:pd), without STAT= the
+; program stops (ERRMSG= alone does not catch it, and is left as it was on success)
+(defun alloc-stat (s2 as env st)
+  (let ((sv (alloc-opt "stat" as)))
+    (cond ((not sv) (mv s2 st))
+          ((equal s2 (err :alloc)) (mv (err :pd) st))
+          ((eq s2 :normal) (fc-puts (list (cons "stat" sv)) (list 0) env st))
+          (t (mv s2 st)))))
 ;; an expression's lone primary, whatever its kind (lone-prim's walk), or nil
 (defun lone-any (e)
   (let* ((eq1 (kar e)) (or1 (kar eq1)) (and1 (kar or1)) (l4 (kadr and1)) (l3 (kar l4)) (l2 (kar l3)) (add (kadr l2))
@@ -1010,8 +1024,9 @@
           (cond ((cx-pure cx) (mv (err :pure) st)) ((or (st-trace st) (eq e :star)) (mv (err (if (eq e :star) :unit :pd)) st))
                 (t (with-v (u st) (me-ev :expr e env st cx (1- fuel)) (oc-run (kar s) (kadr s) u st))))))
        (:simple (mv (simple-status (kadr s)) st))
-       (:allocate (me-alloc (kadr s) env st cx (1- fuel)))
-       (:deallocate (dealloc-all (kadr s) env st cx))
+       (:allocate (mv-let (s2 st) (me-alloc (alloc-os (kadr s)) (alloc-opt "source" (kadr s)) env st cx (1- fuel))
+                    (alloc-stat s2 (kadr s) env st)))
+       (:deallocate (mv-let (s2 st) (dealloc-all (alloc-os (kadr s)) env st cx) (alloc-stat s2 (kadr s) env st)))
        (:stop (with-v (v st) (me-ev :expr (kadr s) env st cx (1- fuel)) (mv (if (or (ival-scalar v) (cval-p v)) (err :stop) (cond-err v)) st)))   ; R1163
        (:call (if (fc-op (tok-name (kadr s)))
                   (let* ((op (fc-op (tok-name (kadr s)))) (as (kadddr s)) (ins (fc-ins op as)) (fl (and (eq op :inquire) (cdr (assoc-equal "file" ins))))
@@ -1038,14 +1053,18 @@
                     (t (mv :normal st)))))
        (otherwise (mv (err :syntax) st)))))
 
- ; R929: each allocation's bounds, then the object allocated (9.7.1.2)
- (defun me-alloc (os env st cx fuel)
+ ; R929: each allocation's bounds, then the object allocated (9.7.1.2), then
+ ; given SOURCE='s value src by an intrinsic assignment (9.7.1.2p6; MOLD= gives
+ ; no value). ponytail: src is evaluated once per object, and a source whose shape
+ ; differs from the object's is not an error (C950's shape rule unchecked)
+ (defun me-alloc (os src env st cx fuel)
    (cond ((not (posp fuel)) (mv (err :fuel) st))
          ((atom os) (mv :normal st))
          (t (let ((p (lone-prim (kadr (car os)))))
               (mv-let (ls us st) (me-bounds (alloc-shapes (kaddr p)) env st cx (1- fuel))
                 (mv-let (s st) (alloc-put (tok-name (kadr p)) ls us env st cx)
-                  (if (errp s) (mv s st) (me-alloc (cdr os) env st cx (1- fuel)))))))))
+                  (mv-let (s st) (if (and src (not (errp s))) (me-assign (list :assign (kadr p) nil nil src) env st cx (1- fuel)) (mv s st))
+                    (if (errp s) (mv s st) (me-alloc (cdr os) src env st cx (1- fuel))))))))))
 
  ; R1033: the expression, then the variable (10.2.1.3)
  ; READ's input items (12.6.4.5), each in turn: its values read, then

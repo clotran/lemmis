@@ -501,16 +501,6 @@
   (:executable-counterpart kar) (:executable-counterpart kw) (:executable-counterpart len) (:executable-counterpart member-equal) (:executable-counterpart not) (:executable-counterpart op) (:executable-counterpart stmt-nt)
   (:executable-counterpart tau-system) (:rewrite append-cons-fs) (:rewrite append-nil-left) (:rewrite car-cons) (:rewrite cdr-cons) (:rewrite equal-list3) (:rewrite fgs-var-open)
   (:rewrite fold-consts-in-+) (:rewrite fps-open) (:rewrite fys-var-open) (:rewrite kadr-etc) (:rewrite kar-kdr-consp) (:rewrite name-tok-not-punct) (:type-prescription name-tok-p))
- (fps-complete-stmt-use
-  (:type-prescription len) (:compound-recognizer booleanp-compound-recognizer) (:definition =) (:definition atom) (:definition eq) (:definition eql) (:definition kar)
-  (:definition kdr) (:definition kw) (:definition len) (:definition member-equal) (:definition mv-nth) (:definition not) (:definition null)
-  (:definition synp) (:definition true-listp) (:executable-counterpart binary-+) (:executable-counterpart binary-append) (:executable-counterpart car) (:executable-counterpart cdr) (:executable-counterpart cons)
-  (:executable-counterpart consp) (:executable-counterpart dcolon) (:executable-counterpart eq) (:executable-counterpart eql) (:executable-counterpart equal) (:executable-counterpart kadr) (:executable-counterpart kar)
-  (:executable-counterpart kdr) (:executable-counterpart kw) (:executable-counterpart len) (:executable-counterpart member-equal) (:executable-counterpart names-p) (:executable-counterpart not) (:executable-counterpart null)
-  (:executable-counterpart onames-y) (:executable-counterpart op) (:executable-counterpart stmt-nt) (:executable-counterpart tau-system) (:executable-counterpart tok-in) (:rewrite append-cons-fs) (:rewrite append-nil-left)
-  (:rewrite car-cons) (:rewrite cdr-cons) (:rewrite equal-list3) (:rewrite equal-list5) (:rewrite fgs-var-open) (:rewrite fold-consts-in-+) (:rewrite fps-complete-onames)
-  (:rewrite fps-empty) (:rewrite fps-open) (:rewrite fys-var-open) (:rewrite kadr-etc) (:rewrite kar-kdr-consp) (:rewrite name-tok-not-punct) (:rewrite sfollow-facts)
-  (:type-prescription name-tok-p) (:type-prescription names-p))
  (fps-complete-stmt-write
   (:type-prescription len) (:definition =) (:definition atom) (:definition eq) (:definition eql) (:definition fix) (:definition kar)
   (:definition kdr) (:definition kw) (:definition len) (:definition mv-nth) (:definition not) (:definition null) (:definition synp)

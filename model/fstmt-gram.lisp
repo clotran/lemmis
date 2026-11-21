@@ -21,7 +21,9 @@
 ;                                   ::] module-name [, ONLY : [only-list]];
 ;                                   R1410 module-nature (nat nil, :dc for a
 ;                                   bare ::, or "intrinsic" "non_intrinsic");
-;                                   R1412/R1413 only: only-use-name (names)
+;                                   R1412/R1413 only: only-use-name or rename;
+;                                   onlyp nil: ns a rename-list (R1411), maybe
+;                                   empty; ns uents-p (fstmt-base.lisp)
 ;         (:implicit-none)          R866 implicit-stmt: IMPLICIT NONE
 ;         (:implicit ss)            R866 implicit-stmt: IMPLICIT implicit-spec-list,
 ;                                   ss its specs (imps-p, fstmt-base.lisp)
@@ -271,8 +273,7 @@
             (:use (and (= (len x) 5)
                        (member-equal (cadr x) '(nil :dc "intrinsic" "non_intrinsic"))
                        (name-tok-p (caddr x)) (booleanp (cadddr x))
-                       (names-p (car (cddddr x)))
-                       (or (cadddr x) (null (car (cddddr x))))))
+                       (uents-p (car (cddddr x)) (not (cadddr x)))))
             (:decl (and (= (len x) 5)
                         (or (fgs :ts (cadr x))
                             (and (ts-comma-p (cadr x)) (null (caddr x)) (null (cadddr x))
@@ -453,7 +454,10 @@
                        (cond ((null (kadr x)) nil) ((eq (kadr x) :dc) (dcolon))
                              (t (list* (op ",") (kw (kadr x)) (dcolon))))
                        (list (kaddr x))
-                       (if (kadddr x) (list* (op ",") (kw "only") (op ":") (onames-y (kar (kdr (kdr (kdr (kdr x))))))) nil)))
+                       (let ((ns (kar (kdr (kdr (kdr (kdr x)))))))
+                         (cond ((kadddr x) (list* (op ",") (kw "only") (op ":") (uents-y ns)))
+                               ((consp ns) (cons (op ",") (uents-y ns)))
+                               (t nil)))))
          (:decl (append (fys :ts (kadr x)) (if (ts-comma-p (kadr x)) (list (op ",")) nil) (fys :decl-rest (kdr (kdr x)))))
          (:assign (append (list (kadr x)) (if (kaddr x) (cons (op "(") (fy :args (kadddr x))) nil)
                           (if (consp (kaddr x)) (cons (op "(") (append (fy :arg (kaddr x)) (list (op ")")))) nil)

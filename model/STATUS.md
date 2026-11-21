@@ -5,14 +5,19 @@ whole; use the headings below and `grep -n` / `sed -n`.
 
 ## Where Stage A stands (update on every commit that moves a number)
 
-- SCOPE score: 165 of 208 rules proved, 43 in part, none missing (SCOPE.md, first
-  paragraphs).
+- SCOPE score: 169 of 208 rules proved, 39 in part, none missing (SCOPE.md, first
+  paragraphs; R929 R944 STAT=/ERRMSG=/SOURCE=/MOLD=, R1409 R1412 renames, 2026-11-20).
+- **Stage A cutoff** (SCOPE.md, "Stage A cutoff"): Stage A is done at 169/208 proved and
+  FCVS 159/180, the 21 others all `:pd` by design (FP 8: FM062 357 804 828-831 903; file
+  properties 11: FM407 413 910 914-917 919-922; list-directed layout 2: FM905 907). The 39
+  part rows are grouped there; next if reopened: R1125 DO CONCURRENT mask, construct names
+  (R1108/R1110 and EXIT name), R933 scalar allocatable.
 - FCVS: 159 of 180 programs print their reference output (SCOPE.md, "Theorem 3:
   checked against the compilers", the FCVS bullet; the passing names are in
   build/fcvs.txt after `make check`).
 - Fuzzer: `make fuzz` (seed 1, 40 programs) agrees under gfortran and flang; seeds 1-5
   clean (same SCOPE section, "The fuzzer").
-- Oracle cases: 7 fsyn cases + 65 whole programs in model/cases/, all agree.
+- Oracle cases: 8 fsyn cases + 67 whole programs in model/cases/, all agree.
 - FP accuracy (STUDY-fp-2026-11-20): S1-S2 proved (freal-acc, fsqrt-acc; SCOPE.md
   freal bullets). Next: S3, a named-assumption book for libm (within N ulp,
   ASSUME-RN, ASSUME-EVAL-ORDER); not started.

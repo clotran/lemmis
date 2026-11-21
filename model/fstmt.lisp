@@ -128,8 +128,11 @@
               (t2 (cond ((eq nat :dc) (kdr (kdr t1))) (nat (kdr (kdr (kdr (kdr t1))))) (t t1))))
          (cond ((not (name-tok-p (kar t2))) (fail))
                ((and (equal (kadr t2) (op ",")) (equal (kaddr t2) (kw "only")) (equal (kadddr t2) (op ":")))
-                (mv-let (ok ns r) (fps :onames (kdr (kdr (kdr (kdr t2)))))
+                (mv-let (ok ns r) (use-ents (kdr (kdr (kdr (kdr t2)))))
                   (if ok (mv t (list :use nat (kar t2) t ns) r) (fail))))
+               ((equal (kadr t2) (op ","))                ; R1409's , rename-list
+                (mv-let (ok ns r) (use-ents (kdr (kdr t2)))
+                  (if (and ok (consp ns) (uents-p ns t)) (mv t (list :use nat (kar t2) nil ns) r) (fail))))
                (t (mv t (list :use nat (kar t2) nil nil) (kdr t2)))))))
       (:s-else (if (not (equal tk (kw "else"))) (fail)
                (if (and (equal (kadr toks) (kw "if")) (equal (kaddr toks) (op "(")))

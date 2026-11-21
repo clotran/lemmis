@@ -201,18 +201,33 @@
         (cons "int32" (list :const (vi 4 4))) (cons "int64" (list :const (vi 4 8)))
         (cons "real32" (list :const (vi 4 4))) (cons "real64" (list :const (vi 4 8)))))
 
-(defun only-frame (ns fr)            ; the bindings named in an only-list (14.2.2)
-  (declare (xargs :guard t))
+(defun only-frame (ns fr)            ; the bindings named in an only-list or a rename-list (14.2.2),
+  (declare (xargs :guard t))         ; each by its local name: a name, or (:ren local use)
   (if (atom ns) nil
-    (let ((b (alk (tok-name (car ns)) fr)))
-      (if b (cons b (only-frame (cdr ns) fr)) (cons (cons (tok-name (car ns)) (list :missing)) (only-frame (cdr ns) fr))))))
+    (let* ((ren (eq (kar (car ns)) :ren))
+           (u (tok-name (if ren (kaddr (car ns)) (car ns))))
+           (b (alk u fr)))
+      (cons (cons (if ren (tok-name (kadr (car ns))) u) (if b (cdr b) (list :missing)))
+            (only-frame (cdr ns) fr)))))
+(defun ren-uses (ns)                 ; a rename-list's use-names
+  (declare (xargs :guard t))
+  (if (atom ns) nil (cons (tok-name (kaddr (car ns))) (ren-uses (cdr ns)))))
+(defun drop-keys (ks fr)             ; fr without the bindings of the names ks
+  (declare (xargs :guard (true-listp ks)))
+  (cond ((atom fr) nil)
+        ((and (consp (car fr)) (member-equal (car (car fr)) ks)) (drop-keys ks (cdr fr)))
+        (t (cons (car fr) (drop-keys ks (cdr fr))))))
 
 ; a use statement's frame, from the modules' frames mods (name -> frame)
 (defun use-frame (u mods)
   (declare (xargs :guard t))
   (let* ((m (tok-name (kaddr u)))
          (fr (if (equal m "iso_fortran_env") *iso-frame* (cdr (alk m mods)))))
-    (if (kadddr u) (only-frame (kar (kdr (kdr (kdr (kdr u))))) fr) fr)))
+    (let ((ns (kar (kdr (kdr (kdr (kdr u)))))))
+      (cond ((kadddr u) (only-frame ns fr))
+            ; a rename-list: the renamed entities by their local names only, the rest as they are
+            ((consp ns) (append (only-frame ns fr) (drop-keys (ren-uses ns) fr)))
+            (t fr)))))
 (defun use-frames (us mods)
   (declare (xargs :guard t))
   (if (atom us) nil (cons (use-frame (car us) mods) (use-frames (cdr us) mods))))

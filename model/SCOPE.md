@@ -11,7 +11,35 @@ proved to accept exactly that grammar (`fp-`, `fps-`, `fpu-sound` and
 `-complete`), for every alternative the Scope uses; **part** when only
 some alternatives are in; **no** otherwise.
 
-Score: **165 of 208** Scope rules proved (79%); 43 more in part; none not yet in.
+Score: **169 of 208** Scope rules proved (81%); 39 more in part; none not yet in.
+
+## Stage A cutoff (2026-11-20)
+
+Stage A is called done at this line. **Proved:** 169 of the 208 Scope rules
+(parser sound and complete for every alternative the Scope uses: fgram, fstmt,
+fprog; the last four 2026-11-20: R929, R944 alloc-opt / dealloc-opt, R1409, R1412
+rename). **Tested:** `make check`: every `cases/` program and the fuzzer agree
+with gfortran and flang; FCVS 159 of 180 print their reference output, and all
+21 others stop with `:error :pd` by design, none on a missing construct:
+floating point (FM062 FM903 inexact real power, FM828 FM829 FM830 FM831 inexact
+complex * / **, FM357 FM804 MOD's zero sign; STUDY-fp-2026-11-20 section 2),
+the processor's file properties (FM407 FM413 FM910 FM917 FM921 RECL= units of
+unformatted direct access, FM914 FM915 FM916 FM919 FM920 OPEN with no STATUS=,
+FM922 INQUIRE SEQUENTIAL=/FORMATTED=; F77 12.10.1, 12.10.3) and list-directed
+layout (FM905 FM907; 13.10.4). **Excluded, the 39 "part" rows,** each row naming
+what is missing: (a) a big design each: derived-type extensions (R727
+type-attr-spec-list, R736 proc components, R737 component attributes, R754 type parameters, R934 a
+component as allocate-object) and interface blocks (R507, so R1412's
+generic-spec); (b) constructs the meaning reaches by token sugar rather than the
+proved grammar, F77 I/O and storage (R843, R870-R872, R1201, R1205, R1209,
+R1213, R1215-R1217, R1301 format items, R1544 statement functions); (c) rare
+spellings left out on purpose (R605 BOZ, R719/R720 named-constant complex
+parts, R721 KIND=, R724 kind prefix, R701 deferred length, R1123 locality);
+(d) small and next if Stage A reopens: R1125's scalar-mask-expr (DO
+CONCURRENT's mask: changes the :ixs list, its sound/complete lemmas and the :ctl
+theory), R1108/R1110 construct names (for every construct, with EXIT name),
+R933 a scalar allocatable; the rest (R514, R604, R777, R778, R848, R909,
+R1001, R1109, R1524) as their rows say.
 
 ## Theorem 3: checked against the compilers (status)
 
@@ -296,13 +324,13 @@ Not a theorem: a test, run by `make check` (exit 1 on any difference).
 | R922 | subscript-triplet | proved | |
 | R924 | stride | proved | |
 | R925 | vector-subscript | proved | int-expr, read as an expression; in the meaning, a rank-one integer array, its elements the indices (cases/vecsub.f90) |
-| R929 | allocate-stmt | part | ALLOCATE ( allocation-list ); no type-spec, no alloc-opt (STAT=, ERRMSG=, SOURCE=): allocating an allocated variable stops the program (9.7.4) |
+| R929 | allocate-stmt | proved | ALLOCATE ( allocation-list [, alloc-opt-list] ), the options read as keyword actual args (fstmt-base alloc-objs-p): STAT=, ERRMSG= a variable, SOURCE= or MOLD= an expression, none twice, not both SOURCE= and MOLD= (C943, C944); the [type-spec ::] is not in the Scope (it only matters with deferred length, R701's `:`, or polymorphism). Meaning (fmean me-alloc, alloc-stat): STAT= 0 on success; an error condition (an allocated variable) with STAT= is `:error :pd` (the value the processor's, 9.7.4), without it the program stops; ERRMSG= unchanged on success; SOURCE='s value assigned to each object (shape conformance unchecked), MOLD= no value; cases/allocstat.f90 |
 | R933 | allocation | part | allocate-object ( allocate-shape-spec-list ), read as an actual argument; the list required (no scalar allocatable), no coarray spec |
 | R934 | allocate-object | part | variable-name; no structure-component |
 | R935 | allocate-shape-spec | proved | [lower-bound-expr :] upper-bound-expr, read as a subscript or a triplet without stride |
 | R936 | lower-bound-expr | proved |  |
 | R938 | upper-bound-expr | proved |  |
-| R944 | deallocate-stmt | part | DEALLOCATE ( allocate-object-list ); no dealloc-opt: deallocating an unallocated variable stops the program (9.7.4) |
+| R944 | deallocate-stmt | proved | DEALLOCATE ( allocate-object-list [, dealloc-opt-list] ), STAT= and ERRMSG= as in R929: deallocating an unallocated variable stops the program, or with STAT= is `:error :pd` (9.7.4) |
 | R1001 | primary | part | literal, designator, array-constructor, function-reference, ( expr ) |
 | R1003 | level-1-expr | proved | no defined-unary-op |
 | R1005 | mult-operand | proved | |
@@ -381,9 +409,9 @@ Not a theorem: a test, run by `make check` (exit 1 on any difference).
 | R1406 | end-module-stmt | proved |  |
 | R1407 | module-subprogram-part | proved |  |
 | R1408 | module-subprogram | proved |  |
-| R1409 | use-stmt | part | no rename-list |
+| R1409 | use-stmt | proved | both forms: [, rename-list] and , ONLY : [only-list]; R1411 rename local-name => use-name ("=>" the tokens = >; fstmt-base use-ents, uents-p); in the meaning (fhelp use-frame) a renamed entity is reached by its local name only, the rest of a rename-list's module as it is; cases/userename.f90 |
 | R1410 | module-nature | proved |  |
-| R1412 | only | part | only-use-name; no rename |
+| R1412 | only | proved | only-use-name, rename; generic-spec not in the Scope (no interface block, R507) |
 | R1520 | function-reference | proved | |
 | R1521 | call-stmt | proved |  |
 | R1522 | procedure-designator | proved | procedure-name |

@@ -621,7 +621,19 @@
 (fps-complete-kind :block)
 (fps-complete-kind :implicit-none)
 (fps-complete-kind :else)
-(fps-complete-kind :use)
+(defthm uents-y-append-second       ; a rename-list's spelling: a name, then "="
+  (implies (and (uents-p x t) (consp x))
+           (equal (cadr (append (uents-y x) r)) '(:op "=")))
+  :hints (("Goal" :expand ((uents-y x) (uents-p x t) (uent-y (car x)) (uent-p (car x) t)))))
+(defthm uents-p-atom (implies (and (uents-p x renp) (not (consp x))) (equal x nil)) :hints (("Goal" :expand ((uents-p x renp))))
+  :rule-classes :forward-chaining)
+; USE, its lists read by use-ents (fstmt-base): the only-list, or a rename-list
+; whose first rename's "=" tells it from ", ONLY :"
+(defthm fps-complete-stmt-use
+  (implies (and (fgs :stmt x) (equal (car x) :use) (atom r))
+           (equal (fps :stmt (binary-append (fys :stmt x) r)) (mv t x r)))
+  :hints (("Goal" :expand ((fps :stmt (binary-append (fys :stmt x) r)))
+           :in-theory (union-theories '((:type-prescription len) (:compound-recognizer booleanp-compound-recognizer) (:definition =) (:definition atom) (:definition eq) (:definition eql) (:definition kar) (:definition kdr) (:definition kw) (:definition len) (:definition member-equal) (:definition mv-nth) (:definition not) (:definition null) (:definition synp) (:definition true-listp) (:executable-counterpart binary-+) (:executable-counterpart binary-append) (:executable-counterpart car) (:executable-counterpart cdr) (:executable-counterpart cons) (:executable-counterpart consp) (:executable-counterpart dcolon) (:executable-counterpart eq) (:executable-counterpart eql) (:executable-counterpart equal) (:executable-counterpart kadr) (:executable-counterpart kar) (:executable-counterpart kdr) (:executable-counterpart kw) (:executable-counterpart len) (:executable-counterpart member-equal) (:executable-counterpart not) (:executable-counterpart null) (:executable-counterpart op) (:executable-counterpart stmt-nt) (:executable-counterpart tau-system) (:executable-counterpart tok-in) (:rewrite append-cons-fs) (:rewrite append-nil-left) (:rewrite car-cons) (:rewrite cdr-cons) (:rewrite equal-list3) (:rewrite equal-list5) (:rewrite fgs-var-open) (:rewrite fold-consts-in-+) (:rewrite fps-empty) (:rewrite fps-open) (:rewrite fys-var-open) (:rewrite kadr-etc) (:rewrite kar-kdr-consp) (:rewrite name-tok-not-punct) (:rewrite sfollow-facts) (:type-prescription name-tok-p) (:rewrite use-ents-complete) (:rewrite uents-y-first) (:rewrite uents-y-append-second) (:forward-chaining uents-p-atom) (:type-prescription uents-p) (:rewrite append-assoc-fp) (:rewrite car-append-fp) (:rewrite consp-append-fp) (:type-prescription booleanp)) (theory 'minimal-theory)))))
 (fps-complete-kind :decl)
 (fps-complete-kind :assign)
 (fps-complete-kind :cassign)

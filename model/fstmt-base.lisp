@@ -122,7 +122,30 @@
   (declare (xargs :guard t))
   (let ((p (and (eq (kar a) :sub) (lone-prim (kadr a)))))
     (if d (eq (kar p) :name) (and (eq (kar p) :ref) (consp (kaddr p)) (alloc-specs-p (kaddr p))))))
-(defun alloc-objs-p (as d) (declare (xargs :guard t)) (if (atom as) (null as) (and (alloc-obj-p (car as) d) (alloc-objs-p (cdr as) d))))
+; R928 alloc-opt / R943 dealloc-opt, read as keyword actual args after the
+; objects: STAT= and ERRMSG= a variable (R942, R930), SOURCE= or MOLD= an
+; expression (ALLOCATE only); none twice (C943, C949), not both SOURCE= and
+; MOLD= (C944). R929's [type-spec ::] is not read: with no deferred length
+; (R701 `:`) and no polymorphism in the Scope it can only repeat the
+; declared type
+(defun alloc-opt-key (a d)           ; the option's key, or nil when a is not one
+  (declare (xargs :guard t))
+  (and (eq (kar a) :kw)
+       (cond ((member-equal (kadr a) (list (kw "stat") (kw "errmsg")))
+              (and (member-eq (kar (lone-prim (kaddr a))) '(:name :ref)) (kadr (kadr a))))
+             ((and (not d) (member-equal (kadr a) (list (kw "source") (kw "mold")))) "source")
+             (t nil))))
+(defun alloc-opts-p (as d seen)
+  (declare (xargs :guard (true-listp seen)))
+  (if (atom as) (null as)
+    (let ((k (alloc-opt-key (car as) d)))
+      (and k (not (member-equal k seen)) (alloc-opts-p (cdr as) d (cons k seen))))))
+(defun alloc-rest-p (as d)           ; objects, then options
+  (declare (xargs :guard t))
+  (if (atom as) (null as)
+    (if (eq (kar (car as)) :kw) (alloc-opts-p as d nil)
+      (and (alloc-obj-p (car as) d) (alloc-rest-p (cdr as) d)))))
+(defun alloc-objs-p (as d) (declare (xargs :guard t)) (and (consp as) (alloc-obj-p (car as) d) (alloc-rest-p (cdr as) d)))
 ;; R871 equivalence-set: ( equivalence-object , equivalence-object-list ), read as
 ;; actual args; R872 equivalence-object: a variable-name or an array-element
 ;; (its subscripts plain, their values the meaning's); no substring in the subset
@@ -253,3 +276,54 @@
   (implies (imps-p x) (and (consp (imps-y x)) (not (equal (car (imps-y x)) (quote (:name "none"))))))
   :hints (("Goal" :expand ((imps-y x) (imps-p x)))))
 (in-theory (disable imp-specs imps-y imps-p))
+
+;; R1409 use-stmt's lists: R1411 rename (local-name => use-name) and R1412
+;; only (an only-use-name or a rename; no generic-spec: no interface block in
+;; the Scope); "=>" is the two tokens "=" ">". (:ren l u) a rename, renp: only renames
+(defun uent-p (x renp)
+  (declare (xargs :guard t))
+  (or (and (not renp) (name-tok-p x))
+      (and (true-listp x) (= (len x) 3) (eq (kar x) :ren) (name-tok-p (kadr x)) (name-tok-p (kaddr x)))))
+(defun uents-p (x renp)
+  (declare (xargs :guard t))
+  (if (atom x) (null x) (and (uent-p (car x) renp) (uents-p (cdr x) renp))))
+(defun uent-y (x)
+  (declare (xargs :guard t))
+  (if (eq (kar x) :ren) (list (kadr x) (op "=") (op ">") (kaddr x)) (list x)))
+(defun uents-y (x)                   ; ent {, ent}
+  (declare (xargs :guard t))
+  (if (atom x) nil (append (uent-y (car x)) (if (consp (cdr x)) (cons (op ",") (uents-y (cdr x))) nil))))
+(defun use-ent (toks)                ; (mv ent rest), ent nil when none
+  (declare (xargs :guard t))
+  (cond ((not (name-tok-p (kar toks))) (mv nil toks))
+        ((and (equal (kadr toks) (op "=")) (equal (kaddr toks) (op ">")) (name-tok-p (kadddr toks)))
+         (mv (list :ren (kar toks) (kadddr toks)) (kdr (kdr (kdr (kdr toks))))))
+        (t (mv (kar toks) (kdr toks)))))
+(defthm use-ent-len
+  (implies (car (use-ent toks)) (< (len (mv-nth 1 (use-ent toks))) (len toks)))
+  :rule-classes :linear)
+(defun use-ents (toks)               ; (mv ok ents rest): ent {, ent}, or none
+  (declare (xargs :guard t :measure (len toks)))
+  (mv-let (e r) (use-ent toks)
+    (cond ((not e) (mv t nil toks))
+          ((equal (kar r) (op ","))
+           (mv-let (ok es r2) (use-ents (kdr r)) (if (and ok (consp es)) (mv t (cons e es) r2) (mv nil nil nil))))
+          (t (mv t (list e) r)))))
+(defthm use-ents-len
+  (<= (len (mv-nth 2 (use-ents toks))) (len toks))
+  :rule-classes :linear :hints (("Goal" :induct (use-ents toks))))
+(defthm use-ents-sound
+  (implies (mv-nth 0 (use-ents toks))
+           (and (uents-p (mv-nth 1 (use-ents toks)) nil)
+                (equal (append (uents-y (mv-nth 1 (use-ents toks))) (mv-nth 2 (use-ents toks))) toks)))
+  :hints (("Goal" :induct (use-ents toks))))
+(defthm use-ents-complete
+  (implies (and (uents-p x renp) (atom r))
+           (equal (use-ents (append (uents-y x) r)) (mv t x r)))
+  :hints (("Goal" :induct (uents-p x renp))))
+(defthm uents-y-first                ; a name first; a rename's "=" second
+  (and (implies (atom x) (equal (uents-y x) nil))
+       (implies (and (uents-p x renp) (consp x))
+                (and (consp (uents-y x)) (name-tok-p (car (uents-y x)))
+                     (implies renp (equal (cadr (uents-y x)) (op "=")))))))
+(in-theory (disable uent-p uents-p uent-y uents-y use-ent use-ents))
