@@ -54,6 +54,20 @@ A Lemmis program compiles to Fortran; it does not have to run through clotran.
 - **Two paths, one oracle.** Source to Fortran directly, and source to Clojure
   forms run by clotran, must agree: the fuzzer compares them, with flang and
   gfortran underneath. This replaces the Stage B proofs (see model/WRAPUP.md).
+- **Spike, 2026-11-21 (clotran's `compile --report/--pure` on 7 hand-mapped
+  functions): reuse the machinery, not the typer.** Reusable: the tier report
+  and its hints (N001, B001, `explain`), the fusion of map/filter/reduce into
+  one DO loop, `build --pure`, the pure-check/fuzz harness. Not reusable as is:
+  (a) its lattice is long/double/bool/1-D arrays/strings/records (no kinds,
+  rank > 1, complex, character(len), derived types) and parameter types are
+  hint-or-guess-and-specialise (up to 8 versions), not Fortran's declarations;
+  (b) its arithmetic is Clojure's (overflow-checked `cl_mul`, `error stop` on
+  bounds, 0-based arrays), not Fortran's; (c) `--report` says tier A where
+  `--pure` declines (a mixed-type if; and a `^doubles`-hinted array function:
+  "an array as a loop local"). So the Lemmis typer is Lemmis's own, from Stage
+  A's types and kinds, with Fortran's declarations and promotion rules; the
+  translator is source-to-Fortran, borrowing the tier-report format and the
+  fusion strategy.
 - (Terms: "tier A/B" is clotran's compile tiers; "Tier 1/2" in COORDINATION.md is
   the proof scope. They are unrelated.)
 
