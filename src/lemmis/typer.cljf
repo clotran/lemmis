@@ -15,6 +15,7 @@
   The typed unit is lemmis.parse's tree with :t on every expression node, :sig on every
   procedure, :vals (the val locals to declare) and :pipe plans on pipelines."
   (:require [lemmis.lex :as lex]
+            [lemmis.expr]
             [lemmis.parse :as parse]
             [lemmis.emitx :as x]
             [lemmis.reader :as reader]
@@ -193,7 +194,8 @@
         "abs" (do (num1 "a number" num-k?) (if (clj? t0) t0 {:k (or (part (:k t0)) (:k t0))}))
         ("sign" "mod" "modulo") (do (num1 "an integer or a real" #(or (ik? %) (rk? %))) (same-kind! env e targs nil) {:k (:k t0)})
         ("min" "max") (do (num1 "integers or reals" #(or (ik? %) (rk? %)))
-                          (same-kind! env e targs (str "write " n "(" (str/join ", " (repeat (count targs) "real(x, 8)")) ")"))
+                          (same-kind! env e targs (let [k (reduce promote (map :k (remove clj? targs)))]
+                                                   (str "convert each to " (tname {:k k}) ", e.g. " (if (ik? k) "int" "real") "(..., " (kind-num k) ")")))
                           {:k (:k t0)})
         ("sqrt" "exp" "log" "log10" "sin" "cos" "tan" "asin" "acos" "sinh" "cosh" "tanh")
         (do (num1 "a real (an integer is not converted: write real(x, 8))" rk?) {:k (:k t0)})
@@ -231,6 +233,10 @@
                   ta)))))
 
 (defn- sig-of [env n] (get-in env [:globals n :sig]))
+
+(defn- called! "Record a call of procedure n at node (the first one is where B002 points)." [env n node]
+  (swap! (:calls env) conj n)
+  (swap! (:sites env) #(if (contains? % n) % (assoc % n (select-keys node [:line :col])))))
 
 (defn- variable-actual? [env a]
   (case (:op a) :name (let [v (get-in env [:vars (:v a)])] (and v (not (:param? v)) (not (:val? v))))
@@ -303,7 +309,7 @@
         (assoc e :args args :t (find! env e "B104" (str "calls the val " n) "call a module procedure by name")))
       (and g (= :proc (:what g)))
       (let [[args kw actuals rt] (call-type env e g)]
-        (swap! (:calls env) conj n)
+        (called! env n e)
         (assoc e :args args :kwargs kw :actuals actuals :t rt))
       (= :in (x/intrinsic-status env n))
       (let [n2 (get x/aliases n n)
@@ -347,7 +353,7 @@
             (let [sig (sig-of env n) [d & more] (:dummies sig)]
               (when (and d (not more) (zero? (:rank d)) (not= :val (:k d)))
                 (when-not (= (:k d) (:k elt)) (fail env f (str "map/filter passes " (tname elt) " elements to " n ", whose dummy is " (tname d))))
-                (swap! (:calls env) conj n)
+                (called! env n f)
                 {:fn n :t (:result sig)}))
             (and (= :in (x/intrinsic-status env n)) (#{"abs" "sqrt" "exp" "log" "log10" "sin" "cos" "tan" "asin" "acos" "atan" "sinh" "cosh" "tanh"} (get x/aliases n n)))
             (let [n2 (get x/aliases n n)]
@@ -518,7 +524,7 @@
     (let [c (:callee s) n (:v c) g (get-in env [:globals n])]
       (if (and g (= :name (:op c)))
         (let [[args kw actuals _] (call-type env (assoc c :args (:args s) :kwargs (:kwargs s)) g)]
-          (swap! (:calls env) conj n)
+          (called! env n c)
           [(assoc s :args args :kwargs kw :actuals actuals) env])
         (do (doseq [a (concat (:args s) (vals (:kwargs s)))] (tx env a))
             (find! env c (if ((:refers env) n) "B004" "B003") (str "calls " n ", which is not a subroutine of this module") "write it as a subroutine of the module")
@@ -584,7 +590,7 @@
         (assign-ok! env init v t)))))
 
 (defn- proc-env [env vars self]
-  (assoc env :vars vars :self self :calls (atom #{})
+  (assoc env :vars vars :self self :calls (atom #{}) :sites (atom {})
          :taken (atom (into (set (keys vars)) (keys (:globals env))))))
 
 (defn- type-proc [env p]
@@ -596,7 +602,7 @@
       (find! penv (:ent v) "B101" (str "the dummy " n " is a Clojure value (val ::)") (str "declare its Fortran type, e.g. real(8), intent(in) :: " n)))
     (type-decl-exprs! penv vars)
     (let [[body _] (stmts penv (:body p))]
-      (assoc p :body body :vars vars :vals @(:vals penv) :sig (sig-of env (:name p)) :calls @(:calls penv)))))
+      (assoc p :body body :vars vars :vals @(:vals penv) :sig (sig-of env (:name p)) :calls @(:calls penv) :sites @(:sites penv)))))
 
 (defn- module-params
   "The module's (or program's) parameters, typed: {name {:what :param :t type}}."
@@ -614,6 +620,16 @@
               env))
           env (:specs unit)))
 
+(defn type-expr
+  "The type of one expression (text), with no declarations in scope: a literal's kind, an
+  intrinsic's result. Answers the type, or throws a type error."
+  [text]
+  (let [[st] (lex/statements text "expr")
+        c (lemmis.expr/cursor st "expr")
+        e (lemmis.expr/expr-all c)
+        env {:path "expr" :kinds {} :globals {} :refers #{} :vars {} :host #{} :findings (atom []) :calls (atom #{}) :sites (atom {}) :printers #{}}]
+    (:t (tx env e))))
+
 (defn tiers
   "{proc {:tier :A|:B :findings [...]}}: B with a finding of its own, or calling a B procedure (B002)."
   [procs findings]
@@ -624,10 +640,10 @@
       (let [b2 (into b (keep (fn [[n cs]] (when (some b cs) n)) calls))]
         (if (not= b b2) (recur b2)
             (into {} (map (fn [p] (let [n (:name p)
-                                        via (when-not (b0 n) (first (filter b (sort (:calls p)))))]
+                                        via (first (filter b (sort (disj (set (:calls p)) n))))]
                                     [n {:tier (if (b n) :B :A)
                                         :findings (vec (concat (own n)
-                                                               (when via [{:code "B002" :proc n :line (:line p) :col (:col p)
+                                                               (when via [{:code "B002" :proc n :line (get-in p [:sites via :line] (:line p)) :col (get-in p [:sites via :col] (:col p))
                                                                            :msg (str "calls " via ", which is tier B")
                                                                            :help (str "see the findings for " via)}])))}]))
                           procs)))))))

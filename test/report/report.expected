@@ -1,0 +1,54 @@
+tier B  report/names
+tier B  report/run
+tier A  report/sq
+tier A  report/total
+
+warning[B101]: the dummy xs is a Clojure value (val ::)
+  in `report/names`
+   --> test/report/report.lms:15:12
+   |
+15 |     val :: xs
+   |            ^
+   = help: declare its Fortran type, e.g. real(8), intent(in) :: xs
+
+warning[B004]: calls join, a name from another namespace
+  in `report/names`
+   --> test/report/report.lms:17:9
+   |
+17 |     s = join(', ', xs)
+   |         ^
+   = help: its types are not declared in this file
+
+warning[B003]: assigns a Clojure value to s
+  in `report/names`
+   --> test/report/report.lms:17:9
+   |
+17 |     s = join(', ', xs)
+   |         ^
+   = help: its type is known only when it runs; compute it in Fortran as character(len=40)
+
+warning[B010]: a vector literal #[...]
+  in `report/run`
+   --> test/report/report.lms:22:30
+   |
+22 |     print *, total(v), names(#['a', 'b'])
+   |                              ^
+   = help: a Fortran array: declare it and assign its elements
+
+warning[B001]: the sequence of the pipeline goes to vec, which is not a Fortran reduction
+  in `report/run`
+   --> test/report/report.lms:23:28
+   |
+23 |     print *, ->> v map(sq) `vec`
+   |                            ^
+   = help: end the map/filter chain with sum, product, maxval or minval
+
+warning[B002]: calls names, which is tier B
+  in `report/run`
+   --> test/report/report.lms:22:24
+   |
+22 |     print *, total(v), names(#['a', 'b'])
+   |                        ^
+   = help: see the findings for names
+
+For what a code means: clotran -m lemmis.fortran --explain B001

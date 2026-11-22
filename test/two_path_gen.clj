@@ -104,7 +104,7 @@
             (let [lit (pick [(ilit (:k a) (pick [2 3 5 -7])) (rlit (if (rkind? (:k a)) (:k a) :real8) (pick ["2.0" "4.0" "0.5"]) 2.0 nil)])
                   k (promote (:k a) (:k lit))]
               {:s (str (paren a) " / " (paren lit)) :k k :b (:b a) :q nil}))
-      "**" (cond (ikind? (:k a)) (let [n (r 4)] {:s (str (paren a) " ** " n) :k (:k a) :b (Math/pow (max 1 (:b a)) n) :q 0})
+      "**" (cond (ikind? (:k a)) (let [n (r 4)] {:s (str (paren a) " ** " n) :k (promote (:k a) :int4) :b (Math/pow (max 1 (:b a)) n) :q 0})
                  (rkind? (:k a)) {:s (str (paren a) " ** 2") :k (:k a) :b (* (:b a) (:b a)) :q (when (:q a) (* 2 (:q a)))}
                  :else nil))))
 

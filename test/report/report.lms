@@ -1,0 +1,25 @@
+! the report: tier A procedures, and tier B ones with their findings
+module report
+  use clojure.string, only: join
+  implicit none
+contains
+  pure real(8) function sq(t)
+    real(8), intent(in) :: t
+    sq = t * t
+  end function sq
+  real(8) function total(a)
+    real(8), intent(in) :: a(:)
+    total = ->> a map(sq) sum
+  end function total
+  function names(xs) result(s)
+    val :: xs
+    character(len=40) :: s
+    s = join(', ', xs)
+  end function names
+  subroutine run()
+    real(8) :: v(3)
+    v(1) = 1; v(2) = 2; v(3) = 3
+    print *, total(v), names(#['a', 'b'])
+    print *, ->> v map(sq) `vec`
+  end subroutine run
+end module report

@@ -1,0 +1,39 @@
+! error: 8:19: sqrt needs a real (an integer is not converted: write real(x, 8))
+module sqrt_int
+  implicit none
+contains
+  subroutine run()
+    integer :: i, j, a(3)
+    real(8) :: x; logical :: p, q; complex :: z
+    print *, sqrt(i)
+  end subroutine run
+  subroutine take8(n)
+    integer(8), intent(in) :: n
+  end subroutine take8
+  integer function take8i(n)
+    integer(8), intent(in) :: n
+    take8i = 1
+  end function take8i
+  real(8) function half(n)
+    integer, intent(in) :: n
+    half = n / 2.0d0
+  end function half
+  subroutine set(n)
+    integer, intent(out) :: n
+    n = 1
+  end subroutine set
+  subroutine two(n, m)
+    integer, intent(in) :: n
+    integer, intent(inout) :: m
+    m = n
+  end subroutine two
+  subroutine cs(c)
+    character(len=3), intent(in) :: c
+    print *, c
+  end subroutine cs
+  integer function noisy(n)
+    integer, intent(in) :: n
+    print *, n
+    noisy = n
+  end function noisy
+end module sqrt_int

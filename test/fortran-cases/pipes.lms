@@ -18,6 +18,10 @@ contains
     integer, intent(in) :: n
     odd = mod(n, 2) == 1
   end function odd
+  pure integer function minus(a, b)
+    integer, intent(in) :: a, b
+    minus = a - b
+  end function minus
   real(8) function norm2sq(a, n)
     integer, intent(in) :: n
     real(8), intent(in) :: a(n)
@@ -41,5 +45,6 @@ contains
     val total = ->> k map(tri) filter(odd) sum
     val m = ->> v filter(big) minval
     print *, total, m, sq(->> v sum), -> 2.0d0 sq
+    print *, -> 10 minus(3), ->> 10 minus(3), ->> k sum minus(1), -> k sum minus(1)
   end subroutine run
 end module pipes

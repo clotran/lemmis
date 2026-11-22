@@ -26,5 +26,13 @@ contains
     end do
     val u = trim(t // '   ') // '!'
     print *, u, len(u)
+    val sq = 2.5d0
+    val i2 = sq * 2
+    print *, sq, i2
+    if (b > 0) then
+      val sq = 'shadow'
+      print *, sq, len(sq)
+    end if
+    print *, sq
   end subroutine run
 end module vals
