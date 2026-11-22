@@ -15,6 +15,10 @@ contains
     val t = 'ab' // 'cde'
     val p = a > 9 .and. c < 1.0
     print *, a, kind(a), c, d, z, t, len(t), p
+    val r = abs((3.0, 4.0)) + aimag(z)
+    val r8 = real(b, 8)
+    val r4 = real(z)
+    print *, r, r8, r4
     do i = 1, 3
       val sq = i * i
       val half = sq / 2.0

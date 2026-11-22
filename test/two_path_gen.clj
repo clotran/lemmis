@@ -84,7 +84,8 @@
 
 (defn- conv-real [e k]
   (let [inner (cond (ckind? (:k e)) (str "real(" (:s e) ", " (kn k) ")") :else (str "real(" (:s e) ", " (kn k) ")"))]
-    {:s (str inner " + 0.0" (sfx k)) :k k :b (:b e) :q (when (exact-in? k (:b e) (:q e)) (:q e))}))
+    ;; + 0.0 turns a -0.0 into 0.0 (max, min and sign of a signed zero are the processor's); an integer has none
+    {:s (if (ikind? (:k e)) inner (str inner " + 0.0" (sfx k))) :k k :b (:b e) :q (when (exact-in? k (:b e) (:q e)) (:q e))}))
 
 (defn- too-big? [e]
   (let [k (:k e)]
