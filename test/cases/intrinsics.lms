@@ -1,4 +1,4 @@
-module intrin
+module intrinsics
   implicit none
 contains
   subroutine run()
@@ -14,4 +14,4 @@ contains
     i = 17
     print *, mod(i, 5), modulo(-i, 5), mod(5.5d0, 2.0d0), modulo(-5.5d0, 2.0d0)
   end subroutine run
-end module intrin
+end module intrinsics

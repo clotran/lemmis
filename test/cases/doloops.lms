@@ -1,4 +1,4 @@
-module loops
+module doloops
   implicit none
 contains
   subroutine run()
@@ -43,7 +43,7 @@ contains
       if (n > 20) exit
     end do
     print *, n
-    print *, first_square_over(50), first_square_over(0)
+    print *, first_square_over(50), first_square_over(0), find(3), find(11)
   end subroutine run
   integer function first_square_over(m)
     integer, intent(in) :: m
@@ -56,4 +56,16 @@ contains
       end if
     end do
   end function first_square_over
-end module loops
+  integer function find(m)
+    integer, intent(in) :: m
+    integer :: k
+    find = -1
+    do k = 1, 10
+      if (k == m) then
+        find = k * 10
+        return
+      end if
+    end do
+    find = 0
+  end function find
+end module doloops

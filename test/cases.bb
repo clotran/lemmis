@@ -36,7 +36,12 @@
 
 ;; clotran: one process for every case
 (defn clotran-all []
-  (let [r (apply sh {:env {"CLOTRAN_PATH" (str root "/src")} :dir tmp :timeout 600000} clotran (str here "/run-lms.clj") files)
+  (let [proc (apply p/process {:env {"CLOTRAN_PATH" (or (System/getenv "LEMMIS_SRC") (str root "/src"))} :dir tmp :out :string :err :string}
+                    clotran (str here "/run-lms.clj") files)
+        secs (parse-long (or (System/getenv "LEMMIS_TIMEOUT") "600"))
+        r (deref proc (* 1000 secs) ::timeout)
+        _ (when (= r ::timeout) (p/destroy-tree proc))
+        r (if (= r ::timeout) {:out (str "!!! clotran did not finish in " secs " s")} r)
         out (str/split-lines (:out r))]
     (loop [ls out cur nil acc {}]
       (if-let [l (first ls)]
