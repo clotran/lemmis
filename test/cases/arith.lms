@@ -1,0 +1,26 @@
+module arith
+  implicit none
+contains
+  subroutine run()
+    integer :: i, j
+    integer(8) :: big
+    integer(2) :: h
+    integer(1) :: b
+    real :: x
+    real(8) :: y
+    i = 7; j = -2
+    print *, i / j, mod(i, j), modulo(i, j), mod(-i, 3), modulo(-i, 3)
+    print *, i ** 2, 2 ** 10, (-3) ** 3, 2.0 ** 3, 1.5d0 ** 2
+    big = 2147483647
+    big = big + 1
+    print *, big, huge(i), huge(big)
+    h = 300; b = 100
+    print *, h + b, h * 2, b - 1, kind(h + b), kind(b * 1_1)
+    x = 1.1; y = 1.1d0
+    print *, x, y, x + y, x * 3, y / 3
+    print *, 0.1 + 0.2, 0.1d0 + 0.2d0, 1.0 / 3.0, 1.0d0 / 3.0d0
+    print *, -i + 3, - i ** 2, 10 - 2 - 3, 2 * 3 / 4, 2 / 4 * 3, 3.0_8 * 2
+    x = 7.9; i = x; j = -x
+    print *, i, j, real(i), dble(i) / 4
+  end subroutine run
+end module arith

@@ -1,0 +1,27 @@
+module ifs
+  implicit none
+contains
+  subroutine run()
+    integer :: i
+    logical :: p, q
+    do i = -2, 12, 2
+      if (i < 0) then
+        print *, 'neg', i
+      else if (i == 0) then
+        print *, 'zero'
+      else if (i <= 6) then
+        print *, 'small', i
+      else
+        print *, 'big', i
+      end if
+    end do
+    p = .true.; q = .false.
+    print *, p .and. q, p .or. q, .not. p, p .eqv. q, p .neqv. q
+    print *, 3 == 3.0, 2 < 2.5d0, 1.0 /= 1.0d0, 7 .ge. 7, 'abc' < 'abd', 'ab' == 'ab   '
+    if (p) print *, 'p holds'
+    if (q) print *, 'q holds'
+    i = 0
+    if (p .and. .not. q) i = i + 10
+    print *, i
+  end subroutine run
+end module ifs

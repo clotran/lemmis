@@ -1,0 +1,177 @@
+(ns lemmis.expr
+  "Expressions, J3/24-007 R1001-R1023, over a cursor of one statement's tokens.
+  A node is a map with :op and the :line :col of its first token:
+    {:op :int :v text :kind k} {:op :real ...} {:op :str :v s} {:op :logical :v b}
+    {:op :complex :re n :im n}  {:op :name :v n}  {:op :cname :v s}  {:op :kw :v s}
+    {:op :ref :v name :args [node] :kwargs {name node}}   a call or an array element
+    {:op :bin :o op :a n :b n}  {:op :un :o op :a n}  {:op :paren :a n}
+    {:op :pipe :o \"->>\" :init n :stages [node]}  {:op :vec :items}  {:op :map :pairs}"
+  (:require [lemmis.lex :as lex]))
+
+;; a cursor: {:ts tokens :i (atom index) :path p}
+(defn cursor [ts path] {:ts ts :i (atom 0) :path path})
+(defn peek-t ([c] (get (:ts c) @(:i c))) ([c n] (get (:ts c) (+ @(:i c) n))))
+(defn next-t! [c] (let [t (peek-t c)] (swap! (:i c) inc) t))
+(defn at-end? [c] (nil? (peek-t c)))
+(defn op? [t v] (and t (= :op (:t t)) (= v (:v t))))
+(defn name? ([t] (and t (= :name (:t t)))) ([t v] (and (name? t) (= v (:v t)))))
+(defn dop? [t v] (and t (= :dop (:t t)) (= v (:v t))))
+
+(defn err
+  ([c msg] (err c (or (peek-t c) (peek (:ts c))) msg))
+  ([c t msg] (lex/fail (:path c) (:line t) (if (and (= t (peek (:ts c))) (nil? (peek-t c))) (+ (:col t) (count (str (:v t)))) (:col t)) msg)))
+
+(defn expect! [c v]
+  (let [t (peek-t c)]
+    (if (op? t v) (next-t! c) (err c (str "expected '" v "'" (when t (str ", found '" (:v t) "'")))))))
+(defn expect-name! [c]
+  (let [t (peek-t c)] (if (name? t) (next-t! c) (err c "expected a name"))))
+
+(defn- at [t m] (assoc m :line (:line t) :col (:col t)))
+
+(declare expr)
+
+(defn- arglist
+  "After '(': actual arguments to ')', R1523: [keyword =] expr. Returns [args kwargs]."
+  [c]
+  (if (op? (peek-t c) ")")
+    (do (next-t! c) [[] {}])
+    (loop [args [] kw {}]
+      (let [t (peek-t c)]
+        (when (op? t ":") (err c "array sections are refused in version 0"))
+        (let [[args kw] (if (and (name? t) (op? (peek-t c 1) "="))
+                          (do (next-t! c) (next-t! c) [args (assoc kw (:v t) (expr c))])
+                          (do (when (seq kw) (err c "a positional argument after a keyword argument"))
+                              [(conj args (expr c)) kw]))]
+          (when (op? (peek-t c) ":") (err c "array sections are refused in version 0"))
+          (cond (op? (peek-t c) ",") (do (next-t! c) (recur args kw))
+                :else (do (expect! c ")") [args kw])))))))
+
+(defn- stage-start? [t] (or (name? t) (= :cname (:t t))))
+
+(defn- designator
+  "A name or Clojure name, with an optional (args) part."
+  [c]
+  (let [t (next-t! c)
+        base (at t {:op (if (= :cname (:t t)) :cname :name) :v (:v t)})]
+    (when (op? (peek-t c) "%") (err c "derived types (%) are refused in version 0"))
+    (if (op? (peek-t c) "(")
+      (do (next-t! c) (let [[a k] (arglist c)] (assoc base :op :ref :fname (:op base) :args a :kwargs k)))
+      base)))
+
+(defn- primary [c]
+  (let [t (peek-t c)]
+    (cond
+      (nil? t) (err c "expected an expression")
+      (#{:int :real} (:t t)) (do (next-t! c) (at t {:op (:t t) :v (:v t) :kind (:kind t)}))
+      (= :str (:t t)) (do (next-t! c) (at t {:op :str :v (:v t)}))
+      (= :logical (:t t)) (do (next-t! c) (at t {:op :logical :v (:v t)}))
+      (or (name? t) (= :cname (:t t))) (designator c)
+      (op? t "(")
+      (do (next-t! c)
+          (let [a (expr c)]
+            (if (op? (peek-t c) ",")
+              ;; R718 complex literal: (real-part, imag-part), each a signed literal
+              (do (next-t! c)
+                  (let [b (expr c)]
+                    (expect! c ")")
+                    (let [lit? (fn [n] (or (#{:int :real} (:op n)) (and (= :un (:op n)) (#{:int :real} (:op (:a n))))))]
+                      (when-not (and (lit? a) (lit? b)) (err c t "a complex constant's parts are literals ((re, im)); use cmplx(x, y)"))
+                      (at t {:op :complex :re a :im b}))))
+              (do (expect! c ")") (at t {:op :paren :a a})))))
+      ;; ext: pipelines, persistent collections, keywords
+      (or (op? t "->>") (op? t "->"))
+      (do (next-t! c)
+          (let [init (primary c)
+                stages (loop [ss []] (if (stage-start? (peek-t c)) (recur (conj ss (designator c))) ss))]
+            (when (empty? stages) (err c "a pipeline needs at least one stage after its first value"))
+            (at t {:op :pipe :o (:v t) :init init :stages stages})))
+      (op? t "#[")
+      (do (next-t! c)
+          (if (op? (peek-t c) "]") (do (next-t! c) (at t {:op :vec :items []}))
+              (loop [items []]
+                (let [items (conj items (expr c))]
+                  (if (op? (peek-t c) ",") (do (next-t! c) (recur items)) (do (expect! c "]") (at t {:op :vec :items items})))))))
+      (op? t "#{")
+      (do (next-t! c)
+          (if (op? (peek-t c) "}") (do (next-t! c) (at t {:op :map :pairs []}))
+              (loop [ps []]
+                (let [k (expr c) v (expr c) ps (conj ps [k v])]
+                  (if (op? (peek-t c) ",") (do (next-t! c) (recur ps)) (do (expect! c "}") (at t {:op :map :pairs ps})))))))
+      (and (op? t ":") (name? (peek-t c 1)) (= (:line t) (:line (peek-t c 1))) (= (inc (:col t)) (:col (peek-t c 1))))
+      (do (next-t! c) (let [n (next-t! c)] (at t {:op :kw :v (:raw n)})))
+      :else (err c (str "expected an expression, found '" (:v t) "'")))))
+
+;; R1004 mult-operand: level-1 [** mult-operand], right to left
+(defn- power [c]
+  (let [a (primary c)]
+    (if (op? (peek-t c) "**")
+      (let [t (next-t! c)]
+        (when (or (op? (peek-t c) "-") (op? (peek-t c) "+")) (err c "Fortran forbids a sign after ** (write x**(-n))"))
+        (at t {:op :bin :o "**" :a a :b (power c) :line (:line a) :col (:col a)}))
+      a)))
+
+(defn- no-sign! [c]
+  (when (or (op? (peek-t c) "-") (op? (peek-t c) "+")) (err c "Fortran forbids two operators in a row (write a*(-b))")))
+
+;; R1005 add-operand: [add-operand mult-op] mult-operand
+(defn- mult [c]
+  (loop [a (power c)]
+    (let [t (peek-t c)]
+      (if (or (op? t "*") (op? t "/"))
+        (do (next-t! c) (no-sign! c) (recur (at a {:op :bin :o (:v t) :a a :b (power c)})))
+        a))))
+
+;; R1007 level-2-expr: [[level-2-expr] add-op] add-operand
+(defn- level2 [c]
+  (let [t (peek-t c)
+        a (if (or (op? t "-") (op? t "+"))
+            (do (next-t! c) (no-sign! c) (at t {:op :un :o (:v t) :a (mult c)}))
+            (mult c))]
+    (loop [a a]
+      (let [t (peek-t c)]
+        (if (or (op? t "+") (op? t "-"))
+          (do (next-t! c) (no-sign! c) (recur (at a {:op :bin :o (:v t) :a a :b (mult c)})))
+          a)))))
+
+;; R1011 level-3-expr: [level-3-expr concat-op] level-2-expr
+(defn- level3 [c]
+  (loop [a (level2 c)]
+    (if (op? (peek-t c) "//") (do (next-t! c) (recur (at a {:op :bin :o "//" :a a :b (level2 c)}))) a)))
+
+(def ^:private rel {"==" "==" "/=" "/=" "<" "<" "<=" "<=" ">" ">" ">=" ">="
+                    "eq" "==" "ne" "/=" "lt" "<" "le" "<=" "gt" ">" "ge" ">="})
+
+(defn- rel-op [t] (when (and t (#{:op :dop} (:t t))) (rel (:v t))))
+
+;; R1013 level-4-expr: [level-3-expr rel-op] level-3-expr (not associative)
+(defn- level4 [c]
+  (let [a (level3 c)]
+    (if-let [o (rel-op (peek-t c))]
+      (do (next-t! c)
+          (let [b (level3 c)]
+            (when (rel-op (peek-t c)) (err c "relations do not chain in Fortran"))
+            (at a {:op :bin :o o :a a :b b})))
+      a)))
+
+;; R1014 and-operand: [not-op] level-4-expr
+(defn- not-x [c]
+  (let [t (peek-t c)]
+    (if (dop? t "not") (do (next-t! c) (at t {:op :un :o "not" :a (level4 c)})) (level4 c))))
+
+(defn- left [c sub ops]
+  (loop [a (sub c)]
+    (let [t (peek-t c)]
+      (if (and t (= :dop (:t t)) (ops (:v t)))
+        (do (next-t! c) (recur (at a {:op :bin :o (:v t) :a a :b (sub c)})))
+        a))))
+
+(defn- and-x [c] (left c not-x #{"and"}))
+(defn- or-x [c] (left c and-x #{"or"}))
+
+;; R1023 expr (no defined operators in version 0)
+(defn expr [c] (left c or-x #{"eqv" "neqv"}))
+
+(defn expr-all
+  "An expression that is the rest of the statement."
+  [c] (let [e (expr c)] (when-not (at-end? c) (err c (str "unexpected '" (:v (peek-t c)) "' after the expression"))) e))

@@ -1,0 +1,2 @@
+(ns lemmis.probe (:require [fortran.ops :as f]))
+(defn go [] (let [a (fortran/make-array "real8" 3)] (aset a 0 (f/real8 "1.5")) [(aget a 0) (class a) (f/+ (f/int4 7) (f/int4 2)) (f// (f/int4 -7) (f/int4 2)) (type (f/lit :real4 "1.1")) (f/kind-of (f/lit :real4 "1.1")) (f/+ (f/lit :real4 "1.1") (f/lit :real4 "2.2")) (alength a) (aget (fortran/make-array "int4" 2) 1)]))

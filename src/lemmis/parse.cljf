@@ -1,0 +1,396 @@
+(ns lemmis.parse
+  "Statements and program units, J3/24-007 R1401-R1546, R801-R866, R1033-R1162, R1212,
+  over lemmis.lex's statements. The tree:
+    unit  {:unit :module|:program :name n :uses [use] :specs [spec] :body [stmt] :procs [proc]}
+    use   {:name n :only nil|[[local remote]] :renames [[local remote]]}
+    proc  {:kind :function|:subroutine :name n :args [n] :result n :type type :specs [spec] :body [stmt] :uses [use]}
+    spec  {:spec :decl :type type :attrs {} :ents [{:name n :dims [[lo hi]] :init e}]} | {:spec :implicit-none}
+          | {:spec :access :v :private|:public :names [n]}
+    type  {:base :integer|:real|:complex|:logical|:character :kind expr-or-nil :len expr|:star|nil}
+    stmt  {:s :assign :lhs ref :e e} {:s :val :name n :e e} {:s :if :arms [[c stmts]] :else stmts}
+          {:s :do :var n :from e :to e :step e :body} {:s :dowhile :c e :body} {:s :loop :body}
+          {:s :exit} {:s :cycle} {:s :return} {:s :continue} {:s :call :callee e :args :kwargs}
+          {:s :print :items [e]}
+  Every node carries the :line :col of its first token."
+  (:require [lemmis.lex :as lex]
+            [lemmis.expr :as x :refer [cursor peek-t next-t! at-end? op? name? err expect! expect-name!]]))
+
+;; 6.3.2.2: these keywords may be written without their blank
+(def ^:private glued
+  {"enddo" ["end" "do"] "endif" ["end" "if"] "elseif" ["else" "if"] "endmodule" ["end" "module"]
+   "endfunction" ["end" "function"] "endsubroutine" ["end" "subroutine"] "endprogram" ["end" "program"]
+   "doubleprecision" ["double" "precision"] "selectcase" ["select" "case"] "endselect" ["end" "select"]
+   "goto" ["go" "to"] "dowhile" ["do" "while"] "inout" ["in" "out"]})
+
+(defn- unglue [ts]
+  (if-let [ws (and (name? (first ts)) (glued (:v (first ts))))]
+    (let [t (first ts)] (into (mapv #(assoc t :v %) ws) (rest ts)))
+    ts))
+
+(defn- assignment? [ts]
+  (and (name? (first ts))
+       (or (op? (get ts 1) "=") (op? (get ts 1) "=>")
+           (and (op? (get ts 1) "(")
+                (loop [i 2 d 1]
+                  (let [t (get ts i)]
+                    (cond (nil? t) false
+                          (op? t "(") (recur (inc i) (inc d))
+                          (op? t ")") (if (= d 1) (or (op? (get ts (inc i)) "=") (op? (get ts (inc i)) "=>")) (recur (inc i) (dec d)))
+                          :else (recur (inc i) d))))))))
+
+(defn- at [t m] (assoc m :line (:line t) :col (:col t)))
+(defn- kw? [c & ws] (every? identity (map-indexed (fn [i w] (name? (peek-t c i) w)) ws)))
+(defn- done! [c] (when-not (at-end? c) (err c (str "unexpected '" (:v (peek-t c)) "'"))))
+
+;; R704 intrinsic-type-spec, R706 kind-selector, R721 char-selector
+(defn- type-start? [c]
+  (or (some #(kw? c %) ["integer" "real" "complex" "logical" "character"]) (kw? c "double" "precision")))
+
+(defn- type-spec [c]
+  (let [t (peek-t c)]
+    (cond
+      (kw? c "double" "precision") (do (next-t! c) (next-t! c) (at t {:base :real :kind (at t {:op :int :v "8"})}))
+      :else
+      (let [base (keyword (:v (next-t! c)))]
+        (cond
+          (and (= base :character) (op? (peek-t c) "*"))
+          (do (next-t! c) (if (op? (peek-t c) "(")
+                            (do (next-t! c) (let [l (if (op? (peek-t c) "*") (do (next-t! c) :star) (x/expr c))] (expect! c ")") (at t {:base base :len l})))
+                            (at t {:base base :len (x/expr c)})))
+          (op? (peek-t c) "(")
+          (do (next-t! c)
+              (let [one (fn [] (cond (op? (peek-t c) "*") (do (next-t! c) [:len :star])
+                                     (and (name? (peek-t c)) (op? (peek-t c 1) "=")) (let [k (:v (next-t! c))] (next-t! c)
+                                                                                         (when-not (#{"kind" "len"} k) (err c (str "unknown type parameter " k)))
+                                                                                         [(keyword k) (if (op? (peek-t c) "*") (do (next-t! c) :star) (x/expr c))])
+                                     :else [(if (= base :character) :len :kind) (x/expr c)]))
+                    p1 (one)
+                    ps (if (op? (peek-t c) ",") (do (next-t! c) [p1 (let [[k v] (one)] [(if (= k :len) :kind k) v])]) [p1])]
+                (expect! c ")")
+                (when (and (= base :logical) (seq ps)) (err c t "logical kinds are refused in version 0 (logical is the default kind)"))
+                (merge (at t {:base base}) (into {} ps))))
+          (and (#{:integer :real :complex :logical} base) (op? (peek-t c) "*"))
+          (err c "the type*n spelling is not Fortran (write integer(n))")
+          :else (at t {:base base}))))))
+
+;; R814 array-spec, rank 1
+(defn- array-spec [c]
+  (expect! c "(")
+  (let [spec (fn []
+               (cond (op? (peek-t c) ":") (do (next-t! c) [nil :colon])
+                     (op? (peek-t c) "*") (do (next-t! c) [nil :star])
+                     :else (let [a (x/expr c)]
+                             (if (op? (peek-t c) ":")
+                               (do (next-t! c) (if (or (op? (peek-t c) ")") (op? (peek-t c) ","))
+                                                 [a :colon]
+                                                 (if (op? (peek-t c) "*") (do (next-t! c) [a :star]) [a (x/expr c)])))
+                               [nil a]))))
+        s (spec)]
+    (when (op? (peek-t c) ",") (err c "arrays of rank above 1 are refused in version 0"))
+    (expect! c ")")
+    [s]))
+
+;; R801 type-declaration-stmt
+(defn- decl [c]
+  (let [t (peek-t c) ty (type-spec c)
+        attrs (loop [as {}]
+                (if (op? (peek-t c) ",")
+                  (do (next-t! c)
+                      (let [a (expect-name! c)]
+                        (case (:v a)
+                          "parameter" (recur (assoc as :parameter true))
+                          "intent" (do (expect! c "(")
+                                       (let [i (:v (expect-name! c))
+                                             i (if (and (= i "in") (name? (peek-t c) "out")) (do (next-t! c) "inout") i)]
+                                         (when-not (#{"in" "out" "inout"} i) (err c (str "unknown intent " i)))
+                                         (expect! c ")") (recur (assoc as :intent (keyword i)))))
+                          "dimension" (recur (assoc as :dims (array-spec c)))
+                          ("private" "public") (recur (assoc as :access (keyword (:v a))))
+                          ("pure" "elemental") (err c a (str (:v a) " is not an attribute"))
+                          (err c a (str "the attribute " (:v a) " is refused in version 0")))))
+                  as))
+        _ (if (op? (peek-t c) "::") (next-t! c) (when (seq attrs) (err c "expected '::'")))
+        ents (loop [es []]
+               (let [n (expect-name! c)
+                     dims (when (op? (peek-t c) "(") (array-spec c))
+                     init (when (op? (peek-t c) "=") (next-t! c) (x/expr c))
+                     es (conj es (at n {:name (:v n) :dims dims :init init}))]
+                 (when (op? (peek-t c) "=>") (err c "pointer initialization is refused in version 0"))
+                 (if (op? (peek-t c) ",") (do (next-t! c) (recur es)) es)))]
+    (done! c)
+    (at t {:spec :decl :type ty :attrs attrs :ents ents})))
+
+;; R1409 use-stmt
+(defn- use-stmt [c]
+  (let [t (next-t! c)
+        _ (when (op? (peek-t c) ",") (err c "use with a module nature (intrinsic, non_intrinsic) is refused in version 0"))
+        _ (when (op? (peek-t c) "::") (next-t! c))
+        p (peek-t c)
+        nm (cond (name? p) (:v (next-t! c)) (= :cname (:t p)) (:v (next-t! c)) :else (err c "expected a module name"))
+        nm1 (fn [] (let [p (peek-t c)] (if (= :cname (:t p)) (:v (next-t! c)) (:v (expect-name! c)))))
+        pair (fn [] (let [a (nm1)] (if (op? (peek-t c) "=>") (do (next-t! c) [a (nm1)]) [a a])))]
+    (if (op? (peek-t c) ",")
+      (do (next-t! c)
+          (if (and (name? (peek-t c) "only") (op? (peek-t c 1) ":"))
+            (do (next-t! c) (next-t! c)
+                (let [ps (if (at-end? c) [] (loop [ps [(pair)]] (if (op? (peek-t c) ",") (do (next-t! c) (recur (conj ps (pair)))) ps)))]
+                  (done! c) (at t {:name nm :only ps})))
+            (let [ps (loop [ps [(pair)]] (if (op? (peek-t c) ",") (do (next-t! c) (recur (conj ps (pair)))) ps))]
+              (done! c) (at t {:name nm :renames ps}))))
+      (do (done! c) (at t {:name nm})))))
+
+(declare block proc-start?)
+
+(defn- lhs [c]
+  (let [n (expect-name! c)]
+    (if (op? (peek-t c) "(")
+      (do (next-t! c) (let [i (x/expr c)] (when (op? (peek-t c) ",") (err c "arrays of rank above 1 are refused in version 0"))
+                        (when (op? (peek-t c) ":") (err c "array sections are refused in version 0"))
+                        (expect! c ")") (at n {:name (:v n) :idx i})))
+      (at n {:name (:v n)}))))
+
+(defn- action
+  "R515 action-stmt from the cursor (a statement on its own or after if (...))."
+  [c path]
+  (let [t (peek-t c) ts (subvec (:ts c) @(:i c))]
+    (cond
+      (assignment? ts)
+      (let [l (lhs c)]
+        (when (op? (peek-t c) "=>") (err c "pointer assignment is refused in version 0"))
+        (expect! c "=") (at t {:s :assign :lhs l :e (x/expr-all c)}))
+      (and (name? t "val") (name? (peek-t c 1)) (op? (peek-t c 2) "="))
+      (do (next-t! c) (let [n (next-t! c)] (next-t! c) (at t {:s :val :name (:v n) :e (x/expr-all c)})))
+      (kw? c "exit") (do (next-t! c) (when-not (at-end? c) (err c "construct names are refused in version 0")) (at t {:s :exit}))
+      (kw? c "cycle") (do (next-t! c) (when-not (at-end? c) (err c "construct names are refused in version 0")) (at t {:s :cycle}))
+      (kw? c "return") (do (next-t! c) (when-not (at-end? c) (err c "alternate return is refused")) (at t {:s :return}))
+      (kw? c "continue") (do (next-t! c) (done! c) (at t {:s :continue}))
+      (kw? c "call")
+      (do (next-t! c)
+          (let [p (peek-t c)]
+            (when-not (or (name? p) (= :cname (:t p))) (err c "expected a subroutine name"))
+            (next-t! c)
+            (let [callee (at p {:op (if (name? p) :name :cname) :v (:v p)})
+                  [as kw] (if (op? (peek-t c) "(") (do (next-t! c) (#'x/arglist c)) [[] {}])]
+              (done! c) (at t {:s :call :callee callee :args as :kwargs kw}))))
+      (or (kw? c "print") (and (kw? c "write") (op? (peek-t c 1) "(")))
+      (let [w? (kw? c "write")]
+        (next-t! c)
+        (if w?
+          (do (expect! c "(")
+              (when-not (and (op? (peek-t c) "*") (op? (peek-t c 1) ",") (op? (peek-t c 2) "*") (op? (peek-t c 3) ")"))
+                (err c "only write(*,*) is in version 0"))
+              (dotimes [_ 4] (next-t! c)))
+          (do (when-not (op? (peek-t c) "*") (err c "only list-directed print * is in version 0 (formats are refused)"))
+              (next-t! c)))
+        (let [items (cond (at-end? c) []
+                          w? (loop [is [(x/expr c)]] (if (op? (peek-t c) ",") (do (next-t! c) (recur (conj is (x/expr c)))) is))
+                          :else (do (expect! c ",") (loop [is [(x/expr c)]] (if (op? (peek-t c) ",") (do (next-t! c) (recur (conj is (x/expr c)))) is))))]
+          (done! c) (at t {:s :print :items items})))
+      (kw? c "stop") (err c "stop is refused in version 0 (a library does not end the program)")
+      (or (kw? c "go" "to") (kw? c "goto")) (err c "go to is refused in version 0")
+      (kw? c "read") (err c "read is refused in version 0")
+      (kw? c "allocate") (err c "allocatable arrays are refused in version 0")
+      (kw? c "select" "case") (err c "select case is refused in version 0")
+      (kw? c "where") (err c "where is refused in version 0")
+      (kw? c "forall") (err c "forall is refused in version 0")
+      :else (err c (str "not a statement of version 0: '" (:v t) "'")))))
+
+(defn- stmt-cursor [st path] (cursor (unglue st) path))
+
+;; R1136 if-construct, R1141 if-stmt, R1119 do-construct
+(defn- exec-stmt [sts path]
+  (let [c (stmt-cursor (first @sts) path) t (peek-t c)]
+    (swap! sts rest)
+    (cond
+      (and (kw? c "if") (op? (peek-t c 1) "("))
+      (do (next-t! c) (expect! c "(")
+          (let [cnd (x/expr c)]
+            (expect! c ")")
+            (if (and (kw? c "then") (= (inc @(:i c)) (count (:ts c))))
+              (loop [arms [] cnd cnd]
+                (let [[body end] (block sts path #{"else" "end if"})
+                      arms (conj arms [cnd body])]
+                  (case (:what end)
+                    "end if" (at t {:s :if :arms arms :else []})
+                    "else" (let [ec (:c end)]
+                             (if (kw? ec "if")
+                               (do (next-t! ec) (expect! ec "(")
+                                   (let [c2 (x/expr ec)] (expect! ec ")")
+                                     (when-not (kw? ec "then") (err ec "expected then"))
+                                     (next-t! ec) (done! ec) (recur arms c2)))
+                               (do (done! ec)
+                                   (let [[eb end2] (block sts path #{"end if"})]
+                                     (at t {:s :if :arms arms :else eb}))))))))
+              (do (when (or (kw? c "if") (kw? c "do")) (err c "only an action statement may follow if (...)"))
+                  (at t {:s :if :arms [[cnd [(action c path)]]] :else []})))))
+      (kw? c "do")
+      (do (next-t! c)
+          (let [hd (cond (at-end? c) {:s :loop}
+                         (and (kw? c "while") (op? (peek-t c 1) "("))
+                         (do (next-t! c) (expect! c "(") (let [e (x/expr c)] (expect! c ")") (done! c) {:s :dowhile :c e}))
+                         (= :int (:t (peek-t c))) (err c "labelled do is refused in version 0")
+                         (and (name? (peek-t c)) (op? (peek-t c 1) "=")) 
+                         (let [v (:v (next-t! c)) _ (next-t! c) a (x/expr c) _ (expect! c ",") b (x/expr c)
+                               s (when (op? (peek-t c) ",") (next-t! c) (x/expr c))]
+                           (done! c) {:s :do :var v :from a :to b :step s})
+                         (kw? c "concurrent") (err c "do concurrent is refused in version 0")
+                         :else (err c "construct names and this do form are refused in version 0"))
+                [body _] (block sts path #{"end do"})]
+            (at t (assoc hd :body body))))
+      :else (action c path))))
+
+(defn- end-what
+  "If the statement ends a block, which: \"end if\", \"else\", \"end do\", \"end\", \"contains\"..."
+  [c]
+  (cond (kw? c "end" "if") "end if" (kw? c "end" "do") "end do" (kw? c "else") "else"
+        (kw? c "contains") "contains"
+        (and (kw? c "end") (or (= 1 (count (:ts c))) (some #(kw? c "end" %) ["function" "subroutine" "module" "program"]))) "end"))
+
+(defn- block
+  "Statements up to one that ends the block in ends; returns [stmts {:what w :c cursor}]."
+  [sts path ends]
+  (loop [out []]
+    (let [st (first @sts)]
+      (when-not st (lex/fail path 0 0 "the file ends inside a construct"))
+      (let [c (stmt-cursor st path) w (end-what c)]
+        (cond
+          (and w (ends w)) (do (swap! sts rest)
+                               (case w ("end if" "end do") (do (next-t! c) (next-t! c) (done! c)) nil)
+                               (when (= w "else") (next-t! c))
+                               [out {:what w :c c}])
+          w (err c (str "'" w "' does not end this construct"))
+          :else (recur (conj out (exec-stmt sts path))))))))
+
+(defn- spec? [c] (or (type-start? c) (kw? c "implicit") (kw? c "use") (kw? c "private") (kw? c "public")
+                     (kw? c "dimension") (kw? c "parameter") (kw? c "save") (kw? c "data") (kw? c "common")
+                     (kw? c "equivalence") (kw? c "type") (kw? c "interface") (kw? c "external") (kw? c "intrinsic")))
+
+(defn- spec-stmt [c]
+  (let [t (peek-t c)]
+    (cond
+      (kw? c "implicit") (do (next-t! c) (when-not (kw? c "none") (err c "only implicit none is in version 0")) (next-t! c) (done! c) (at t {:spec :implicit-none}))
+      (kw? c "use") (assoc (use-stmt c) :spec :use)
+      (or (kw? c "private") (kw? c "public"))
+      (let [v (keyword (:v (next-t! c)))]
+        (when (op? (peek-t c) "::") (next-t! c))
+        (let [ns (if (at-end? c) [] (loop [ns [(:v (expect-name! c))]] (if (op? (peek-t c) ",") (do (next-t! c) (recur (conj ns (:v (expect-name! c))))) ns)))]
+          (done! c) (at t {:spec :access :v v :names ns})))
+      ;; a type keyword followed by 'function' is a function statement, not a declaration
+      (type-start? c) (decl c)
+      :else (err c (str "the " (:v t) " statement is refused in version 0")))))
+
+(defn- specs
+  "The specification part: [uses specs]."
+  [sts path]
+  (loop [uses [] ss []]
+    (let [st (first @sts)
+          c (when st (stmt-cursor st path))]
+      (if (and c (spec? c) (not (assignment? (:ts c))) (not (proc-start? c)))
+        (do (swap! sts rest)
+            (let [s (spec-stmt c)] (if (= :use (:spec s)) (recur (conj uses s) ss) (recur uses (conj ss s)))))
+        [uses ss]))))
+
+(defn proc-start?
+  "Is this a function or subroutine statement (R1533, R1538)? [prefix-type prefix-words cursor-index]"
+  [c]
+  (let [ts (:ts c)
+        skip-type (fn [i] (let [t (get ts i)]
+                            (cond (and (name? t) (#{"integer" "real" "complex" "logical" "character"} (:v t)))
+                                  (if (op? (get ts (inc i)) "(")
+                                    (loop [j (+ i 2) d 1] (cond (nil? (get ts j)) j (op? (get ts j) "(") (recur (inc j) (inc d))
+                                                                (op? (get ts j) ")") (if (= d 1) (inc j) (recur (inc j) (dec d))) :else (recur (inc j) d)))
+                                    (inc i))
+                                  (and (name? t "double") (name? (get ts (inc i)) "precision")) (+ i 2)
+                                  :else i)))]
+    (loop [i 0]
+      (let [t (get ts i)]
+        (cond (and (name? t) (#{"pure" "elemental" "recursive" "impure" "module" "non_recursive"} (:v t)) (name? (get ts (inc i)))
+                   (not (and (= "module" (:v t)) (= 0 i) (not (#{"function" "subroutine"} (:v (get ts (inc i))))))))
+              (recur (inc i))
+              (and (name? t) (#{"function" "subroutine"} (:v t)) (name? (get ts (inc i)))) true
+              :else (let [j (skip-type i)] (if (and (> j i) (name? (get ts j) "function")) true (if (> j i) (recur j) false))))))))
+
+(defn- end-unit! [sts path what nm]
+  (let [st (first @sts)]
+    (when-not st (lex/fail path 0 0 (str "the file ends inside " what " " nm)))
+    (swap! sts rest)
+    (let [c (stmt-cursor st path)]
+      (when-not (= "end" (end-what c)) (err c (str "expected end " what)))
+      (next-t! c)
+      (when-not (at-end? c)
+        (let [w (expect-name! c)] (when-not (= (:v w) what) (err c w (str "expected end " what))))
+        (when-not (at-end? c) (let [n (expect-name! c)] (when-not (= (:v n) nm) (err c n (str "end " what " " (:v n) " does not match " nm)))))
+        (done! c)))))
+
+(defn- dotted-name [c] (:v (expect-name! c)))
+
+(declare subprograms)
+
+(defn- proc [sts path]
+  (let [c (stmt-cursor (first @sts) path) t (peek-t c)]
+    (swap! sts rest)
+    (let [prefix (loop [ty nil] (cond (some #(kw? c %) ["pure" "elemental" "recursive" "impure"]) (do (next-t! c) (recur ty))
+                                      (kw? c "module") (err c "separate module procedures are refused in version 0")
+                                      (kw? c "non_recursive") (do (next-t! c) (recur ty))
+                                      (type-start? c) (recur (type-spec c))
+                                      :else ty))
+          kind (keyword (:v (expect-name! c)))
+          nm (:v (expect-name! c))
+          args (if (op? (peek-t c) "(")
+                 (do (next-t! c)
+                     (if (op? (peek-t c) ")") (do (next-t! c) [])
+                         (loop [as [(:v (expect-name! c))]]
+                           (if (op? (peek-t c) ",") (do (next-t! c) (recur (conj as (:v (expect-name! c))))) (do (expect! c ")") as)))))
+                 (if (= kind :function) (err c "a function needs ()") []))
+          res (when (kw? c "result") (next-t! c) (expect! c "(") (let [r (:v (expect-name! c))] (expect! c ")") r))]
+      (when (kw? c "bind") (err c "bind(c) is refused in version 0"))
+      (done! c)
+      (let [[uses ss] (specs sts path)
+            [body end] (block sts path #{"end" "contains"})]
+        (when (= "contains" (:what end)) (err (:c end) "internal procedures inside a procedure are refused in version 0"))
+        (let [ec (:c end)]
+          (next-t! ec)
+          (when-not (at-end? ec)
+            (let [w (expect-name! ec)] (when-not (= (:v w) (name kind)) (err ec w (str "expected end " (name kind)))))
+            (when-not (at-end? ec) (let [n (expect-name! ec)] (when-not (= (:v n) nm) (err ec n (str "end " (name kind) " " (:v n) " does not match " nm)))))
+            (done! ec)))
+        (at t {:kind kind :name nm :args args :result res :type prefix :uses uses :specs ss :body body})))))
+
+(defn- subprograms [sts path]
+  (loop [ps []]
+    (let [st (first @sts) c (when st (stmt-cursor st path))]
+      (if (and c (proc-start? c)) (recur (conj ps (proc sts path))) ps))))
+
+(defn units
+  "The program units of a source text (R502: modules and a main program)."
+  [text path]
+  (let [sts (atom (seq (lex/statements text path)))]
+    (loop [us []]
+      (if-let [st (first @sts)]
+        (let [c (stmt-cursor st path) t (peek-t c)]
+          (cond
+            (and (kw? c "module") (not (kw? c "module" "procedure")) (not (proc-start? c)))
+            (do (swap! sts rest) (next-t! c)
+                (let [nm (dotted-name c)]
+                  (done! c)
+                  (let [[uses ss] (specs sts path)
+                        nxt (first @sts) nc (when nxt (stmt-cursor nxt path))]
+                    (when (and nc (not (end-what nc))) (err nc "a module has no executable statements; module variables and this statement are refused in version 0"))
+                    (let [procs (when (and nc (= "contains" (end-what nc))) (swap! sts rest) (subprograms sts path))]
+                      (end-unit! sts path "module" nm)
+                      (recur (conj us (at t {:unit :module :name nm :uses uses :specs ss :procs (vec procs)})))))))
+            (kw? c "program")
+            (do (swap! sts rest) (next-t! c)
+                (let [nm (dotted-name c)]
+                  (done! c)
+                  (let [[uses ss] (specs sts path)
+                        [body end] (block sts path #{"end" "contains"})
+                        procs (when (= "contains" (:what end)) (subprograms sts path))]
+                    (if (= "contains" (:what end)) (end-unit! sts path "program" nm)
+                        (let [ec (:c end)] (next-t! ec)
+                          (when-not (at-end? ec) (let [w (expect-name! ec)] (when-not (= "program" (:v w)) (err ec w "expected end program")))
+                            (when-not (at-end? ec) (let [n (expect-name! ec)] (when-not (= nm (:v n)) (err ec n (str "end program " (:v n) " does not match " nm))))))))
+                    (recur (conj us (at t {:unit :program :name nm :uses uses :specs ss :body body :procs (vec procs)}))))))
+            (proc-start? c) (err c "external procedures outside a module are refused in version 0 (put them in a module)")
+            :else (err c "expected module or program")))
+        us))))

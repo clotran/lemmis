@@ -1,0 +1,217 @@
+(ns lemmis.emitx
+  "Expressions to forms. A Fortran operator or intrinsic becomes fortran.ops's (kinds kept,
+  integer / truncating, MOD and MODULO as Fortran says); a relation, // and the array and
+  character intrinsics become lemmis.rt's; an undeclared name is a Clojure name.
+  The environment:
+    {:path p :kinds {name int} :globals {name {:what :param|:proc ...}} :refers #{name}
+     :vars {name {:k kind :len n :rank 0|1 :lo n :intent i :val? b}} :host #{name}
+     :pool (atom {:order [] :syms {}}) :gen (atom 0) :self name}"
+  (:require [lemmis.lex :as lex]
+            [clojure.string :as str]))
+
+(defn fail [env node msg] (lex/fail (:path env) (:line node) (:col node) msg))
+
+(defn m
+  "form, with the node's :line :column :file when it is a list."
+  [env node form]
+  (if (and (seq? form) (:line node))
+    (with-meta form {:line (:line node) :column (:col node) :file (:path env)})
+    form))
+
+(defn gen! [env base] (symbol (str base "$" (swap! (:gen env) inc))))
+
+(def iso-kinds {"int8" 1 "int16" 2 "int32" 4 "int64" 8 "real32" 4 "real64" 8})
+
+(declare const-int)
+
+(defn- kind-num [env k node]
+  (cond (nil? k) nil
+        (re-matches #"\d+" k) (parse-long k)
+        (contains? (:kinds env) k) (get (:kinds env) k)
+        :else (fail env node (str "the kind " k " is not a constant known when the file is read"))))
+
+(defn lit-kind
+  "A literal's kind number (R708, R714): its _kind, else 8 for a d exponent, else 4."
+  [env e]
+  (let [k (kind-num env (:kind e) e)]
+    (case (:op e)
+      :int (or k 4)
+      :real (let [d? (re-find #"[dD]" (:v e))]
+              (when (and d? k) (fail env e "a real with a d exponent has no kind parameter"))
+              (or k (if d? 8 4))))))
+
+(defn const-int
+  "An integer known when the file is read (kind selectors, character lengths), or nil."
+  [env e]
+  (case (:op e)
+    :int (when (nil? (:kind e)) (parse-long (:v e)))
+    :name (get (:kinds env) (:v e))
+    :paren (const-int env (:a e))
+    :un (when-let [a (const-int env (:a e))] (case (:o e) "-" (- a) "+" a nil))
+    :bin (let [a (const-int env (:a e)) b (const-int env (:b e))]
+           (when (and a b) (case (:o e) "+" (+ a b) "-" (- a b) "*" (* a b) nil)))
+    :ref (let [[a] (:args e)]
+           (case (:v e)
+             "kind" (when (#{:int :real} (:op a)) (lit-kind env a))
+             "selected_real_kind" (when-let [p (const-int env a)] (cond (<= p 6) 4 (<= p 15) 8 :else -1))
+             "selected_int_kind" (when-let [r (const-int env a)] (cond (<= r 2) 1 (<= r 4) 2 (<= r 9) 4 (<= r 18) 8 :else -1))
+             nil))
+    nil))
+
+(defn type-kind
+  "A declared type to its kind: {:k :int4|:real8|:complex4|:logical|:char :len n-or-:star}."
+  [env ty]
+  (let [kn (when-let [k (:kind ty)] (or (const-int env k) (fail env k "a kind must be a constant known when the file is read")))]
+    (case (:base ty)
+      :integer (let [k (or kn 4)] (when-not (#{1 2 4 8} k) (fail env ty (str "integer(" k ") is not a kind here (1, 2, 4, 8)"))) {:k (keyword (str "int" k))})
+      :real (let [k (or kn 4)] (when-not (#{4 8} k) (fail env ty (str "real(" k ") is not a kind here (4, 8)"))) {:k (keyword (str "real" k))})
+      :complex (let [k (or kn 4)] (when-not (#{4 8} k) (fail env ty (str "complex(" k ") is not a kind here (4, 8)"))) {:k (keyword (str "complex" k))})
+      :logical {:k :logical}
+      :character (let [l (:len ty)]
+                   (when kn (fail env ty "character kinds are refused in version 0"))
+                   {:k :char :len (cond (nil? l) 1 (= l :star) :star
+                                        :else (or (const-int env l) (fail env l "a character length must be a constant or * in version 0")))}))))
+
+(defn pool!
+  "A constant, evaluated once: a private def in the module, named lms$cN."
+  [env form]
+  (let [p (:pool env) key (pr-str form)]
+    (or (get-in @p [:syms key])
+        (let [s (symbol (str "lms$c" (count (:order @p))))]
+          (swap! p #(-> % (update :order conj [s form]) (assoc-in [:syms key] s)))
+          s))))
+
+(defn- lit-form [env e]
+  (let [k (lit-kind env e)]
+    (case (:op e)
+      :int (let [n (parse-long (:v e))]
+             (when-not n (fail env e "an integer literal out of range"))
+             (when-not (#{1 2 4 8} k) (fail env e (str "integer(" k ") is not a kind here")))
+             (pool! env (list 'fortran.ops/lit (keyword (str "int" k)) n)))
+      :real (do (when-not (#{4 8} k) (fail env e (str "real(" k ") is not a kind here")))
+                (pool! env (list 'fortran.ops/lit (keyword (str "real" k)) (str/replace (:v e) #"[dD]" "e")))))))
+
+;; ---- intrinsics (16.9), each to fortran.ops or lemmis.rt
+(def ops-direct
+  #{"abs" "sign" "min" "max" "mod" "modulo" "sqrt" "exp" "log" "log10" "sin" "cos" "tan" "asin" "acos"
+    "atan" "atan2" "sinh" "cosh" "tanh" "conjg" "aimag" "huge" "tiny" "epsilon" "digits" "kind" "dble"})
+(def rt-direct {"size" 'lemmis.rt/size "sum" 'lemmis.rt/sum "product" 'lemmis.rt/product "maxval" 'lemmis.rt/maxval
+                "minval" 'lemmis.rt/minval "len" 'lemmis.rt/len "len_trim" 'lemmis.rt/len-trim "trim" 'lemmis.rt/trim
+                "adjustl" 'lemmis.rt/adjustl})
+(def kinded {"int" "int" "nint" "int" "floor" "int" "ceiling" "int" "real" "real" "cmplx" "complex"})
+(def arity {"abs" [1 1] "sign" [2 2] "min" [2 99] "max" [2 99] "mod" [2 2] "modulo" [2 2] "atan" [1 2] "atan2" [2 2]
+            "int" [1 2] "nint" [1 2] "floor" [1 2] "ceiling" [1 2] "real" [1 2] "cmplx" [1 3]})
+
+(defn intrinsic? [env n]
+  (and (or (ops-direct n) (rt-direct n) (kinded n))
+       (not (get-in env [:vars n])) (not (get-in env [:globals n])) (not ((:refers env) n))))
+
+(declare ex)
+
+(defn- intrinsic [env e]
+  (let [n (:v e) args (:args e) kw (:kwargs e)
+        [lo hi] (get arity n [1 1])
+        kind-e (or (get kw "kind")
+                   (when (and (kinded n) (= (count args) (if (= n "cmplx") 3 2))) (last args)))
+        args (if (and kind-e (not (get kw "kind"))) (vec (butlast args)) args)]
+    (when-let [bad (first (remove #{"kind"} (keys kw)))] (fail env e (str n " has no argument " bad " in version 0")))
+    (when (and kind-e (not (kinded n))) (fail env e (str n " takes no kind")))
+    (when-not (<= lo (+ (count args) (if kind-e 1 0)) (+ hi (if (= n "cmplx") 0 0)))
+      (fail env e (str n " takes " (if (= lo hi) lo (str lo " to " hi)) " arguments")))
+    (let [as (map #(ex env %) args)
+          kk (when kind-e (let [k (or (const-int env kind-e) (fail env kind-e "a kind must be a constant"))]
+                            (keyword (str (kinded n) k))))]
+      (when (and kk (not (#{:int1 :int2 :int4 :int8 :real4 :real8 :complex4 :complex8} kk))) (fail env kind-e (str "no such kind " kk)))
+      (m env e
+         (cond (rt-direct n) (list* (rt-direct n) as)
+               (and (= n "atan") (= 2 (count args))) (list* 'fortran.ops/atan2 as)
+               (= n "dble") (list* 'fortran.ops/dble as)
+               (ops-direct n) (list* (symbol "fortran.ops" n) as)
+               :else (concat (list* (symbol "fortran.ops" n) as) (when kk [kk])))))))
+
+;; ---- names
+(def ^:private special #{"def" "if" "do" "let" "quote" "var" "fn" "loop" "recur" "throw" "try" "catch" "finally"
+                         "monitor-enter" "monitor-exit" "new" "set!" "nil" "true" "false" "letfn" "case" "import" "ns"})
+(defn check-local-name [env node n]
+  (when (special n) (fail env node (str "the name " n " is a Clojure special form; refused as a variable name in version 0")))
+  n)
+
+(defn- index [env e v]
+  (when (or (not= 1 (count (:args e))) (seq (:kwargs e))) (fail env e (str (:v e) " is an array of rank 1: one subscript")))
+  (list 'lemmis.rt/idx (symbol (:v e)) (ex env (first (:args e))) (:lo v)))
+
+(defn aref [env e v]
+  (m env e (list 'clojure.core/aget (symbol (:v e)) (index env e v))))
+
+(defn proc-args
+  "Actual arguments in dummy order, R1523 keywords placed by name."
+  [env e dummies args kwargs]
+  (let [pos (vec args) n (count dummies)]
+    (when (> (count pos) n) (fail env e (str (:v e) " takes " n " arguments")))
+    (let [rest-d (drop (count pos) dummies)
+          kd (map #(or (get kwargs %) (fail env e (str (:v e) ": the argument " % " is missing (optional arguments are refused in version 0)"))) rest-d)]
+      (when-let [bad (first (remove (set rest-d) (keys kwargs)))] (fail env e (str (:v e) " has no dummy " bad)))
+      (into pos kd))))
+
+(defn callee-form [env e]
+  (case (:op e) :cname (symbol (:v e)) (symbol (:v e))))
+
+(defn ref-form [env e]
+  (let [n (:v e) v (get-in env [:vars n]) g (get-in env [:globals n])]
+    (cond
+      (= :cname (:fname e)) (do (when (seq (:kwargs e)) (fail env e "keyword arguments to a Clojure function are refused"))
+                                (m env e (list* (symbol n) (map #(ex env %) (:args e)))))
+      (and v (= 1 (:rank v))) (aref env e v)
+      v (fail env e (str n " is a scalar: substrings and calls through variables are refused in version 0"))
+      (and g (= :proc (:what g)))
+      (do (when (= :subroutine (:kind (:proc g))) (fail env e (str n " is a subroutine: use call")))
+          (m env e (list* (symbol n) (map #(ex env %) (proc-args env e (:args (:proc g)) (:args e) (:kwargs e))))))
+      g (fail env e (str n " is a constant, not a function"))
+      ((:host env) n) (fail env e (str n " belongs to the host program: host association is refused in version 0"))
+      (intrinsic? env n) (intrinsic env e)
+      :else (do (when (seq (:kwargs e)) (fail env e "keyword arguments to a Clojure function are refused"))
+                (m env e (list* (symbol n) (map #(ex env %) (:args e))))))))
+
+(defn name-form [env e]
+  (let [n (:v e) v (get-in env [:vars n])]
+    (cond v (symbol n)
+          (get-in env [:globals n]) (symbol n)
+          ((:host env) n) (fail env e (str n " belongs to the host program: host association is refused in version 0"))
+          (and (intrinsic? env n) (ops-direct n)) (symbol "fortran.ops" n)
+          :else (symbol n))))
+
+(def ^:private bin-ops {"+" 'fortran.ops/+ "-" 'fortran.ops/- "*" 'fortran.ops/* "/" 'fortran.ops// "**" 'fortran.ops/**
+                        "//" 'lemmis.rt/concat-str "==" 'lemmis.rt/eq "/=" 'lemmis.rt/ne "<" 'lemmis.rt/lt "<=" 'lemmis.rt/le
+                        ">" 'lemmis.rt/gt ">=" 'lemmis.rt/ge "eqv" 'lemmis.rt/eqv "neqv" 'lemmis.rt/neqv
+                        "and" 'clojure.core/and "or" 'clojure.core/or})
+
+(defn ex [env e]
+  (case (:op e)
+    (:int :real) (lit-form env e)
+    :str (:v e)
+    :logical (do (when (:kind e) (fail env e "logical kinds are refused in version 0")) (:v e))
+    :complex (let [k (fn [p] (let [p (if (= :un (:op p)) (:a p) p)] (when (= :real (:op p)) (lit-kind env p))))
+                   kn (max (or (k (:re e)) 4) (or (k (:im e)) 4))]
+               (pool! env (list 'fortran.ops/cmplx (ex env (:re e)) (ex env (:im e)) (keyword (str "complex" kn)))))
+    :name (name-form env e)
+    :cname (symbol (:v e))
+    :kw (keyword (:v e))
+    :ref (ref-form env e)
+    :paren (ex env (:a e))
+    :un (case (:o e)
+          "-" (m env e (list 'fortran.ops/- (ex env (:a e))))
+          "+" (ex env (:a e))
+          "not" (m env e (list 'clojure.core/not (ex env (:a e)))))
+    :bin (m env e (list (bin-ops (:o e)) (ex env (:a e)) (ex env (:b e))))
+    :vec (vec (map #(ex env %) (:items e)))
+    :map (m env e (list* 'clojure.core/hash-map (mapcat (fn [[k v]] [(ex env k) (ex env v)]) (:pairs e))))
+    :pipe (m env e (list* (if (= "->>" (:o e)) 'clojure.core/->> 'clojure.core/->) (ex env (:init e))
+                          (map (fn [s]
+                                 (let [n (:v s) v (get-in env [:vars n])]
+                                   (when (and v (= :name (:op s))) (fail env s (str n " is a variable, not a pipeline stage")))
+                                   (when v (fail env s (str n " is an array, not a pipeline stage")))
+                                   (if (and (= :ref (:op s)) (= :name (:fname s)) (intrinsic? env n))
+                                     (fail env s "an intrinsic stage takes no arguments in a pipeline (write it alone, or call a Clojure function)")
+                                     (if (= :ref (:op s)) (m env s (list* (symbol n) (map #(ex env %) (:args s)))) (ex env s)))))
+                               (:stages e))))
+    (fail env e (str "not an expression of version 0: " (:op e)))))

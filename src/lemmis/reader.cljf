@@ -1,0 +1,121 @@
+(ns lemmis.reader
+  "Lemmis version 0: a .lms file to the Clojure forms clotran evaluates.
+
+    (lemmis.reader/read-forms text path)  =>  [(ns lib (:require ...)) form ...]
+
+  The first form is the namespace: the module's name (a file whose module is not the name
+  its path gives is refused, as clj refuses a mismatched ns), each use a :require with
+  :refer. The rest are defs and defns, evaluated in order in that namespace; lists carry
+  {:line :column :file} from the .lms text. A read error is thrown with path:line:column.
+  The grammar is src/lemmis/GRAMMAR.md; what version 0 refuses, README.md."
+  (:require [lemmis.lex :as lex]
+            [lemmis.parse :as parse]
+            [lemmis.emitx :as x]
+            [lemmis.emit :as e]
+            [clojure.string :as str]))
+
+(defn- lib-of-path
+  "The lib a path names, by its last segments: a/b_c/d.lms is a.b-c.d, compared from the end."
+  [path]
+  (when (and path (str/ends-with? path ".lms"))
+    (-> path (subs 0 (- (count path) 4)) (str/replace "\\" "/") (str/split #"/") (->> (map #(str/replace % "_" "-"))))))
+
+(defn- check-path! [env unit]
+  (when-let [segs (lib-of-path (:path env))]
+    (let [want (str/split (:name unit) #"\.")]
+      (when-not (= (map str/lower-case (take-last (count want) segs)) want)
+        (x/fail env unit (str "the module " (:name unit) " is not the lib this file is ("
+                              (str/join "/" (take-last (count want) segs)) ".lms); name the file after its module"))))))
+
+(defn- force!
+  "Realize every lazy part of a form now: emission pools literals as it goes."
+  [f] (when (coll? f) (doseq [x f] (force! x))) f)
+
+(def ^:private core-names (set (map name (keys (ns-publics 'clojure.core)))))
+
+(defn- use-require [u]
+  (let [ns (symbol (:name u))]
+    (cond
+      (:only u) (let [ps (:only u)
+                      ren (into {} (keep (fn [[l r]] (when (not= l r) [(symbol r) (symbol l)])) ps))]
+                  (cond-> [ns :refer (vec (map (comp symbol second) ps))] (seq ren) (conj :rename ren)))
+      (:renames u) [ns :refer :all :rename (into {} (map (fn [[l r]] [(symbol r) (symbol l)]) (:renames u)))]
+      :else [ns :refer :all])))
+
+(defn- module-env [path unit]
+  (let [uses (concat (:uses unit) (mapcat :uses (:procs unit)))
+        iso (filter #(= "iso_fortran_env" (:name %)) uses)
+        kinds (into {} (mapcat (fn [u] (if (:only u)
+                                         (keep (fn [[l r]] (when-let [k (x/iso-kinds r)] [l k])) (:only u))
+                                         x/iso-kinds))
+                               iso))
+        env {:path path :kinds kinds :globals {} :refers (set (mapcat #(map first (concat (:only %) (:renames %))) uses))
+             :vars {} :host #{} :pool (atom {:order [] :syms {}}) :gen (atom 0)}]
+    (when-let [bad (first (remove #(or (:only %) (not= "iso_fortran_env" (:name %))) iso))] nil)
+    (when-let [n (some (fn [u] (when (:only u) (some (fn [[_ r]] (when (and (= "iso_fortran_env" (:name u)) (not (x/iso-kinds r))) r)) (:only u)))) uses)]
+      (x/fail env unit (str "iso_fortran_env's " n " is refused in version 0 (its kind constants are in)")))
+    [env (remove #(= "iso_fortran_env" (:name %)) uses)]))
+
+(defn- module-specs
+  "A module's or program's specification part: [env param-defs access]."
+  [env unit program?]
+  (when-not (some #(= :implicit-none (:spec %)) (:specs unit))
+    (x/fail env unit "implicit none is required in version 0 (implicit typing would make a Clojure name a variable)"))
+  (reduce
+   (fn [[env defs acc] sp]
+     (case (:spec sp)
+       :implicit-none [env defs acc]
+       :access (if (empty? (:names sp)) [env defs (assoc acc :default (:v sp))]
+                   [env defs (reduce #(assoc-in %1 [:names %2] (:v sp)) acc (:names sp))])
+       :decl (if program?
+               [env defs acc]
+               (let [a (:attrs sp) ty (x/type-kind env (:type sp))]
+                 (when-not (:parameter a) (x/fail env sp "module variables are refused in version 0 (only parameters: module state would be mutable globals)"))
+                 (reduce (fn [[env defs acc] en]
+                           (let [n (x/check-local-name env en (:name en))]
+                             (when (or (:dims en) (:dims a)) (x/fail env en "array constants are refused in version 0"))
+                             (when-not (:init en) (x/fail env en "a parameter needs a value"))
+                             (let [v (assoc ty :rank 0 :lo 1 :param? true)
+                                   form (force! (e/conv-form v (x/ex env (:init en))))
+                                   c (when (#{:int1 :int2 :int4 :int8} (:k ty)) (x/const-int env (:init en)))
+                                   env (cond-> (assoc-in env [:globals n] {:what :param :v v}) c (assoc-in [:kinds n] c))]
+                               [env (conj defs [n en form]) (cond-> acc (:access a) (assoc-in [:names n] (:access a)))])))
+                         [env defs acc] (:ents sp))))))
+   [env [] {:default :public :names {}}] (:specs unit)))
+
+(defn read-forms
+  "The forms of a Lemmis source text; path names it in errors and metadata."
+  [text path]
+  (let [units (parse/units text path)
+        _ (when (empty? units) (lex/fail path 1 1 "no module or program in the file"))
+        _ (when (next units) (let [u (second units)] (lex/fail path (:line u) (:col u) "one module or program per file (one lib per file)")))
+        unit (first units)
+        [env uses] (module-env path unit)
+        _ (check-path! env unit)
+        program? (= :program (:unit unit))
+        [env params access] (module-specs env unit program?)
+        procs (:procs unit)
+        env (reduce (fn [env p]
+                      (when (get-in env [:globals (:name p)]) (x/fail env p (str (:name p) " is defined twice")))
+                      (assoc-in env [:globals (:name p)] {:what :proc :proc p :kind (:kind p)}))
+                    env procs)
+        private? (fn [n] (= :private (get-in access [:names n] (:default access))))
+        _ (doseq [n (keys (:names access))] (when-not (get-in env [:globals n]) (x/fail env unit (str "the access statement names " n ", which the module does not define"))))
+        host (when program? (set (mapcat (fn [sp] (when (= :decl (:spec sp)) (map :name (:ents sp)))) (:specs unit))))
+        param-defs (mapv (fn [[n en form]] (x/m env en (list (if (private? n) 'def- 'def) (symbol n) form))) params)
+        penv (assoc env :host (or host #{}))
+        proc-defs (mapv #(e/proc-form penv % (private? (:name %))) procs)
+        main (when program? (first (e/main-form env (:specs unit) (:body unit) host)))
+        _ (force! [param-defs proc-defs main])
+        pool (map (fn [[s f]] (list 'def (with-meta s {:private true}) f)) (:order @(:pool env)))
+        own (concat (map first params) (map :name procs))
+        clash (sort (filter core-names (concat own (map first (mapcat #(concat (:only %) (:renames %)) uses)))))
+        nsf (x/m env unit (list* 'ns (symbol (:name unit))
+                                 (concat (when (seq clash) [(list :refer-clojure :exclude (vec (map symbol clash)))])
+                                         [(list* :require '[fortran.ops] '[lemmis.rt] (map use-require uses))])))]
+    (into [nsf]
+          (concat (when (seq procs) [(list* 'declare (map (comp symbol :name) procs))])
+                  pool
+                  (map (fn [f] (if (= 'def- (first f)) (list* 'def (with-meta (second f) {:private true}) (drop 2 f)) f)) param-defs)
+                  proc-defs
+                  (when main [main])))))

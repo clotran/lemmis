@@ -1,0 +1,36 @@
+module arrays
+  implicit none
+contains
+  subroutine fill(a, n)
+    integer, intent(in) :: n
+    real(8), intent(out) :: a(n)
+    integer :: i
+    do i = 1, n
+      a(i) = i * 0.5d0
+    end do
+  end subroutine fill
+  real(8) function total(a)
+    real(8), intent(in) :: a(:)
+    integer :: i
+    total = 0
+    do i = 1, size(a)
+      total = total + a(i)
+    end do
+  end function total
+  subroutine bump(x)
+    integer, intent(inout) :: x
+    x = x + 100
+  end subroutine bump
+  subroutine run()
+    real(8) :: v(5)
+    integer :: w(0:4), k
+    call fill(v, 5)
+    print *, v
+    print *, total(v), sum(v), maxval(v), minval(v), size(v)
+    do k = 0, 4
+      w(k) = k * k
+    end do
+    call bump(w(2))
+    print *, w, sum(w), product(v)
+  end subroutine run
+end module arrays

@@ -1,0 +1,150 @@
+(ns lemmis.rt
+  "What the forms lemmis.reader writes call at run time, beyond fortran.ops: assignment's
+  conversion (J3/24-007 10.2.1.3), the relations over mixed kinds (10.1.5.5), list-directed
+  output (13.10.4), the DO trip count (11.1.7.4.1), and a subroutine's results."
+  (:require [fortran.ops :as f]
+            [clojure.string :as str]))
+
+(def int-kinds #{:int1 :int2 :int4 :int8})
+(def real-kinds #{:real4 :real8})
+(def complex-kinds #{:complex4 :complex8})
+(defn- numeric? [x] (or (number? x) (instance? fortran.ops.Complex x)))
+
+(defn- ctor [k] (case k :int1 f/int1 :int2 f/int2 :int4 f/int4 :int8 f/int8 :real4 f/real4 :real8 f/real8))
+
+(defn conv
+  "Assignment's conversion to the variable's kind (10.2.1.3, Table 10.9): INT, REAL or CMPLX
+  of the value with the variable's kind."
+  [k v]
+  (cond
+    (= k :logical) (if (boolean? v) v (throw (ex-info (str "a logical variable cannot hold " (pr-str v)) {})))
+    (not (numeric? v)) (throw (ex-info (str "a " (name k) " variable cannot hold " (pr-str v)) {}))
+    (int-kinds k) (if (or (instance? fortran.ops.Complex v) (real-kinds (f/kind-of v))) (f/int (if (instance? fortran.ops.Complex v) (f/real v) v) k) ((ctor k) v))
+    (real-kinds k) (if (instance? fortran.ops.Complex v) (f/real v k) ((ctor k) v))
+    (complex-kinds k) (f/cmplx v k)))
+
+(defn conv-in
+  "An argument as a dummy of kind k receives it: an integer for an integer dummy, a number
+  for a real or complex one (lenient: a clotran caller passes 1 for a real(8) dummy)."
+  [k v who]
+  (when (and (int-kinds k) (number? v) (not (integer? v)))
+    (throw (ex-info (str who ": a real argument for an integer dummy") {})))
+  (if (or (number? v) (instance? fortran.ops.Complex v) (= k :logical)) (conv k v) v))
+
+(defn conv-char
+  "A character(len=n) variable assigned s: blank-padded or truncated to n (10.2.1.3p10)."
+  [n s]
+  (let [s (str s) c (count s)] (if (>= c n) (subs s 0 n) (str s (apply str (repeat (- n c) \space))))))
+
+(defn zero [k]
+  (cond (= k :logical) false (int-kinds k) ((ctor k) 0) (real-kinds k) ((ctor k) 0)
+        (complex-kinds k) (f/cmplx 0 k)))
+
+(defn blank [n] (apply str (repeat n \space)))
+
+(def ^:private array-kinds {:int1 "int1" :int2 "int2" :int4 "int4" :int8 "int8" :real4 "real4" :real8 "real8"})
+
+(defn new-array
+  "A rank-1 array of n elements of kind k (a character kind is [:char len]), each zero."
+  [k n]
+  (let [n (long n) n (if (neg? n) 0 n)]
+    (if-let [s (array-kinds k)]
+      (fortran/make-array s n)
+      (let [a (object-array n) z (if (vector? k) (blank (second k)) (zero k))]
+        (dotimes [i n] (aset a i z)) a))))
+
+(defn idx
+  "The 0-based offset of subscript i in an array whose lower bound is lo, checked (9.5.3.2)."
+  [a i lo]
+  (let [j (- (long i) lo)]
+    (when-not (< -1 j (alength a)) (throw (ex-info (str "subscript " i " is outside the bounds " lo ":" (+ lo (alength a) -1)) {})))
+    j))
+
+;; 10.1.5.5: numeric operands of a relation are converted to the kind of their sum
+(defn- rel-num [op a b]
+  (let [k (f/promote (f/kind-of a) (f/kind-of b)) x (conv k a) y (conv k b)]
+    (if (complex-kinds k)
+      (case op := (and (== (double (:re x)) (double (:re y))) (== (double (:im x)) (double (:im y))))
+                (throw (ex-info "complex values are compared only by == and /=" {})))
+      (let [x (if (int-kinds k) (long x) (double x)) y (if (int-kinds k) (long y) (double y))]
+        (case op := (== x y) :< (< x y) :<= (<= x y))))))
+
+;; 10.1.5.5.2: the shorter character operand is padded with blanks
+(defn- rel-str [op a b]
+  (let [n (max (count a) (count b)) c (compare (conv-char n a) (conv-char n b))]
+    (case op := (zero? c) :< (neg? c) :<= (<= c 0))))
+
+(defn- rel [op a b]
+  (cond (and (string? a) (string? b)) (rel-str op a b)
+        (and (numeric? a) (numeric? b)) (rel-num op a b)
+        (= op :=) (= a b)
+        :else (throw (ex-info (str "cannot order " (pr-str a) " and " (pr-str b)) {}))))
+
+(defn eq [a b] (rel := a b))
+(defn ne [a b] (not (eq a b)))
+(defn lt [a b] (rel :< a b))
+(defn le [a b] (rel :<= a b))
+(defn gt [a b] (rel :< b a))
+(defn ge [a b] (rel :<= b a))
+(defn eqv [a b] (= (boolean a) (boolean b)))
+(defn neqv [a b] (not= (boolean a) (boolean b)))
+(defn concat-str [a b] (str a b))
+
+(defn trips
+  "11.1.7.4.1: the iteration count MAX(INT((m2 - m1 + m3) / m3), 0)."
+  [a b s]
+  (let [a (long a) b (long b) s (long s)]
+    (when (zero? s) (throw (ex-info "a DO loop's step is zero" {})))
+    (max 0 (quot (+ (- b a) s) s))))
+
+(defn sub-result
+  "What a Lemmis subroutine returns: its dummies' final values, in order."
+  [vs] (with-meta vs {:lemmis/sub true}))
+(defn sub? [r] (boolean (:lemmis/sub (meta r))))
+(defn out "Actual k's value after the call: the subroutine's, else unchanged." [r k old]
+  (if (sub? r) (nth r k) old))
+(defn out-aset [r k a j kind]
+  (when (sub? r) (aset a j (if kind (conv kind (nth r k)) (nth r k)))))
+
+;; intrinsics over rank-1 arrays and strings (16.9)
+(defn size [a] (f/int4 (alength a)))
+(defn- elems [a] (if (string? a) (throw (ex-info "an array is needed" {})) (seq a)))
+(defn sum [a] (reduce f/+ (if-let [x (first (elems a))] (f/- x x) (f/int4 0)) (seq a)))
+(defn product [a] (if-let [xs (seq a)] (reduce f/* xs) (f/int4 1)))
+(defn maxval [a] (if-let [xs (seq a)] (reduce f/max xs) (throw (ex-info "maxval of an empty array is processor dependent here" {}))))
+(defn minval [a] (if-let [xs (seq a)] (reduce f/min xs) (throw (ex-info "minval of an empty array is processor dependent here" {}))))
+(defn len [s] (f/int4 (count s)))
+(defn len-trim [s] (f/int4 (count (str/trimr s))))
+(defn trim [s] (str/trimr s))
+(defn adjustl [s] (let [t (str/triml s)] (str t (blank (- (count s) (count t))))))
+
+;; 13.10.4 list-directed output. *tagged*: each real as ~Rk:text (its kind and its shortest
+;; text, read back exactly in that kind) so the oracle compare is by value, not layout.
+(def ^:dynamic *tagged* false)
+
+(defn- real-text [x]
+  (let [k (f/kind-of x) s (str x)]
+    (if *tagged* (str "~R" (if (= k :real4) 4 8) ":" s) s)))
+
+(defn- item-text [x]
+  (cond (string? x) x
+        (boolean? x) (if x "T" "F")
+        (instance? fortran.ops.Complex x) (str "(" (real-text (:re x)) "," (real-text (:im x)) ")")
+        (and (number? x) (integer? x)) (str x)
+        (number? x) (real-text x)
+        :else (pr-str x)))
+
+(defn- array? [x] (and (some? x) (not (string? x)) (not (coll? x)) (not (number? x)) (not (boolean? x))
+                       (not (keyword? x)) (not (symbol? x)) (not (fn? x)) (not (instance? fortran.ops.Complex x))
+                       (try (alength x) true (catch clotran.host.exception _ false))))
+
+(defn print-star
+  "PRINT *: one record, a blank first, values separated by a blank; adjacent character
+  values are not separated (13.10.4p7)."
+  [& items]
+  (let [xs (mapcat #(if (array? %) (seq %) [%]) items)]
+    (println (apply str " " (loop [xs xs prev-str? false out []]
+                              (if (seq xs)
+                                (let [x (first xs) s? (string? x)]
+                                  (recur (rest xs) s? (conj out (if (and (seq out) (not (and s? prev-str?))) (str " " (item-text x)) (item-text x)))))
+                                out))))))

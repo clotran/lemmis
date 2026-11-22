@@ -1,0 +1,102 @@
+(ns lemmis.lex
+  "Lemmis version 0, free source form (J3/24-007 6.3.2) into statements of tokens.
+  A token is {:t type :v value :line l :col c}; types :name (folded to lower case),
+  :cname (a backtick Clojure name, case kept), :int and :real ({:v text :kind k-or-nil}),
+  :str, :logical, :dop (a dot operator, \"and\"), :op (punctuation and operators).
+  A statement is a vector of tokens; statements split at end of line and at ';',
+  joined across a trailing '&' (6.3.2.4)."
+  (:require [clojure.string :as str]))
+
+(defn fail
+  "A read error, naming path:line:column."
+  [path line col msg]
+  (throw (ex-info (str (or path "NO_SOURCE_PATH") ":" line ":" col ": " msg)
+                  {:file path :line line :column col :lemmis/error msg})))
+
+(def ^:private dot-ops #{"and" "or" "not" "eqv" "neqv" "eq" "ne" "lt" "le" "gt" "ge" "true" "false"})
+
+;; longest first
+(def ^:private ops ["->>" "**" "//" "==" "/=" "<=" ">=" "=>" "->" "::" "#[" "#{"
+                    "(" ")" "," "=" "+" "-" "*" "/" "<" ">" ":" "%" "[" "]" "}"])
+
+(defn- kind-suffix [s] (when-let [[_ k] (re-find #"^_([A-Za-z0-9_]+)" s)] k))
+
+(defn- lex-line
+  "The tokens of one physical line (a vector), stopping at '!'. ';' and '&' are :op."
+  [path ln line]
+  (loop [i 0 out []]
+    (if (>= i (count line))
+      out
+      (let [c (nth line i) rest (subs line i) col (inc i)]
+        (cond
+          (or (= c \space) (= c \tab) (= c \return)) (recur (inc i) out)
+          (= c \!) out
+          (or (= c \;) (= c \&)) (recur (inc i) (conj out {:t :op :v (str c) :line ln :col col}))
+          (= c \`) (let [e (str/index-of line "`" (inc i))]
+                     (when-not e (fail path ln col "a backtick name has no closing backtick"))
+                     (recur (inc e) (conj out {:t :cname :v (subs line (inc i) e) :line ln :col col})))
+          (or (= c \') (= c \"))
+          (let [[j sb] (loop [j (inc i) sb ""]
+                         (cond (>= j (count line)) (fail path ln col "a character literal is not closed on its line (continued literals are refused)")
+                               (and (= (nth line j) c) (< (inc j) (count line)) (= (nth line (inc j)) c)) (recur (+ j 2) (str sb c))
+                               (= (nth line j) c) [(inc j) sb]
+                               :else (recur (inc j) (str sb (nth line j)))))]
+            (recur j (conj out {:t :str :v sb :line ln :col col})))
+          :else
+          (let [dop (re-find #"^\.([A-Za-z]+)\." rest)
+                num (re-find #"^(?:\d+\.\d*(?:[eEdD][+-]?\d+)?|\.\d+(?:[eEdD][+-]?\d+)?|\d+[eEdD][+-]?\d+)" rest)
+                intm (re-find #"^\d+" rest)
+                nm (re-find #"^[A-Za-z][A-Za-z0-9_?]*" rest)]
+            (cond
+              (and dop (dot-ops (str/lower-case (second dop))))
+              (let [w (str/lower-case (second dop)) n (count (first dop))]
+                (if (#{"true" "false"} w)
+                  (let [k (kind-suffix (subs rest n))
+                        n (+ n (if k (inc (count k)) 0))]
+                    (recur (+ i n) (conj out {:t :logical :v (= w "true") :kind k :line ln :col col})))
+                  (recur (+ i n) (conj out {:t :dop :v w :line ln :col col}))))
+              ;; '1.eq.2' is 1 .eq. 2: the '.' of a dot operator never ends a real
+              (and num (not (and intm (re-find #"^\.[A-Za-z]+\." (subs rest (count intm))))))
+              (let [k (kind-suffix (subs rest (count num)))
+                    n (+ (count num) (if k (inc (count k)) 0))]
+                (recur (+ i n) (conj out {:t :real :v num :kind k :line ln :col col})))
+              intm
+              (let [k (kind-suffix (subs rest (count intm)))
+                    n (+ (count intm) (if k (inc (count k)) 0))]
+                (recur (+ i n) (conj out {:t :int :v intm :kind k :line ln :col col})))
+              ;; ext: a dotted name (use clojure.string) where '.seg' is not a dot operator
+              nm (let [nm (loop [nm nm]
+                            (let [r (subs line (+ i (count nm)))
+                                  seg (re-find #"^\.[A-Za-z][A-Za-z0-9_?]*" r)]
+                              (if (and seg (not (let [d (re-find #"^\.([A-Za-z]+)\." r)] (and d (dot-ops (str/lower-case (second d)))))))
+                                (recur (str nm seg)) nm)))]
+                   (recur (+ i (count nm)) (conj out {:t :name :v (str/lower-case nm) :raw nm :line ln :col col})))
+              :else
+              (if-let [o (first (filter #(str/starts-with? rest %) ops))]
+                (recur (+ i (count o)) (conj out {:t :op :v o :line ln :col col}))
+                (fail path ln col (str "unexpected character '" c "'"))))))))))
+
+(defn- amp? [t] (and (= :op (:t t)) (= "&" (:v t))))
+(defn- semi? [t] (and (= :op (:t t)) (= ";" (:v t))))
+
+(defn- split-semi [ts]
+  (loop [ts ts cur [] out []]
+    (if-let [t (first ts)]
+      (if (semi? t) (recur (rest ts) [] (conj out cur)) (recur (rest ts) (conj cur t) out))
+      (conj out cur))))
+
+(defn statements
+  "The statements of a source text: a vector of token vectors, none empty."
+  [text path]
+  (loop [ln 1 ls (str/split-lines text) pending nil out []]
+    (if (seq ls)
+      (let [ts (lex-line path ln (first ls))
+            ts (if (and pending (amp? (first ts))) (subvec ts 1) ts)
+            cont? (amp? (peek ts))
+            ts (into (or pending []) (if cont? (pop ts) ts))]
+        (when-let [t (first (filter amp? ts))] (fail path (:line t) (:col t) "'&' continues a line only at its end"))
+        (if cont?
+          (recur (inc ln) (rest ls) ts out)
+          (recur (inc ln) (rest ls) nil (into out (remove empty?) (split-semi ts)))))
+      (do (when (seq pending) (let [t (peek pending)] (fail path (:line t) (:col t) "the last line ends in '&'")))
+          out))))
