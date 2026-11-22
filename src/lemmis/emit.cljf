@@ -46,10 +46,15 @@
   (let [as (assigned stmts)]
     (vec (sort (filter #(let [v (get-in env [:vars %])] (and v (zero? (:rank v)) (not (:val? v)) (not (:param? v)))) as)))))
 
-(defn conv-form [v form]
-  (case (:k v)
-    :char (if (= :star (:len v)) form (list 'lemmis.rt/conv-char (:len v) form))
-    (list 'lemmis.rt/conv (:k v) form)))
+(defn conv-form
+  "form converted for assignment to a variable v; cur, its current value, gives a len=* length."
+  ([v form] (conv-form v form nil))
+  ([v form cur]
+   (case (:k v)
+     :char (if (= :star (:len v))
+             (if cur (list 'lemmis.rt/conv-char (list 'clojure.core/count cur) form) form)
+             (list 'lemmis.rt/conv-char (:len v) form))
+     (list 'lemmis.rt/conv (:k v) form))))
 
 ;; ---- statements: (tr env stmts cx) where cx holds the forms for falling off the end,
 ;; EXIT, CYCLE and RETURN, each a function of no arguments.
@@ -134,11 +139,11 @@
                       (when-not (= 1 (:rank v)) (fail env l (str n " is not an array")))
                       (when (= :in (:intent v)) (fail env l (str n " is intent(in)")))
                       (m env s (list 'do (list 'clojure.core/aset (symbol n) (list 'lemmis.rt/idx (symbol n) (ex env (:idx l)) (:lo v))
-                                               (conv-form v (ex env (:e s))))
+                                               (conv-form v (ex env (:e s)) (list 'clojure.core/aget (symbol n) (list 'lemmis.rt/idx (symbol n) (ex env (:idx l)) (:lo v)))))
                                      (tr env more cx))))
                     (let [v (target env l n)]
                       (when (= 1 (:rank v)) (fail env l "whole-array assignment is refused in version 0"))
-                      (m env s (list 'clojure.core/let [(symbol n) (conv-form v (ex env (:e s)))] (tr env more cx))))))
+                      (m env s (list 'clojure.core/let [(symbol n) (conv-form v (ex env (:e s)) (symbol n))] (tr env more cx))))))
         :val (let [n (x/check-local-name env s (:name s))]
                (when (get-in env [:vars n]) (when-not (get-in env [:vars n :val?]) (fail env s (str n " is already a variable"))))
                (m env s (list 'clojure.core/let [(symbol n) (ex env (:e s))]

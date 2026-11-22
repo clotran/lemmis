@@ -97,14 +97,40 @@
     "atan" "atan2" "sinh" "cosh" "tanh" "conjg" "aimag" "huge" "tiny" "epsilon" "digits" "kind" "dble"})
 (def rt-direct {"size" 'lemmis.rt/size "sum" 'lemmis.rt/sum "product" 'lemmis.rt/product "maxval" 'lemmis.rt/maxval
                 "minval" 'lemmis.rt/minval "len" 'lemmis.rt/len "len_trim" 'lemmis.rt/len-trim "trim" 'lemmis.rt/trim
-                "adjustl" 'lemmis.rt/adjustl})
+                "adjustl" 'lemmis.rt/adjustl "merge" 'lemmis.rt/merge-of})
 (def kinded {"int" "int" "nint" "int" "floor" "int" "ceiling" "int" "real" "real" "cmplx" "complex"})
-(def arity {"abs" [1 1] "sign" [2 2] "min" [2 99] "max" [2 99] "mod" [2 2] "modulo" [2 2] "atan" [1 2] "atan2" [2 2]
+(def arity {"merge" [3 3] "abs" [1 1] "sign" [2 2] "min" [2 99] "max" [2 99] "mod" [2 2] "modulo" [2 2] "atan" [1 2] "atan2" [2 2]
             "int" [1 2] "nint" [1 2] "floor" [1 2] "ceiling" [1 2] "real" [1 2] "cmplx" [1 3]})
 
-(defn intrinsic? [env n]
-  (and (or (ops-direct n) (rt-direct n) (kinded n))
-       (not (get-in env [:vars n])) (not (get-in env [:globals n])) (not ((:refers env) n))))
+;; F77's specific names, each the generic it is (16.8) where version 0 has the generic
+(def aliases {"dabs" "abs" "iabs" "abs" "cabs" "abs" "dacos" "acos" "dasin" "asin" "datan" "atan" "datan2" "atan2"
+              "dcos" "cos" "dcosh" "cosh" "dexp" "exp" "dlog" "log" "alog" "log" "dlog10" "log10" "alog10" "log10"
+              "dsin" "sin" "dsinh" "sinh" "dsqrt" "sqrt" "dtan" "tan" "dtanh" "tanh" "dmod" "mod" "amod" "mod"
+              "dsign" "sign" "isign" "sign" "idint" "int" "ifix" "int" "float" "real" "sngl" "real" "idnint" "nint"
+              "max0" "max" "amax1" "max" "dmax1" "max" "min0" "min" "amin1" "min" "dmin1" "min"})
+
+;; every intrinsic procedure of Fortran 2018 (16.7, 16.8): a name here that version 0 does
+;; not have is refused, never read as a Clojure function (merge, count, max would change meaning)
+(def fortran-intrinsics
+  (into (set (keys aliases))
+        (clojure.string/split "abs achar acos acosh adjustl adjustr aimag aint all allocated anint any asin asinh associated atan atan2 atanh atomic_add atomic_and atomic_cas atomic_define atomic_fetch_add atomic_fetch_and atomic_fetch_or atomic_fetch_xor atomic_or atomic_ref atomic_xor bessel_j0 bessel_j1 bessel_jn bessel_y0 bessel_y1 bessel_yn bge bgt bit_size ble blt btest ceiling char cmplx co_broadcast co_max co_min co_reduce co_sum command_argument_count conjg cos cosh coshape count cpu_time cshift date_and_time dble digits dim dot_product dprod dshiftl dshiftr eoshift epsilon erf erfc erfc_scaled event_query execute_command_line exp exponent extends_type_of failed_images findloc floor fraction gamma get_command get_command_argument get_environment_variable get_team huge hypot iachar iall iand iany ibclr ibits ibset ichar ieor image_index image_status index int ior iparity is_contiguous is_iostat_end is_iostat_eor ishft ishftc kind lbound lcobound leadz len len_trim lge lgt lle llt log log_gamma log10 logical maskl maskr matmul max maxexponent maxloc maxval merge merge_bits min minexponent minloc minval mod modulo move_alloc mvbits nearest new_line nint norm2 not null num_images out_of_range pack parity popcnt poppar precision present product radix random_init random_number random_seed range rank real reduce repeat reshape rrspacing same_type_as scale scan selected_char_kind selected_int_kind selected_real_kind set_exponent shape shifta shiftl shiftr sign sin sinh size spacing spread sqrt stopped_images storage_size sum system_clock tan tanh team_number this_image tiny trailz transfer transpose trim ubound ucobound unpack verify ccos cexp clog csin csqrt ddim dint dnint idim max1 min1" #" ")))
+
+(defn- shadowed? [env n] (or (get-in env [:vars n]) (get-in env [:globals n]) ((:refers env) n)))
+
+(defn intrinsic-status
+  "nil (not an intrinsic here), :in (version 0 has it), or :out (a Fortran intrinsic it lacks)."
+  [env n]
+  (when (and (fortran-intrinsics n) (not (shadowed? env n)))
+    (let [g (get aliases n n)] (if (or (ops-direct g) (rt-direct g) (kinded g)) :in :out))))
+
+(defn intrinsic? [env n] (= :in (intrinsic-status env n)))
+
+(defn- intrinsic-or-fail? [env node n]
+  (case (intrinsic-status env n)
+    :in true
+    :out (fail env node (str "the intrinsic " n " is not in version 0 (it is never read as a Clojure name; "
+                             "write `" n "` to mean Clojure's)"))
+    false))
 
 (declare ex)
 
@@ -168,7 +194,7 @@
           (m env e (list* (symbol n) (map #(ex env %) (proc-args env e (:args (:proc g)) (:args e) (:kwargs e))))))
       g (fail env e (str n " is a constant, not a function"))
       ((:host env) n) (fail env e (str n " belongs to the host program: host association is refused in version 0"))
-      (intrinsic? env n) (intrinsic env e)
+      (intrinsic-or-fail? env e n) (intrinsic env (assoc e :v (get aliases n n)))
       :else (do (when (seq (:kwargs e)) (fail env e "keyword arguments to a Clojure function are refused"))
                 (m env e (list* (symbol n) (map #(ex env %) (:args e))))))))
 
@@ -177,7 +203,7 @@
     (cond v (symbol n)
           (get-in env [:globals n]) (symbol n)
           ((:host env) n) (fail env e (str n " belongs to the host program: host association is refused in version 0"))
-          (and (intrinsic? env n) (ops-direct n)) (symbol "fortran.ops" n)
+          (and (intrinsic-or-fail? env e n) (ops-direct (get aliases n n))) (symbol "fortran.ops" (get aliases n n))
           :else (symbol n))))
 
 (def ^:private bin-ops {"+" 'fortran.ops/+ "-" 'fortran.ops/- "*" 'fortran.ops/* "/" 'fortran.ops// "**" 'fortran.ops/**
@@ -210,7 +236,7 @@
                                  (let [n (:v s) v (get-in env [:vars n])]
                                    (when (and v (= :name (:op s))) (fail env s (str n " is a variable, not a pipeline stage")))
                                    (when v (fail env s (str n " is an array, not a pipeline stage")))
-                                   (if (and (= :ref (:op s)) (= :name (:fname s)) (intrinsic? env n))
+                                   (if (and (= :ref (:op s)) (= :name (:fname s)) (intrinsic-or-fail? env s n))
                                      (fail env s "an intrinsic stage takes no arguments in a pipeline (write it alone, or call a Clojure function)")
                                      (if (= :ref (:op s)) (m env s (list* (symbol n) (map #(ex env %) (:args s)))) (ex env s)))))
                                (:stages e))))

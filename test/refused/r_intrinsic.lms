@@ -1,0 +1,10 @@
+! refused: the intrinsic dot_product is not in version 0
+module r_intrinsic
+  implicit none
+contains
+  subroutine run()
+    real :: a(2)
+    a(1) = 1; a(2) = 2
+    print *, dot_product(a, a)
+  end subroutine run
+end module r_intrinsic
