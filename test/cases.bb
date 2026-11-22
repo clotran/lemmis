@@ -102,6 +102,8 @@
       (when-not (#{:agree :refused-ok} k)
         (doseq [[f [_ msg]] (take 5 rs)] (println "   " (fs/file-name f) "--" msg))))
     (println (format "%d cases, %d agree, %d refused as expected" (count files) (count (:agree by)) (count (:refused-ok by))))
+    (when-let [keep (System/getenv "LEMMIS_KEEP")]
+      (doseq [[f [k]] results :when (not (#{:agree :refused-ok} k))] (fs/create-dirs keep) (fs/copy f keep {:replace-existing true})))
     (fs/delete-tree tmp)
     (System/exit (if (every? #{:agree :refused-ok} (keys by)) 0 1))))
 
