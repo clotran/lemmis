@@ -51,7 +51,6 @@
                                iso))
         env {:path path :kinds kinds :globals {} :refers (set (mapcat #(map first (concat (:only %) (:renames %))) uses))
              :vars {} :host #{} :pool (atom {:order [] :syms {}}) :gen (atom 0)}]
-    (when-let [bad (first (remove #(or (:only %) (not= "iso_fortran_env" (:name %))) iso))] nil)
     (when-let [n (some (fn [u] (when (:only u) (some (fn [[_ r]] (when (and (= "iso_fortran_env" (:name u)) (not (x/iso-kinds r))) r)) (:only u)))) uses)]
       (x/fail env unit (str "iso_fortran_env's " n " is refused in version 0 (its kind constants are in)")))
     [env (remove #(= "iso_fortran_env" (:name %)) uses)]))
@@ -115,8 +114,8 @@
                                  (concat (when (seq clash) [(list :refer-clojure :exclude (vec (map symbol clash)))])
                                          [(list* :require '[fortran.ops] '[lemmis.rt] (map use-require uses))])))]
     (into [nsf]
-          (concat (when (seq procs) [(list* 'declare (map (comp symbol :name) procs))])
-                  pool
+          (concat (when (seq procs) [(x/m env unit (list* 'declare (map (comp symbol :name) procs)))])
+                  (map #(x/m env unit %) pool)
                   (map (fn [f] (if (= 'def- (first f)) (list* 'def (with-meta (second f) {:private true}) (drop 2 f)) f)) param-defs)
                   proc-defs
                   (when main [main])))))

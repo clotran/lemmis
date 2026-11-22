@@ -1,0 +1,9 @@
+! error: 7:13: two operators in a row
+module e_sign
+  implicit none
+contains
+  subroutine run()
+    integer :: i
+    i = 2 * -3
+  end subroutine run
+end module e_sign

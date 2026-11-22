@@ -10,18 +10,28 @@
   (:require [lemmis.emitx :as x :refer [ex fail m gen!]]))
 
 ;; ---- analysis
+(defn- dummy-intent [p d]
+  (some (fn [sp] (when (and (= :decl (:spec sp)) (some #(= d (:name %)) (:ents sp))) (get-in sp [:attrs :intent]))) (:specs p)))
+
 (defn- assigned
-  "The names a statement list may assign: scalar targets, DO variables, CALL actuals."
-  [stmts]
-  (reduce (fn [acc s]
-            (case (:s s)
-              :assign (if (:idx (:lhs s)) acc (conj acc (:name (:lhs s))))
-              :do (into (conj acc (:var s)) (assigned (:body s)))
-              (:dowhile :loop) (into acc (assigned (:body s)))
-              :if (into (into acc (mapcat (comp assigned second) (:arms s))) (assigned (:else s)))
-              :call (into acc (keep #(when (= :name (:op %)) (:v %)) (concat (:args s) (vals (:kwargs s)))))
-              acc))
-          #{} stmts))
+  "The names a statement list may assign: scalar targets, DO variables, CALL actuals (but
+  not an actual for an intent(in) dummy of a procedure of this module, when env is given)."
+  ([stmts] (assigned stmts nil))
+  ([stmts env]
+   (reduce (fn [acc s]
+             (case (:s s)
+               :assign (if (:idx (:lhs s)) acc (conj acc (:name (:lhs s))))
+               :do (into (conj acc (:var s)) (assigned (:body s) env))
+               (:dowhile :loop) (into acc (assigned (:body s) env))
+               :if (into (into acc (mapcat #(assigned (second %) env) (:arms s))) (assigned (:else s) env))
+               :call (let [p (get-in env [:globals (:v (:callee s)) :proc])
+                           ;; a callee not in this module: lemmis.rt/out-unchanged checks at run time
+                           in? (fn [k a] (or (and env (not p)) (and p (= :in (dummy-intent p (if (< k (count (:args s))) (nth (:args p) k nil)
+                                                                         (some (fn [[kn v]] (when (= v a) kn)) (:kwargs s))))))))]
+                       (into acc (keep-indexed #(when (and (= :name (:op %2)) (not (in? %1 %2))) (:v %2))
+                                               (concat (:args s) (vals (:kwargs s))))))
+               acc))
+           #{} stmts)))
 
 (defn- jumps?
   "Does the list hold an EXIT or CYCLE of the enclosing loop, or a RETURN?"
@@ -83,7 +93,9 @@
                               (when (= :name (:op a))
                                 (let [v (get-in env [:vars (:v a)])]
                                   (when (and v (zero? (:rank v)) (not (:val? v)) (not (:param? v)) (not= :in (:intent v)) (not (:do-var? v)))
-                                    [(symbol (:v a)) (list 'lemmis.rt/out r k (symbol (:v a)))]))))
+                                    [(symbol (:v a)) (if ((:fn-dummies env #{}) (:v a))
+                                                       (list 'lemmis.rt/out-unchanged r k (symbol (:v a)) (str (:self env) "'s dummy " (:v a)))
+                                                       (list 'lemmis.rt/out r k (symbol (:v a))))]))))
                             args)
         asets (keep-indexed (fn [k a]
                               (when (= :ref (:op a))
@@ -148,7 +160,7 @@
                (when (get-in env [:vars n]) (when-not (get-in env [:vars n :val?]) (fail env s (str n " is already a variable"))))
                (m env s (list 'clojure.core/let [(symbol n) (ex env (:e s))]
                               (tr (assoc-in env [:vars n] {:val? true :rank 0}) more cx))))
-        :print (m env s (list 'do (list* 'lemmis.rt/print-star (map #(ex env %) (:items s))) (tr env more cx)))
+        :print (m env s (list 'do (list* 'lemmis.rt/print-star (map #(x/whole env %) (:items s))) (tr env more cx)))
         :call (tr-call env s more cx)
         :exit (if-let [f (:exit cx)] (f) (fail env s "exit outside a DO loop"))
         :cycle (if-let [f (:cycle cx)] (f) (fail env s "cycle outside a DO loop"))
@@ -175,6 +187,14 @@
        :implicit-none [env bs]
        :access (fail env sp "an access statement belongs in the module, not a procedure")
        :decl
+       (if (= :val (:base (:type sp)))
+         [(reduce (fn [env en]
+                    (let [n (x/check-local-name env en (:name en))]
+                      (when-not (some #{n} dummies) (fail env en (str "val :: declares dummy arguments; " n " is not one (write val " n " = ...)")))
+                      (when (get-in env [:vars n]) (fail env en (str n " is declared twice")))
+                      (assoc-in env [:vars n] {:val? true :rank 0})))
+                  env (:ents sp))
+          bs]
        (let [ty (x/type-kind env (:type sp)) a (:attrs sp)]
          (reduce
           (fn [[env bs] en]
@@ -191,8 +211,10 @@
                   [[lo hi]] dims
                   lo-n (cond (nil? lo) 1 :else (or (x/const-int env lo) (fail env lo "a lower bound must be a constant in version 0")))
                   _ (when (and dims (not dummy?) (#{:colon :star} hi)) (fail env en "a local array needs its extent (allocatable arrays are refused in version 0)"))
+                  ext (when (and dims dummy? (not (#{:colon :star} hi))) (symbol (str n "$extent")))
                   v (cond-> (assoc ty :rank (if dims 1 0) :lo lo-n :intent (:intent a))
-                      (:parameter a) (assoc :param? true))
+                      (:parameter a) (assoc :param? true)
+                      ext (assoc :extent ext))
                   env (assoc-in env [:vars n] v)
                   env (if (and (:parameter a) (= :int4 (:k ty))) (if-let [c (x/const-int env (:init en))] (assoc-in env [:kinds n] c) env) env)
                   init (cond (:parameter a) (conv-form v (if-let [c (and (#{:int1 :int2 :int4 :int8} (:k ty)) (x/const-int env (:init en)))] c (ex env (:init en))))
@@ -202,8 +224,10 @@
                                         (list 'clojure.core/inc (list 'clojure.core/- (list 'clojure.core/long (ex env hi)) lo-n)))
                              (= :char (:k v)) (list 'lemmis.rt/blank (:len v))
                              :else (list 'lemmis.rt/zero (:k v)))]
-              [env (if init (conj bs (symbol n) init) bs)]))
-          [env bs] (:ents sp)))))
+              [env (cond-> (if init (conj bs (symbol n) init) bs)
+                     ;; an explicit-shape dummy is its actual's first n elements (15.5.2.11)
+                     ext (conj ext (list 'lemmis.rt/extent (symbol n) (list 'clojure.core/inc (list 'clojure.core/- (list 'clojure.core/long (ex env hi)) lo-n)) (str who))))]))
+          [env bs] (:ents sp))))))
    [env []] specs))
 
 (defn proc-form
@@ -227,8 +251,10 @@
               (when (= 1 (:rank rv)) (fail env p "array-valued functions are refused in version 0"))
               (doseq [d dummies] (when (#{:out :inout} (get-in env [:vars d :intent]))
                                    (when (zero? (get-in env [:vars d :rank]))
-                                     (fail env p (str "a function's scalar dummy " d " with intent(" (name (get-in env [:vars d :intent])) ") is refused in version 0 (use a subroutine)")))))
-              (when (and (not (:result p)) (some #(and (= :ref (:op %)) (= nm (:v %))) [])) nil)))
+                                     (fail env p (str "a function's scalar dummy " d " with intent(" (name (get-in env [:vars d :intent])) ") is refused in version 0 (use a subroutine)")))))))
+        _ (when fn? (doseq [d dummies] (when (and ((assigned (:body p) env) d) (zero? (get-in env [:vars d :rank] 1)) (not (get-in env [:vars d :val?])))
+                                          (fail env p (str "the function " nm " assigns its dummy " d ": refused in version 0 (use a subroutine)")))))
+        env (if fn? (assoc env :fn-dummies (set (remove #(get-in env [:vars % :val?]) dummies))) env)
         result (if fn? (symbol res) (list 'lemmis.rt/sub-result (vec (map symbol dummies))))
         ;; a function's dummies are its inputs: a scalar one assigned is refused above; leave them unrebound
         cx {:fall (constantly result) :ret (constantly result)}

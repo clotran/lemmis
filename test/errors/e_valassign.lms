@@ -1,0 +1,9 @@
+! error: 7:5: is a val
+module e_valassign
+  implicit none
+contains
+  subroutine run()
+    val v = 1
+    v = 2
+  end subroutine run
+end module e_valassign

@@ -18,8 +18,11 @@
 (defn dop? [t v] (and t (= :dop (:t t)) (= v (:v t))))
 
 (defn err
-  ([c msg] (err c (or (peek-t c) (peek (:ts c))) msg))
-  ([c t msg] (lex/fail (:path c) (:line t) (if (and (= t (peek (:ts c))) (nil? (peek-t c))) (+ (:col t) (count (str (:v t)))) (:col t)) msg)))
+  ([c msg] (if-let [t (peek-t c)]
+              (err c t msg)
+              ;; at the end of the statement: just past its last token
+              (let [t (peek (:ts c))] (lex/fail (:path c) (:line t) (+ (:col t) (count (str (:v t)))) msg))))
+  ([c t msg] (lex/fail (:path c) (:line t) (:col t) msg)))
 
 (defn expect! [c v]
   (let [t (peek-t c)]
@@ -28,6 +31,12 @@
   (let [t (peek-t c)] (if (name? t) (next-t! c) (err c "expected a name"))))
 
 (defn- at [t m] (assoc m :line (:line t) :col (:col t)))
+
+(defn- keyword-start?
+  "':' directly followed by a name, no blank: a keyword (ext), not a section's colon."
+  [c] (let [t (peek-t c) n (peek-t c 1)]
+        (and (op? t ":") (name? n) (= (:line t) (:line n)) (= (inc (:col t)) (:col n)))))
+(defn- section-colon? [c] (and (op? (peek-t c) ":") (not (keyword-start? c))))
 
 (declare expr)
 
@@ -38,12 +47,12 @@
     (do (next-t! c) [[] {}])
     (loop [args [] kw {}]
       (let [t (peek-t c)]
-        (when (op? t ":") (err c "array sections and substrings are refused in version 0"))
+        (when (section-colon? c) (err c "array sections and substrings are refused in version 0"))
         (let [[args kw] (if (and (name? t) (op? (peek-t c 1) "="))
                           (do (next-t! c) (next-t! c) [args (assoc kw (:v t) (expr c))])
                           (do (when (seq kw) (err c "a positional argument after a keyword argument"))
                               [(conj args (expr c)) kw]))]
-          (when (op? (peek-t c) ":") (err c "array sections and substrings are refused in version 0"))
+          (when (section-colon? c) (err c "array sections and substrings are refused in version 0"))
           (cond (op? (peek-t c) ",") (do (next-t! c) (recur args kw))
                 :else (do (expect! c ")") [args kw])))))))
 
@@ -99,7 +108,7 @@
               (loop [ps []]
                 (let [k (expr c) v (expr c) ps (conj ps [k v])]
                   (if (op? (peek-t c) ",") (do (next-t! c) (recur ps)) (do (expect! c "}") (at t {:op :map :pairs ps})))))))
-      (and (op? t ":") (name? (peek-t c 1)) (= (:line t) (:line (peek-t c 1))) (= (inc (:col t)) (:col (peek-t c 1))))
+      (keyword-start? c)
       (do (next-t! c) (let [n (next-t! c)] (at t {:op :kw :v (:raw n)})))
       :else (err c (str "expected an expression, found '" (:v t) "'")))))
 

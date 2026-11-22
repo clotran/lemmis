@@ -1,0 +1,8 @@
+! error: 8:9: the last line ends in
+module e_continue
+  implicit none
+contains
+  subroutine run()
+  end subroutine run
+end module e_continue
+x = 1 + &

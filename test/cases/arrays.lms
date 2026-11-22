@@ -21,6 +21,12 @@ contains
     integer, intent(inout) :: x
     x = x + 100
   end subroutine bump
+  subroutine part(a, n)
+    integer, intent(in) :: n
+    real(8), intent(inout) :: a(n)
+    print *, size(a), sum(a), a
+    a(n) = -1
+  end subroutine part
   subroutine run()
     real(8) :: v(5)
     integer :: w(0:4), k
@@ -32,5 +38,7 @@ contains
     end do
     call bump(w(2))
     print *, w, sum(w), product(v)
+    call part(v, 3)
+    print *, v
   end subroutine run
 end module arrays

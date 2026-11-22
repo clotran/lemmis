@@ -263,7 +263,7 @@
           w (err c (str "'" w "' does not end this construct"))
           :else (recur (conj out (exec-stmt sts path))))))))
 
-(defn- spec? [c] (or (type-start? c) (kw? c "implicit") (kw? c "use") (kw? c "private") (kw? c "public")
+(defn- spec? [c] (or (type-start? c) (and (kw? c "val") (op? (peek-t c 1) "::")) (kw? c "implicit") (kw? c "use") (kw? c "private") (kw? c "public")
                      (kw? c "dimension") (kw? c "parameter") (kw? c "save") (kw? c "data") (kw? c "common")
                      (kw? c "equivalence") (kw? c "type") (kw? c "interface") (kw? c "external") (kw? c "intrinsic")))
 
@@ -277,6 +277,11 @@
         (when (op? (peek-t c) "::") (next-t! c))
         (let [ns (if (at-end? c) [] (loop [ns [(:v (expect-name! c))]] (if (op? (peek-t c) ",") (do (next-t! c) (recur (conj ns (:v (expect-name! c))))) ns)))]
           (done! c) (at t {:spec :access :v v :names ns})))
+      ;; ext: val :: names declares dummy arguments that are Clojure values (Fortran has no 'val' type)
+      (and (kw? c "val") (op? (peek-t c 1) "::"))
+      (do (next-t! c) (next-t! c)
+          (let [ns (loop [ns [(expect-name! c)]] (if (op? (peek-t c) ",") (do (next-t! c) (recur (conj ns (expect-name! c)))) ns))]
+            (done! c) (at t {:spec :decl :type (at t {:base :val}) :attrs {} :ents (mapv #(at % {:name (:v %)}) ns)})))
       ;; a type keyword followed by 'function' is a function statement, not a declaration
       (type-start? c) (decl c)
       :else (err c (str "the " (:v t) " statement is refused in version 0")))))

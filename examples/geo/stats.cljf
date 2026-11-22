@@ -1,0 +1,5 @@
+(ns geo.stats
+  "A clotran namespace that the Lemmis module geo.shapes uses.")
+
+(defn mean [xs] (/ (reduce + xs) (count xs)))
+(defn spread [xs] (- (reduce max xs) (reduce min xs)))

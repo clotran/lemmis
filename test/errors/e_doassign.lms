@@ -1,0 +1,11 @@
+! error: 8:7: the variable of an active DO loop
+module e_doassign
+  implicit none
+contains
+  subroutine run()
+    integer :: i
+    do i = 1, 3
+      i = 2
+    end do
+  end subroutine run
+end module e_doassign

@@ -1,0 +1,8 @@
+! error: 6:14: a character literal is not closed
+module e_string
+  implicit none
+contains
+  subroutine run()
+    print *, 'abc
+  end subroutine run
+end module e_string

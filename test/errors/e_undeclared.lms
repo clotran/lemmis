@@ -1,0 +1,9 @@
+! error: 7:5: y is not declared
+module e_undeclared
+  implicit none
+contains
+  subroutine run()
+    integer :: x
+    y = 1
+  end subroutine run
+end module e_undeclared

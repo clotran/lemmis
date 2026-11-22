@@ -1,0 +1,7 @@
+! error: 6:18: does not match run
+module e_endname
+  implicit none
+contains
+  subroutine run()
+  end subroutine walk
+end module e_endname

@@ -134,6 +134,12 @@
 
 (declare ex)
 
+(defn whole
+  "An expression read as a whole: an explicit-shape dummy array is its first n elements."
+  [env e]
+  (let [v (when (= :name (:op e)) (get-in env [:vars (:v e)]))]
+    (if (:extent v) (list 'lemmis.rt/head (symbol (:v e)) (:extent v)) (ex env e))))
+
 (defn- intrinsic [env e]
   (let [n (:v e) args (:args e) kw (:kwargs e)
         [lo hi] (get arity n [1 1])
@@ -144,7 +150,7 @@
     (when (and kind-e (not (kinded n))) (fail env e (str n " takes no kind")))
     (when-not (<= lo (+ (count args) (if kind-e 1 0)) (+ hi (if (= n "cmplx") 0 0)))
       (fail env e (str n " takes " (if (= lo hi) lo (str lo " to " hi)) " arguments")))
-    (let [as (map #(ex env %) args)
+    (let [as (map #(if (rt-direct n) (whole env %) (ex env %)) args)
           kk (when kind-e (let [k (or (const-int env kind-e) (fail env kind-e "a kind must be a constant"))]
                             (keyword (str (kinded n) k))))]
       (when (and kk (not (#{:int1 :int2 :int4 :int8 :real4 :real8 :complex4 :complex8} kk))) (fail env kind-e (str "no such kind " kk)))
@@ -188,6 +194,8 @@
       (= :cname (:fname e)) (do (when (seq (:kwargs e)) (fail env e "keyword arguments to a Clojure function are refused"))
                                 (m env e (list* (symbol n) (map #(ex env %) (:args e)))))
       (and v (= 1 (:rank v))) (aref env e v)
+      (:val? v) (do (when (seq (:kwargs e)) (fail env e "keyword arguments to a Clojure function are refused"))
+                    (m env e (list* (symbol n) (map #(ex env %) (:args e)))))
       v (fail env e (str n " is a scalar: substrings and calls through variables are refused in version 0"))
       (and g (= :proc (:what g)))
       (do (when (= :subroutine (:kind (:proc g))) (fail env e (str n " is a subroutine: use call")))

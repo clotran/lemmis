@@ -1,0 +1,10 @@
+! error: 8:5: n is intent(in)
+module e_intentin
+  implicit none
+contains
+  subroutine s(n)
+    integer, intent(in) :: n
+    print *, n
+    n = 2
+  end subroutine s
+end module e_intentin

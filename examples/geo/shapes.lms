@@ -1,0 +1,31 @@
+! geo.shapes: a Lemmis module (examples/geo/shapes.lms). Fortran's arithmetic for the
+! numbers, a clotran namespace (geo.stats) and clojure.string for the rest.
+module geo.shapes
+  use geo.stats, only: mean, spread
+  use clojure.string, only: join
+  implicit none
+  real(8), parameter :: pi = 3.141592653589793d0
+contains
+  pure real(8) function area(r)
+    real(8), intent(in) :: r
+    area = pi * r**2
+  end function area
+
+  ! the areas of n circles, radii 1, 2, ..., n, into a (written in place)
+  subroutine areas(a, n)
+    integer, intent(in) :: n
+    real(8), intent(inout) :: a(n)
+    integer :: i
+    do i = 1, n
+      a(i) = area(real(i, 8))
+    end do
+  end subroutine areas
+
+  ! a report on radii given as a Clojure vector
+  function report(radii) result(s)
+    val :: radii
+    character(len=200) :: s
+    val as = ->> radii map(area) vec
+    s = join(', ', #['mean ' // `str`(mean(as)), 'spread ' // `str`(spread(as))])
+  end function report
+end module geo.shapes

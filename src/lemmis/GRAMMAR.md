@@ -39,6 +39,7 @@ Fortran rejects (PLAN.md "The rule"), so no valid Fortran changes meaning.
   Kinds: integer 1 2 4 8, real 4 8, complex 4 8.
   R721 char-selector: `(` [`len=`] n | `*` `)`, `(len=`...`)`, `*n`.
 - R802 attr-spec: `parameter`, `intent(in|out|inout)` (R828), `dimension(` array-spec `)`.
+- **ext** `val ::` name-list: dummy arguments that are Clojure values (any value, immutable).
 - R803 entity-decl: name [`(` array-spec `)`] [`=` expr] (initialization only with
   `parameter`, which is a constant).
 - R814 array-spec, rank 1: R815 explicit-shape `[lower:]upper`, R820 assumed-shape `:`

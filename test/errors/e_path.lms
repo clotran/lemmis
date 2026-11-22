@@ -1,0 +1,4 @@
+! error: 2:1: is not the lib this file is
+module somewhere_else
+  implicit none
+end module somewhere_else

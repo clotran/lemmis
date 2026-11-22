@@ -1,0 +1,9 @@
+! error: 7:11: unexpected character '$'
+module e_char
+  implicit none
+contains
+  subroutine run()
+    integer :: i
+    i = 2 $ 3
+  end subroutine run
+end module e_char

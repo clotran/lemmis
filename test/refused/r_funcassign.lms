@@ -1,0 +1,15 @@
+! refused: assigns its dummy
+module r_funcassign
+  implicit none
+contains
+  subroutine run()
+    integer :: k
+    k = 1
+    print *, f(k)
+  end subroutine run
+  integer function f(x)
+    integer :: x
+    x = x + 1
+    f = x
+  end function f
+end module r_funcassign

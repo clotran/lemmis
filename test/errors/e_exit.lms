@@ -1,0 +1,8 @@
+! error: 6:5: exit outside a DO loop
+module e_exit
+  implicit none
+contains
+  subroutine run()
+    exit
+  end subroutine run
+end module e_exit

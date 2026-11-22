@@ -88,7 +88,7 @@
 (defn statements
   "The statements of a source text: a vector of token vectors, none empty."
   [text path]
-  (loop [ln 1 ls (str/split-lines text) pending nil out []]
+  (loop [ln 1 ls (str/split-lines text) pending nil amp nil out []]
     (if (seq ls)
       (let [ts (lex-line path ln (first ls))
             ts (if (and pending (amp? (first ts))) (subvec ts 1) ts)
@@ -96,7 +96,7 @@
             ts (into (or pending []) (if cont? (pop ts) ts))]
         (when-let [t (first (filter amp? ts))] (fail path (:line t) (:col t) "'&' continues a line only at its end"))
         (if cont?
-          (recur (inc ln) (rest ls) ts out)
-          (recur (inc ln) (rest ls) nil (into out (remove empty?) (split-semi ts)))))
-      (do (when (seq pending) (let [t (peek pending)] (fail path (:line t) (:col t) "the last line ends in '&'")))
+          (recur (inc ln) (rest ls) ts (peek (lex-line path ln (first ls))) out)
+          (recur (inc ln) (rest ls) nil nil (into out (remove empty?) (split-semi ts)))))
+      (do (when amp (fail path (:line amp) (:col amp) "the last line ends in '&'"))
           out))))

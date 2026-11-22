@@ -1,0 +1,28 @@
+module pipes
+  use clojure.string, only: join, up => `upper-case`
+  implicit none
+contains
+  pure integer function twice(x)
+    integer, intent(in) :: x
+    twice = 2 * x
+  end function twice
+  subroutine run()
+    integer :: n
+    val xs = #[1, 2, 3, 4, 5]
+    val evens = ->> xs filter(`even?`) map(twice) vec
+    print *, evens
+    print *, ->> xs map(`inc`) `reduce`(`+`)
+    print *, -> 'lemmis' up `str`('!')
+    print *, join(', ', #['a', 'b', 'c'])
+    val m = #{:name 'Ada', :year 1815}
+    print *, get(m, :name), `get`(m, :year)
+    n = `count`(xs)
+    print *, n, n + 1, empty?(#[]), empty?(xs)
+    val f = twice
+    print *, f(21), `apply`(max_of, #[3, 9, 4])
+  end subroutine run
+  integer function max_of(a, b, c)
+    integer, intent(in) :: a, b, c
+    max_of = max(a, b, c)
+  end function max_of
+end module pipes

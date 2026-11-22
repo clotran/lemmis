@@ -53,6 +53,14 @@
       (let [a (object-array n) z (if (vector? k) (blank (second k)) (zero k))]
         (dotimes [i n] (aset a i z)) a))))
 
+(defn extent
+  "An explicit-shape dummy's extent n, checked: its actual has at least n elements (15.5.2.11)."
+  [a n who]
+  (when (> n (alength a)) (throw (ex-info (str who ": the array argument has " (alength a) " elements, fewer than its dummy's " n) {})))
+  n)
+(defn head "The first n elements of a, a copy to read (PRINT, SUM, SIZE ...)." [a n]
+  (let [b (object-array n)] (dotimes [i n] (aset b i (aget a i))) b))
+
 (defn idx
   "The 0-based offset of subscript i in an array whose lower bound is lo, checked (9.5.3.2)."
   [a i lo]
@@ -106,6 +114,13 @@
   [old v] (if (and (string? old) (string? v) (< (count v) (count old))) (str v (subs old (count v))) v))
 (defn out "Actual k's value after the call: the subroutine's, else unchanged." [r k old]
   (if (sub? r) (leftmost old (nth r k)) old))
+(defn out-unchanged
+  "A function's own scalar dummy passed to a subroutine: the change could not reach the
+  function's caller (version 0 returns only the result), so a change is refused."
+  [r k old who]
+  (let [v (out r k old)]
+    (when-not (= v old) (throw (ex-info (str who " was changed by a call: a function's dummy changed through a call is refused in version 0 (use a subroutine)") {})))
+    v))
 (defn out-aset [r k a j kind]
   (when (sub? r) (aset a j (let [v (leftmost (aget a j) (nth r k))] (if kind (conv kind v) v)))))
 

@@ -1,0 +1,23 @@
+! geo.report: Lemmis using Lemmis (geo.shapes) and calling a Clojure function it is handed.
+module geo.report
+  use geo.shapes, only: area, areas
+  implicit none
+contains
+  ! the total area of n circles, radii 1..n, through geo.shapes's subroutine
+  real(8) function total_area(n)
+    integer, intent(in) :: n
+    real(8) :: a(n)
+    integer :: i
+    call areas(a, n)
+    total_area = 0
+    do i = 1, n
+      total_area = total_area + a(i)
+    end do
+  end function total_area
+
+  ! how many radii (a Clojure collection) have an area passing keep (a Clojure fn)
+  integer function count_kept(radii, keep)
+    val :: radii, keep
+    count_kept = `count`(->> radii map(area) filter(keep))
+  end function count_kept
+end module geo.report
