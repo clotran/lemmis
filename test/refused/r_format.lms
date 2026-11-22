@@ -1,0 +1,8 @@
+! refused: formats are refused
+module r_format
+  implicit none
+contains
+  subroutine run()
+    print '(i5)', 42
+  end subroutine run
+end module r_format

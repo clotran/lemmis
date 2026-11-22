@@ -1,0 +1,22 @@
+module chars
+  implicit none
+contains
+  subroutine run()
+    character(len=5) :: s
+    character(len=10) :: t
+    character(3) :: u
+    s = 'ab'
+    t = s // 'cd'
+    u = 'abcdef'
+    print *, '[', s, ']', len(s), len_trim(s)
+    print *, '[', trim(t), ']', len(t), len_trim(t)
+    print *, u, len(u)
+    print *, s == 'ab', s < 'abc', 'b' > 'abc', trim(s) // '!' // u
+    print *, greet('Lemmis')
+  end subroutine run
+  function greet(n) result(g)
+    character(len=*), intent(in) :: n
+    character(len=20) :: g
+    g = 'hello, ' // n
+  end function greet
+end module chars

@@ -1,0 +1,11 @@
+! refused: the attribute allocatable
+module r_alloc
+  implicit none
+contains
+  subroutine run()
+    real, allocatable :: a(:)
+    allocate(a(3))
+    a(1) = 1
+    print *, a(1)
+  end subroutine run
+end module r_alloc

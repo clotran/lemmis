@@ -1,0 +1,10 @@
+! refused: array sections and substrings are refused
+module r_substring
+  implicit none
+contains
+  subroutine run()
+    character(len=5) :: s
+    s = 'hello'
+    print *, s(1:2)
+  end subroutine run
+end module r_substring

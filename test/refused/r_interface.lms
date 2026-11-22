@@ -1,0 +1,12 @@
+! refused: the interface statement is refused
+module r_interface
+  implicit none
+  interface
+    subroutine ext()
+    end subroutine ext
+  end interface
+contains
+  subroutine run()
+    print *, 1
+  end subroutine run
+end module r_interface

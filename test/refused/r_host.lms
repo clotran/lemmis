@@ -1,0 +1,11 @@
+! refused: host association is refused
+program r_host
+  implicit none
+  integer :: n
+  n = 3
+  call show()
+contains
+  subroutine show()
+    print *, n
+  end subroutine show
+end program r_host

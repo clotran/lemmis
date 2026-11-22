@@ -1,0 +1,10 @@
+! refused: saved state is refused
+module r_save
+  implicit none
+contains
+  subroutine run()
+    integer :: n = 0
+    n = n + 1
+    print *, n
+  end subroutine run
+end module r_save

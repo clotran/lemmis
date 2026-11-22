@@ -1,0 +1,19 @@
+program prog
+  implicit none
+  integer :: i, total
+  total = 0
+  do i = 1, 5
+    total = total + sq(i)
+  end do
+  print *, 'total', total
+  call show(total)
+contains
+  integer function sq(k)
+    integer, intent(in) :: k
+    sq = k * k
+  end function sq
+  subroutine show(t)
+    integer, intent(in) :: t
+    print *, 'shown', t
+  end subroutine show
+end program prog

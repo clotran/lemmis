@@ -1,0 +1,10 @@
+! refused: array sections and substrings are refused
+module r_section
+  implicit none
+contains
+  subroutine run()
+    integer :: a(4)
+    a(1) = 1; a(2) = 2; a(3) = 3; a(4) = 4
+    print *, a(2:3)
+  end subroutine run
+end module r_section

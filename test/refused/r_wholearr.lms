@@ -1,0 +1,10 @@
+! refused: whole-array assignment is refused
+module r_wholearr
+  implicit none
+contains
+  subroutine run()
+    integer :: a(3)
+    a = 0
+    print *, a
+  end subroutine run
+end module r_wholearr

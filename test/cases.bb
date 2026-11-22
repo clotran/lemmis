@@ -15,7 +15,7 @@
 (def args *command-line-args*)
 (def case-dir (if (and (first args) (fs/directory? (first args))) (first args) (str here "/cases")))
 (def only (set (if (and (first args) (fs/directory? (first args))) (rest args) args)))
-(def files (sort (filter #(or (empty? only) (only (fs/file-name %))) (map str (fs/glob case-dir "*.lms")))))
+(def files (sort (map #(str (fs/absolutize %)) (filter #(or (empty? only) (only (fs/file-name %))) (map str (fs/glob case-dir "*.lms"))))))
 (def tmp (str (fs/create-temp-dir {:prefix "lemmis-cases"})))
 
 (defn sh [opts & args] (apply p/shell (merge {:out :string :err :string :continue true :timeout 60000} opts) args))
@@ -65,13 +65,16 @@
 
 (defn toks [l] (vec (remove str/blank? (str/split (str/trim l) #"\s+"))))
 ;; the two compilers against each other: the same text, or the same value read as real(4)
-(defn ctok-match? [a b] (or (= a b) (let [x (real-of 4 a) y (real-of 4 b)] (boolean (and x y (same-real? 4 x y))))))
-(defn clines-match? [as bs]
-  (and (= (count as) (count bs))
-       (every? true? (map (fn [a b] (let [x (toks a) y (toks b)] (and (= (count x) (count y)) (every? true? (map ctok-match? x y))))) as bs))))
+(defn ctok-match? [a b]
+  (or (= a b)
+      (let [x (real-of 4 a) y (real-of 4 b)] (boolean (and x y (same-real? 4 x y))))
+      (let [[_ p q] (re-matches #"\((.*),(.*)\)" a) [_ r s] (re-matches #"\((.*),(.*)\)" b)]
+        (boolean (and p r (ctok-match? p r) (ctok-match? q s))))))
+;; record length is the processor's (flang wraps long records): compare the token streams
+(defn all-toks [ls] (vec (mapcat toks ls)))
+(defn lines-match? [ms cs] (let [x (all-toks ms) y (all-toks cs)] (and (= (count x) (count y)) (every? true? (map tok-match? x y)))))
+(defn clines-match? [as bs] (let [x (all-toks as) y (all-toks bs)] (and (= (count x) (count y)) (every? true? (map ctok-match? x y)))))
 
-(defn line-match? [m c] (let [a (toks m) b (toks c)] (and (= (count a) (count b)) (every? true? (map tok-match? a b)))))
-(defn lines-match? [ms cs] (and (= (count ms) (count cs)) (every? true? (map line-match? ms cs))))
 
 (defn -main []
   (let [cl (clotran-all)

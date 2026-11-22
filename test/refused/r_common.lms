@@ -1,0 +1,11 @@
+! refused: the common statement is refused
+module r_common
+  implicit none
+contains
+  subroutine run()
+    integer :: i
+    common /blk/ i
+    i = 1
+    print *, i
+  end subroutine run
+end module r_common

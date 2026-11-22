@@ -1,0 +1,10 @@
+! refused: array constructors are refused
+module r_arrcons
+  implicit none
+contains
+  subroutine run()
+    integer :: a(2)
+    a = [1, 2]
+    print *, a(1)
+  end subroutine run
+end module r_arrcons

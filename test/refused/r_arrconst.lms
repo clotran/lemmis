@@ -1,0 +1,9 @@
+! refused: array constructors are refused
+module r_arrconst
+  implicit none
+  integer, parameter :: v(2) = [1, 2]
+contains
+  subroutine run()
+    print *, v(1)
+  end subroutine run
+end module r_arrconst

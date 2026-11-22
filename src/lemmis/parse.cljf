@@ -195,7 +195,9 @@
       (kw? c "forall") (err c "forall is refused in version 0")
       :else (err c (str "not a statement of version 0: '" (:v t) "'")))))
 
-(defn- stmt-cursor [st path] (cursor (unglue st) path))
+(defn- stmt-cursor [st path]
+  (when (= :int (:t (first st))) (let [t (first st)] (lex/fail path (:line t) (:col t) "statement labels are refused in version 0")))
+  (cursor (unglue st) path))
 
 ;; R1136 if-construct, R1141 if-stmt, R1119 do-construct
 (defn- exec-stmt [sts path]

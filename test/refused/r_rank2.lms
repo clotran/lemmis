@@ -1,0 +1,10 @@
+! refused: rank above 1
+module r_rank2
+  implicit none
+contains
+  subroutine run()
+    real :: a(2, 2)
+    a(1, 1) = 1
+    print *, a(1, 1)
+  end subroutine run
+end module r_rank2

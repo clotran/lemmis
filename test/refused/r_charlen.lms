@@ -1,0 +1,14 @@
+! refused: a character length must be a constant
+module r_charlen
+  implicit none
+contains
+  subroutine run()
+    call s(3)
+  end subroutine run
+  subroutine s(n)
+    integer, intent(in) :: n
+    character(len=n) :: t
+    t = 'ab'
+    print *, t
+  end subroutine s
+end module r_charlen

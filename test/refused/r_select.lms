@@ -1,0 +1,13 @@
+! refused: select case is refused
+module r_select
+  implicit none
+contains
+  subroutine run()
+    integer :: i
+    i = 2
+    select case (i)
+    case (2)
+      print *, i
+    end select
+  end subroutine run
+end module r_select

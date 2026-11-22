@@ -1,0 +1,11 @@
+! refused: read is refused
+module r_read
+  implicit none
+contains
+  subroutine run()
+    integer :: i
+    i = 1
+    if (i > 5) read *, i
+    print *, i
+  end subroutine run
+end module r_read

@@ -1,0 +1,11 @@
+! refused: not a statement of version 0
+module r_named
+  implicit none
+contains
+  subroutine run()
+    integer :: i
+    outer: do i = 1, 2
+      print *, i
+    end do outer
+  end subroutine run
+end module r_named

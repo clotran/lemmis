@@ -1,0 +1,9 @@
+! refused: stop is refused
+module r_stop
+  implicit none
+contains
+  subroutine run()
+    print *, 1
+    stop
+  end subroutine run
+end module r_stop

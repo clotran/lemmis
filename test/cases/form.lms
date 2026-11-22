@@ -1,0 +1,14 @@
+module form
+  implicit none
+contains
+  subroutine run()
+    integer :: a, b, &
+               c
+    a = 1; b = 2; c = a + &
+      & b
+    print *, a, b, &
+             c   ! continued
+    IF (A .LT. B) THEN; PRINT *, 'upper case ok'; END IF
+    if (1.eq.1) print *, 'dot ops next to numbers'
+  end subroutine run
+end module form

@@ -1,0 +1,11 @@
+! refused: the type statement is refused
+module r_derived
+  implicit none
+  type :: pt
+    real :: x
+  end type pt
+contains
+  subroutine run()
+    print *, 1
+  end subroutine run
+end module r_derived

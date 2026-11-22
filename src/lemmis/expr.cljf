@@ -38,12 +38,12 @@
     (do (next-t! c) [[] {}])
     (loop [args [] kw {}]
       (let [t (peek-t c)]
-        (when (op? t ":") (err c "array sections are refused in version 0"))
+        (when (op? t ":") (err c "array sections and substrings are refused in version 0"))
         (let [[args kw] (if (and (name? t) (op? (peek-t c 1) "="))
                           (do (next-t! c) (next-t! c) [args (assoc kw (:v t) (expr c))])
                           (do (when (seq kw) (err c "a positional argument after a keyword argument"))
                               [(conj args (expr c)) kw]))]
-          (when (op? (peek-t c) ":") (err c "array sections are refused in version 0"))
+          (when (op? (peek-t c) ":") (err c "array sections and substrings are refused in version 0"))
           (cond (op? (peek-t c) ",") (do (next-t! c) (recur args kw))
                 :else (do (expect! c ")") [args kw])))))))
 
@@ -79,6 +79,7 @@
                       (when-not (and (lit? a) (lit? b)) (err c t "a complex constant's parts are literals ((re, im)); use cmplx(x, y)"))
                       (at t {:op :complex :re a :im b}))))
               (do (expect! c ")") (at t {:op :paren :a a})))))
+      (or (op? t "[") (and (op? t "(") false)) (err c "array constructors are refused in version 0")
       ;; ext: pipelines, persistent collections, keywords
       (or (op? t "->>") (op? t "->"))
       (do (next-t! c)

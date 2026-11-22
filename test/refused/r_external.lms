@@ -1,0 +1,11 @@
+! refused: put them in a module
+subroutine helper()
+  print *, 1
+end subroutine helper
+module r_external
+  implicit none
+contains
+  subroutine run()
+    print *, 2
+  end subroutine run
+end module r_external

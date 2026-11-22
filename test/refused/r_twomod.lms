@@ -1,0 +1,11 @@
+! refused: one module or program per file
+module r_twomod
+  implicit none
+contains
+  subroutine run()
+    print *, 1
+  end subroutine run
+end module r_twomod
+module r_twomod_b
+  implicit none
+end module r_twomod_b

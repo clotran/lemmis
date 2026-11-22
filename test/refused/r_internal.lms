@@ -1,0 +1,12 @@
+! refused: internal procedures inside a procedure are refused
+module r_internal
+  implicit none
+contains
+  subroutine run()
+    print *, g()
+  contains
+    integer function g()
+      g = 1
+    end function g
+  end subroutine run
+end module r_internal

@@ -1,0 +1,10 @@
+! refused: the data statement is refused
+module r_data
+  implicit none
+contains
+  subroutine run()
+    integer :: i
+    data i /3/
+    print *, i
+  end subroutine run
+end module r_data

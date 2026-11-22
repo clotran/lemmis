@@ -1,0 +1,10 @@
+! refused: module variables are refused
+module r_modvar
+  implicit none
+  integer :: counter
+contains
+  subroutine run()
+    counter = 1
+    print *, counter
+  end subroutine run
+end module r_modvar

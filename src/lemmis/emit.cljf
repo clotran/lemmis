@@ -190,7 +190,7 @@
                       (:parameter a) (assoc :param? true))
                   env (assoc-in env [:vars n] v)
                   env (if (and (:parameter a) (= :int4 (:k ty))) (if-let [c (x/const-int env (:init en))] (assoc-in env [:kinds n] c) env) env)
-                  init (cond (:parameter a) (conv-form v (ex env (:init en)))
+                  init (cond (:parameter a) (conv-form v (if-let [c (and (#{:int1 :int2 :int4 :int8} (:k ty)) (x/const-int env (:init en)))] c (ex env (:init en))))
                              dummy? (when (zero? (:rank v)) (if (= :char (:k v)) (when-not (= :star (:len v)) (list 'lemmis.rt/conv-char (:len v) (symbol n)))
                                                                 (list 'lemmis.rt/conv-in (:k v) (symbol n) (str who))))
                              dims (list 'lemmis.rt/new-array (if (= :char (:k v)) [:char (:len v)] (:k v))

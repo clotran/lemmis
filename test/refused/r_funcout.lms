@@ -1,0 +1,15 @@
+! refused: use a subroutine
+module r_funcout
+  implicit none
+contains
+  subroutine run()
+    integer :: k
+    k = 1
+    print *, f(k), k
+  end subroutine run
+  integer function f(x)
+    integer, intent(inout) :: x
+    x = x + 1
+    f = x
+  end function f
+end module r_funcout

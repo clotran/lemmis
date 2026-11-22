@@ -1,0 +1,9 @@
+! refused: the attribute pointer
+module r_pointer
+  implicit none
+contains
+  subroutine run()
+    integer, pointer :: p
+    print *, 1
+  end subroutine run
+end module r_pointer

@@ -1,0 +1,12 @@
+! refused: array-valued functions are refused
+module r_arrfn
+  implicit none
+contains
+  subroutine run()
+    print *, f()
+  end subroutine run
+  function f() result(r)
+    integer :: r(2)
+    r(1) = 1; r(2) = 2
+  end function f
+end module r_arrfn

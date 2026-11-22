@@ -1,0 +1,10 @@
+! refused: logical kinds are refused
+module r_logkind
+  implicit none
+contains
+  subroutine run()
+    logical(1) :: b
+    b = .true.
+    print *, b
+  end subroutine run
+end module r_logkind

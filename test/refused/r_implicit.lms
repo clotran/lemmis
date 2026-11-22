@@ -1,0 +1,8 @@
+! refused: implicit none is required
+module r_implicit
+contains
+  subroutine run()
+    x = 1.5
+    print *, x
+  end subroutine run
+end module r_implicit

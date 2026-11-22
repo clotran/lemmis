@@ -15,14 +15,14 @@
             [clojure.string :as str]))
 
 (defn- lib-of-path
-  "The lib a path names, by its last segments: a/b_c/d.lms is a.b-c.d, compared from the end."
+  "A path's segments without .lms: lib a.b-c.d is a/b_c/d.lms, compared from the end."
   [path]
   (when (and path (str/ends-with? path ".lms"))
-    (-> path (subs 0 (- (count path) 4)) (str/replace "\\" "/") (str/split #"/") (->> (map #(str/replace % "_" "-"))))))
+    (-> path (subs 0 (- (count path) 4)) (str/replace "\\" "/") (str/split #"/"))))
 
 (defn- check-path! [env unit]
   (when-let [segs (lib-of-path (:path env))]
-    (let [want (str/split (:name unit) #"\.")]
+    (let [want (map #(str/replace % "-" "_") (str/split (:name unit) #"\."))]
       (when-not (= (map str/lower-case (take-last (count want) segs)) want)
         (x/fail env unit (str "the module " (:name unit) " is not the lib this file is ("
                               (str/join "/" (take-last (count want) segs)) ".lms); name the file after its module"))))))
@@ -76,8 +76,9 @@
                              (when (or (:dims en) (:dims a)) (x/fail env en "array constants are refused in version 0"))
                              (when-not (:init en) (x/fail env en "a parameter needs a value"))
                              (let [v (assoc ty :rank 0 :lo 1 :param? true)
-                                   form (force! (e/conv-form v (x/ex env (:init en))))
                                    c (when (#{:int1 :int2 :int4 :int8} (:k ty)) (x/const-int env (:init en)))
+                                   ;; an integer known now is written as its value (selected_real_kind needs no run time)
+                                   form (force! (e/conv-form v (if c c (x/ex env (:init en)))))
                                    env (cond-> (assoc-in env [:globals n] {:what :param :v v}) c (assoc-in [:kinds n] c))]
                                [env (conj defs [n en form]) (cond-> acc (:access a) (assoc-in [:names n] (:access a)))])))
                          [env defs acc] (:ents sp))))))

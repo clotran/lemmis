@@ -1,0 +1,12 @@
+! refused: the attribute optional
+module r_optional
+  implicit none
+contains
+  subroutine run()
+    call s()
+  end subroutine run
+  subroutine s(k)
+    integer, optional, intent(in) :: k
+    print *, present(k)
+  end subroutine s
+end module r_optional

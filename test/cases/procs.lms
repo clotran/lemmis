@@ -1,0 +1,45 @@
+module procs
+  implicit none
+contains
+  recursive function fact(n) result(f)
+    integer, intent(in) :: n
+    integer(8) :: f
+    if (n <= 1) then
+      f = 1
+    else
+      f = n * fact(n - 1)
+    end if
+  end function fact
+  subroutine divmod(a, b, q, r)
+    integer, intent(in) :: a, b
+    integer, intent(out) :: q, r
+    q = a / b
+    r = mod(a, b)
+  end subroutine divmod
+  subroutine swap(x, y)
+    real(8), intent(inout) :: x, y
+    real(8) :: t
+    t = x; x = y; y = t
+  end subroutine swap
+  pure real(8) function hyp(a, b)
+    real(8), intent(in) :: a, b
+    hyp = sqrt(a*a + b*b)
+  end function hyp
+  subroutine run()
+    integer :: q, r, i
+    real(8) :: u, v
+    print *, fact(5), fact(20)
+    call divmod(17, 5, q, r)
+    print *, q, r
+    call divmod(b=4, a=-9, q=q, r=r)
+    print *, q, r
+    u = 1.5d0; v = -2.0d0
+    call swap(u, v)
+    print *, u, v
+    print *, hyp(3.0d0, 4.0d0)
+    do i = 1, 3
+      call swap(u, v)
+    end do
+    print *, u, v
+  end subroutine run
+end module procs

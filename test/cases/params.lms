@@ -1,0 +1,21 @@
+module params
+  use iso_fortran_env, only: int64, real64
+  implicit none
+  integer, parameter :: dp = kind(1.0d0)
+  integer, parameter :: sp = selected_real_kind(6)
+  integer, parameter :: n = 4, m = n * 2
+  real(dp), parameter :: pi = 3.141592653589793_dp
+  real(real64), parameter :: half = 0.5_real64
+  integer(int64), parameter :: big = 10_int64 ** 12
+contains
+  subroutine run()
+    real(dp) :: a(m)
+    real(sp) :: s
+    integer :: i
+    do i = 1, m
+      a(i) = pi * i * half
+    end do
+    s = 1.0_sp / 3
+    print *, n, m, pi, a(m), big, kind(s), kind(a(1)), s
+  end subroutine run
+end module params
