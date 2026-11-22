@@ -3,7 +3,7 @@
   over lemmis.lex's statements. The tree:
     unit  {:unit :module|:program :name n :uses [use] :specs [spec] :body [stmt] :procs [proc]}
     use   {:name n :only nil|[[local remote]] :renames [[local remote]]}
-    proc  {:kind :function|:subroutine :name n :args [n] :result n :type type :specs [spec] :body [stmt] :uses [use]}
+    proc  {:kind :function|:subroutine :name n :args [n] :result n :type type :prefixes [word ...] :specs [spec] :body [stmt] :uses [use]}
     spec  {:spec :decl :type type :attrs {} :ents [{:name n :dims [[lo hi]] :init e}]} | {:spec :implicit-none}
           | {:spec :access :v :private|:public :names [n]}
     type  {:base :integer|:real|:complex|:logical|:character :kind expr-or-nil :len expr|:star|nil}
@@ -336,11 +336,11 @@
 (defn- proc [sts path]
   (let [c (stmt-cursor (first @sts) path) t (peek-t c)]
     (swap! sts rest)
-    (let [prefix (loop [ty nil] (cond (some #(kw? c %) ["pure" "elemental" "recursive" "impure"]) (do (next-t! c) (recur ty))
-                                      (kw? c "module") (err c "separate module procedures are refused in version 0")
-                                      (kw? c "non_recursive") (do (next-t! c) (recur ty))
-                                      (type-start? c) (recur (type-spec c))
-                                      :else ty))
+    (let [[prefix words] (loop [ty nil ws []]
+                           (cond (some #(kw? c %) ["pure" "elemental" "recursive" "impure" "non_recursive"]) (recur ty (conj ws (:v (next-t! c))))
+                                 (kw? c "module") (err c "separate module procedures are refused in version 0")
+                                 (type-start? c) (recur (type-spec c) ws)
+                                 :else [ty ws]))
           kind (keyword (:v (expect-name! c)))
           nm (:v (expect-name! c))
           args (if (op? (peek-t c) "(")
@@ -361,7 +361,7 @@
             (let [w (expect-name! ec)] (when-not (= (:v w) (name kind)) (err ec w (str "expected end " (name kind)))))
             (when-not (at-end? ec) (let [n (expect-name! ec)] (when-not (= (:v n) nm) (err ec n (str "end " (name kind) " " (:v n) " does not match " nm)))))
             (done! ec)))
-        (at t {:kind kind :name nm :args args :result res :type prefix :uses uses :specs ss :body body})))))
+        (at t {:kind kind :name nm :args args :result res :type prefix :prefixes words :uses uses :specs ss :body body})))))
 
 (defn- subprograms [sts path]
   (loop [ps []]

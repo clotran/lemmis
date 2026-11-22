@@ -1,0 +1,654 @@
+(ns lemmis.typer
+  "Lemmis's own typer (PLAN.md, Compilation: Fortran first). Types are Fortran's: every
+  expression of version 0 gets its Fortran type from the declarations and Fortran's rules
+  (J3/24-007 10.1.5 mixed-mode promotion, 16.9 the intrinsics' result kinds), by
+  construction; nothing is inferred from values. A type is
+    {:k :int1|:int2|:int4|:int8|:real4|:real8|:complex4|:complex8|:logical|:char
+     :rank 0|1 :len n|:star|nil}            (:len nil: a length known only at run time)
+  or {:k :clj}: a Clojure value (an extension). A Clojure value is not an error: it puts its
+  procedure in tier B, with a finding (code, message, help) for the report. What Fortran
+  would reject (an integer .and., a wrong kind of actual, a real DO bound) is an error naming
+  path:line:column and what to write instead, never a guess.
+
+    (check text path) => {:unit typed-unit :procs {name {:tier :A|:B :findings [..]}} ...}
+
+  The typed unit is lemmis.parse's tree with :t on every expression node, :sig on every
+  procedure, :vals (the val locals to declare) and :pipe plans on pipelines."
+  (:require [lemmis.lex :as lex]
+            [lemmis.parse :as parse]
+            [lemmis.emitx :as x]
+            [lemmis.reader :as reader]
+            [clojure.string :as str]))
+
+(def ik? #{:int1 :int2 :int4 :int8})
+(def rk? #{:real4 :real8})
+(def ck? #{:complex4 :complex8})
+(defn num-k? [k] (boolean (or (ik? k) (rk? k) (ck? k))))
+(def ^:private bits {:int1 8 :int2 16 :int4 32 :int8 64 :real4 32 :real8 64})
+(def part {:complex4 :real4 :complex8 :real8})
+(def ^:private cplx-of {:real4 :complex4 :real8 :complex8})
+(defn clj? [t] (= :clj (:k t)))
+
+(defn promote
+  "10.1.5.2.1, Table 10.2: the kind of x1 op x2. Integer with integer, the larger; real with
+  real, the larger; integer with real, the real's; with a complex, the complex whose part is
+  the widest real part or real operand. (test/ftypes/oracle.clj's promote, checked against
+  gfortran and flang.)"
+  [a b]
+  (cond (or (ck? a) (ck? b))
+        (let [p (fn [k] (cond (ck? k) (part k) (rk? k) k)) ps (remove nil? [(p a) (p b)])]
+          (cplx-of (reduce (fn [x y] (if (>= (bits x) (bits y)) x y)) ps)))
+        (and (ik? a) (ik? b)) (if (>= (bits a) (bits b)) a b)
+        (and (rk? a) (rk? b)) (if (>= (bits a) (bits b)) a b)
+        (ik? a) b
+        :else a))
+
+(defn tname
+  "A type in Fortran's words."
+  [t]
+  (let [k (:k t)
+        s (cond (ik? k) (str "integer(" (subs (name k) 3) ")")
+                (rk? k) (str "real(" (subs (name k) 4) ")")
+                (ck? k) (str "complex(" (subs (name k) 7) ")")
+                (= k :logical) "logical"
+                (= k :char) (str "character(len=" (case (:len t) :star "*" nil ":" (:len t)) ")")
+                :else "a Clojure value")]
+    (if (= 1 (:rank t)) (str "a rank-1 " s " array") s)))
+
+(def kind-num {:int1 1 :int2 2 :int4 4 :int8 8 :real4 4 :real8 8 :complex4 4 :complex8 8})
+
+(defn fail [env node msg] (x/fail env node msg))
+
+;; ---- findings: what puts a procedure in tier B (clotran's codes where the meaning is
+;; clotran's, tiers.cljf; B1xx are Lemmis's own)
+(def codes
+  {"B001" {:title "lazy seq kept"
+           :explain "A pipeline whose last stage is a sequence (map, filter, a Clojure function) makes a lazy sequence; kept, printed or returned it needs the collector. End the pipeline in a Fortran reduction over the array -- sum, product, maxval, minval -- and it is one DO loop."}
+   "B002" {:title "calls a procedure that is not tier A"
+           :explain "The called procedure is tier B; its own findings say why. Fix those and this one goes away."}
+   "B003" {:title "a Clojure function"
+           :explain "The name is not declared, so it is a Clojure function (or a backtick name): its arguments and result are Clojure values, whose type Fortran knows only when it runs. Write it as a Fortran procedure in the module, or keep the procedure in tier B."}
+   "B004" {:title "a name from another namespace"
+           :explain "The name comes from a use of a Clojure namespace or another Lemmis module, whose types this file does not declare. Keep the procedure in tier B, or move what it needs into this module."}
+   "B007" {:title "a procedure used as a value"
+           :explain "A procedure passed or stored as a value is a function object on the heap. Call it by name; in a pipeline, map(f) and filter(p) over an array with a module function f lower to a DO loop."}
+   "B010" {:title "a collection literal"
+           :explain "#[...] and #{...} are persistent collections on the heap. A Fortran array of numbers is tier A: declare it and assign its elements."}
+   "B101" {:title "a val dummy argument"
+           :explain "val :: x makes x any Clojure value, so its type is known only when the procedure runs. Declare it with a Fortran type (real(8), intent(in) :: x) and the procedure can be tier A."}
+   "B102" {:title "val of an array"
+           :explain "val b = a binds b to the same array a is (no copy), so a later change to a shows in b. Fortran has no such alias: declare b as an array and assign it."}
+   "B103" {:title "a keyword"
+           :explain "A keyword is a Clojure value; Fortran has none. Use an integer or character constant."}
+   "B104" {:title "a val holding a function"
+           :explain "Calling a val calls whatever function it holds, known only at run time. Call a module procedure by name."}})
+
+(defn- find!
+  "Record a tier-B finding at node; answers the Clojure-value type."
+  [env node code msg help]
+  (swap! (:findings env) conj {:code code :msg msg :help help :line (:line node) :col (:col node) :proc (:self env)})
+  {:k :clj})
+
+;; ---- expressions
+(declare tx)
+
+(defn- int-range [k] (case k :int1 [-128 127] :int2 [-32768 32767] :int4 [-2147483648 2147483647]
+                       :int8 [(- -9223372036854775807 1) 9223372036854775807]))
+
+(defn- lit-type [env e]
+  (let [n (x/lit-kind env e)]
+    (case (:op e)
+      :int (let [k (keyword (str "int" n))
+                 v (parse-long (:v e))]
+             (when-not (ik? k) (fail env e (str "integer(" n ") is not a kind here (1, 2, 4, 8)")))
+             (when-not (and v (<= (first (int-range k)) v (second (int-range k))))
+               (fail env e (str "the literal " (:v e) " does not fit " (tname {:k k}) (when (not= k :int8) (str ": write " (:v e) "_8")))))
+             {:k k})
+      :real (let [k (keyword (str "real" n))]
+              (when-not (rk? k) (fail env e (str "real(" n ") is not a kind here (4, 8)")))
+              {:k k}))))
+
+(defn- scalar! [env e t what]
+  (when (= 1 (:rank t))
+    (fail env e (str what " is an array here; array expressions are refused in version 0 (write a DO loop over its elements)")))
+  t)
+
+(defn- need-num [env e t what]
+  (scalar! env e t what)
+  (when-not (or (clj? t) (num-k? (:k t))) (fail env e (str what " is " (tname t) "; a number is needed")))
+  t)
+
+(defn- need-logical [env e t what]
+  (scalar! env e t what)
+  (when-not (or (clj? t) (= :logical (:k t)))
+    (fail env e (str what " is " (tname t) "; Fortran needs a logical here (write a relation, e.g. x /= 0)")))
+  t)
+
+(def ^:private rel-ops #{"==" "/=" "<" "<=" ">" ">="})
+
+(defn- bin-type [env e ta tb]
+  (let [o (:o e)]
+    (cond
+      (#{"+" "-" "*" "/" "**"} o)
+      (do (need-num env (:a e) ta (str "the left operand of " o))
+          (need-num env (:b e) tb (str "the right operand of " o))
+          (if (or (clj? ta) (clj? tb)) {:k :clj} {:k (promote (:k ta) (:k tb))}))
+      (= "//" o)
+      (do (scalar! env (:a e) ta "the left operand of //") (scalar! env (:b e) tb "the right operand of //")
+          (doseq [[n t] [[(:a e) ta] [(:b e) tb]]]
+            (when-not (or (clj? t) (= :char (:k t))) (fail env n (str "the operands of // are character; this is " (tname t)))))
+          (if (or (clj? ta) (clj? tb)) {:k :clj}
+              {:k :char :len (when (and (integer? (:len ta)) (integer? (:len tb))) (+ (:len ta) (:len tb)))}))
+      (rel-ops o)
+      (do (scalar! env (:a e) ta (str "the left operand of " o)) (scalar! env (:b e) tb (str "the right operand of " o))
+          (cond (or (clj? ta) (clj? tb)) {:k :logical}
+                (and (num-k? (:k ta)) (num-k? (:k tb)))
+                (do (when (and (or (ck? (:k ta)) (ck? (:k tb))) (not (#{"==" "/="} o)))
+                      (fail env e (str "complex values are compared only by == and /=, not " o)))
+                    {:k :logical})
+                (and (= :char (:k ta)) (= :char (:k tb))) {:k :logical}
+                (and (= :logical (:k ta)) (= :logical (:k tb)))
+                (fail env e (str "logical values are compared by " (if (= o "/=") ".neqv." ".eqv.") ", not " o))
+                :else (fail env e (str "cannot compare " (tname ta) " with " (tname tb)))))
+      (#{"and" "or" "eqv" "neqv"} o)
+      (do (need-logical env (:a e) ta (str "the left operand of ." o "."))
+          (need-logical env (:b e) tb (str "the right operand of ." o "."))
+          {:k :logical}))))
+
+;; 16.9: the intrinsics of version 0 and the kinds of their results
+(defn- kind-arg
+  "The kind= of int/real/cmplx..., as a kind keyword of the given family, or nil."
+  [env e fam]
+  (let [n (:v e) kw (:kwargs e) args (:args e)
+        ke (or (get kw "kind") (when (and (x/kinded n) (= (count args) (if (= n "cmplx") 3 2))) (last args)))]
+    (when ke
+      (let [k (or (x/const-int env ke) (fail env ke "a kind must be a constant"))
+            kk (keyword (str fam k))]
+        (when-not (kind-num kk) (fail env ke (str "no such kind " fam "(" k ")")))
+        kk))))
+
+(defn- same-kind! [env e ts what]
+  (let [ts (remove clj? ts)]
+    (when (and (seq ts) (not (apply = (map :k ts))))
+      (fail env e (str (:v e) " needs arguments of one type and kind; these are " (str/join ", " (map tname ts))
+                       (when what (str ": " what)))))))
+
+(defn- intrinsic-type [env e targs]
+  (let [n (:v e) [a b] targs t0 a
+        arg (first (:args e))
+        any-clj (some clj? targs)
+        elemental #{"abs" "sign" "min" "max" "mod" "modulo" "sqrt" "exp" "log" "log10" "sin" "cos" "tan" "asin" "acos"
+                    "atan" "atan2" "sinh" "cosh" "tanh" "conjg" "aimag" "int" "nint" "floor" "ceiling" "real" "dble" "cmplx" "merge"
+                    "len_trim" "trim" "adjustl"}
+        _ (when (elemental n) (doseq [[an at] (map vector (concat (:args e) (vals (:kwargs e))) targs)]
+                                (scalar! env an at (str "the argument of " n))))
+        num1 (fn [what ok] (when-not (or (clj? t0) (ok (:k t0)))
+                             (fail env arg (str n " needs " what "; this is " (tname t0)))))]
+    (if (and any-clj (not (#{"int" "nint" "floor" "ceiling" "real" "dble" "cmplx" "size" "len" "len_trim" "kind" "digits"} n)))
+      {:k :clj}
+      (case n
+        "abs" (do (num1 "a number" num-k?) (if (clj? t0) t0 {:k (or (part (:k t0)) (:k t0))}))
+        ("sign" "mod" "modulo") (do (num1 "an integer or a real" #(or (ik? %) (rk? %))) (same-kind! env e targs nil) {:k (:k t0)})
+        ("min" "max") (do (num1 "integers or reals" #(or (ik? %) (rk? %)))
+                          (same-kind! env e targs (str "write " n "(" (str/join ", " (repeat (count targs) "real(x, 8)")) ")"))
+                          {:k (:k t0)})
+        ("sqrt" "exp" "log" "log10" "sin" "cos" "tan" "asin" "acos" "sinh" "cosh" "tanh")
+        (do (num1 "a real (an integer is not converted: write real(x, 8))" rk?) {:k (:k t0)})
+        "atan" (do (num1 "a real" rk?) (when b (same-kind! env e targs nil)) {:k (:k t0)})
+        "atan2" (do (num1 "reals" rk?) (same-kind! env e targs nil) {:k (:k t0)})
+        "int" (do (when-not (clj? t0) (num1 "a number" num-k?)) {:k (or (kind-arg env e "int") :int4)})
+        ("nint" "floor" "ceiling") (do (when-not (clj? t0) (num1 "a real" rk?)) {:k (or (kind-arg env e "int") :int4)})
+        "real" (do (when-not (clj? t0) (num1 "a number" num-k?))
+                   {:k (or (kind-arg env e "real") (when (ck? (:k t0)) (part (:k t0))) :real4)})
+        "dble" (do (when-not (clj? t0) (num1 "a number" num-k?)) {:k :real8})
+        "cmplx" (do (when-not (clj? t0) (num1 "a number" num-k?))
+                    (let [y b]
+                      (when (and y (not (clj? y)) (not (or (ik? (:k y)) (rk? (:k y))))) (fail env (second (:args e)) "cmplx's y is an integer or a real"))
+                      (when (and y (ck? (:k t0))) (fail env e "cmplx(x, y): x is complex, so y must not be given")))
+                    {:k (or (kind-arg env e "complex") :complex4)})
+        "conjg" (do (num1 "a complex" ck?) {:k (:k t0)})
+        "aimag" (do (num1 "a complex" ck?) {:k (part (:k t0))})
+        "huge" (do (num1 "an integer or a real" #(or (ik? %) (rk? %))) {:k (:k t0)})
+        ("tiny" "epsilon") (do (num1 "a real" rk?) {:k (:k t0)})
+        "digits" (do (when-not (clj? t0) (num1 "an integer or a real" #(or (ik? %) (rk? %)))) {:k :int4})
+        "kind" {:k :int4}
+        "size" (do (when-not (or (clj? t0) (= 1 (:rank t0))) (fail env arg "size needs an array")) {:k :int4})
+        ("sum" "product") (do (when-not (and (= 1 (:rank t0)) (num-k? (:k t0))) (fail env arg (str n " needs an array of numbers; this is " (tname t0))))
+                              {:k (:k t0)})
+        ("maxval" "minval") (do (when-not (and (= 1 (:rank t0)) (or (ik? (:k t0)) (rk? (:k t0))))
+                                  (fail env arg (str n " needs an array of integers or reals; this is " (tname t0))))
+                                {:k (:k t0)})
+        ("len" "len_trim") (do (when-not (or (clj? t0) (= :char (:k t0))) (fail env arg (str n " needs a character value"))) {:k :int4})
+        "trim" (do (num1 "a character value" #{:char}) {:k :char :len nil})
+        "adjustl" (do (num1 "a character value" #{:char}) t0)
+        "merge" (let [[ta tf tm] targs]
+                  (need-logical env (nth (:args e) 2) tm "merge's mask")
+                  (when-not (and (= (:k ta) (:k tf)) (or (not= :char (:k ta)) (= (:len ta) (:len tf))))
+                    (fail env e (str "merge needs tsource and fsource of one type, kind and length; these are " (tname ta) " and " (tname tf))))
+                  ta)))))
+
+(defn- sig-of [env n] (get-in env [:globals n :sig]))
+
+(defn- variable-actual? [env a]
+  (case (:op a) :name (let [v (get-in env [:vars (:v a)])] (and v (not (:param? v)) (not (:val? v))))
+                :ref (let [v (get-in env [:vars (:v a)])] (and v (= 1 (:rank v))))
+                false))
+
+(defn- check-args!
+  "15.5.2: each actual against its dummy -- type, kind, rank, character length, and a
+  variable where the dummy may change it; the same variable twice where one may change (15.5.2.13)."
+  [env e sig actuals]
+  (doseq [[d a] (map vector (:dummies sig) actuals)]
+    (let [t (:t a) dn (:name d)]
+      (cond
+        (= :val (:k d)) nil
+        (clj? t) nil
+        (= 1 (:rank d))
+        (do (when-not (= 1 (:rank t))
+              (fail env a (str "the dummy " dn " of " (:v e) " is " (tname d) "; this actual is " (tname t)
+                               (when (= :ref (:op a)) " (an element: sequence association is refused in version 0; pass the whole array)"))))
+            (when-not (= (:k t) (:k d)) (fail env a (str "the dummy " dn " of " (:v e) " is " (tname d) "; this actual is " (tname t))))
+            (when (and (= :char (:k d)) (integer? (:len d)) (not= (:len d) (:len t)))
+              (fail env a (str "the dummy " dn " of " (:v e) " is " (tname d) "; this actual is " (tname t)))))
+        :else
+        (do (scalar! env a t (str "the actual for " dn))
+            (when-not (= (:k t) (:k d))
+              (fail env a (str "the dummy " dn " of " (:v e) " is " (tname d) "; this actual is " (tname t)
+                               (cond (ik? (:k d)) (str ": write int(..., " (kind-num (:k d)) ")")
+                                     (rk? (:k d)) (str ": write real(..., " (kind-num (:k d)) ")")
+                                     (ck? (:k d)) (str ": write cmplx(..., kind=" (kind-num (:k d)) ")")))))
+            (when (and (= :char (:k d)) (integer? (:len d)))
+              (cond (nil? (:len t)) (fail env a (str "the length of this actual is known only at run time; declare the dummy " dn " character(len=*)"))
+                    (< (:len t) (:len d)) (fail env a (str "the actual is " (tname t) ", shorter than the dummy " dn " (" (tname d) ")"))))))
+      (when (#{:out :inout} (:intent d))
+        (when-not (variable-actual? env a)
+          (fail env a (str "the dummy " dn " of " (:v e) " is intent(" (name (:intent d)) "): its actual must be a variable")))
+        (let [v (get-in env [:vars (:v a)])]
+          (when (= :in (:intent v)) (fail env a (str (:v a) " is intent(in): it cannot be the actual of an intent(" (name (:intent d)) ") dummy")))
+          (when (:do-var? v) (fail env a (str (:v a) " is the variable of an active DO loop: it cannot be the actual of an intent(" (name (:intent d)) ") dummy")))))))
+  ;; 15.5.2.13: an entity changed through one dummy may not be referenced through another
+  (let [named (keep-indexed (fn [i [d a]] (when (#{:name :ref} (:op a)) [(:v a) (#{:out :inout} (:intent d)) i]))
+                            (map vector (:dummies sig) actuals))]
+    (doseq [[n ch i] named [n2 ch2 j] named]
+      (when (and (< i j) (= n n2) (or ch ch2) (get-in env [:vars n]))
+        (fail env e (str n " is passed twice to " (:v e) " and one dummy may change it (15.5.2.13: not allowed); pass a copy"))))))
+
+(defn- call-type
+  "A reference to a procedure of this module: the actuals typed and checked, the result's type."
+  [env e g]
+  (let [p (:proc g) sig (sig-of env (:v e))
+        actuals (mapv #(tx env %) (x/proc-args env e (:args p) (:args e) (:kwargs e)))]
+    (check-args! env e sig actuals)
+    [actuals (:result sig)]))
+
+(defn- ref-type [env e]
+  (let [n (:v e) v (get-in env [:vars n]) g (get-in env [:globals n])]
+    (cond
+      (= :cname (:fname e))
+      (let [args (mapv #(tx env %) (:args e))]
+        (assoc e :args args :t (find! env e "B003" (str "calls the Clojure function " n) "its result is a Clojure value; write the computation as a Fortran procedure of the module")))
+      (and v (= 1 (:rank v)))
+      (let [[i] (:args e) ti (tx env i)]
+        (when-not (= 1 (count (:args e))) (fail env e (str n " is an array of rank 1: one subscript")))
+        (scalar! env i (:t ti) "a subscript")
+        (when-not (or (clj? (:t ti)) (ik? (:k (:t ti)))) (fail env i (str "a subscript is an integer; this is " (tname (:t ti)) " (write int(...))")))
+        (assoc e :args [ti] :t (dissoc (assoc v :rank 0) :intent :lo :hi :dummy? :param? :extent)))
+      (:val? v)
+      (let [args (mapv #(tx env %) (:args e))]
+        (assoc e :args args :t (find! env e "B104" (str "calls the val " n) "call a module procedure by name")))
+      (and g (= :proc (:what g)))
+      (let [[actuals rt] (call-type env e g)]
+        (swap! (:calls env) conj n)
+        (assoc e :actuals actuals :t rt))
+      (= :in (x/intrinsic-status env n))
+      (let [n2 (get x/aliases n n)
+            e2 (assoc e :v n2)
+            args (mapv #(tx env %) (:args e))
+            kw (into {} (map (fn [[k a]] [k (tx env a)]) (:kwargs e)))
+            ;; the kind argument is a constant, not an operand
+            kinded? (and (x/kinded n2) (or (get kw "kind") (= (count args) (if (= n2 "cmplx") 3 2))))
+            ops (if (and kinded? (not (get kw "kind"))) (butlast args) args)]
+        (assoc e :v n2 :src n :args args :kwargs kw :intrinsic true
+               :t (intrinsic-type env (assoc e2 :args (:args e)) (mapv :t ops))))
+      (and (#{"kind" "selected_real_kind" "selected_int_kind"} n) (x/const-int env e))
+      (assoc e :t {:k :int4} :const (x/const-int env e))
+      ((:refers env) n)
+      (let [args (mapv #(tx env %) (:args e))]
+        (assoc e :args args :t (find! env e "B004" (str "calls " n ", a name from another namespace") "its types are not declared in this file")))
+      :else
+      (let [args (mapv #(tx env %) (:args e))]
+        (assoc e :args args :t (find! env e "B003" (str "calls the Clojure function " n) "write it as a Fortran procedure of the module, or declare the name"))))))
+
+(defn- name-type [env e]
+  (let [n (:v e) v (get-in env [:vars n]) g (get-in env [:globals n])]
+    (cond v (assoc e :fname (:fname v) :t (if (:val? v) (if (:t v) (:t v) {:k :clj}) (select-keys v [:k :rank :len])))
+          (= :param (:what g)) (assoc e :t (:t g))
+          g (assoc e :t (find! env e "B007" (str "uses the procedure " n " as a value") "call it by name"))
+          (x/intrinsic? env n) (assoc e :t (find! env e "B007" (str "uses the intrinsic " n " as a value") "call it"))
+          ((:refers env) n) (assoc e :t (find! env e "B004" (str "uses " n ", a name from another namespace") "its type is not declared in this file"))
+          :else (assoc e :t (find! env e "B003" (str "uses the Clojure name " n) "declare it (implicit none: an undeclared name is Clojure's)")))))
+
+;; ---- pipelines: ->> over an array through map(f) / filter(p) into sum, product, maxval
+;; or minval is one DO loop; a stage that is a procedure of the module, or an intrinsic, is a call
+(def ^:private reduction-names #{"sum" "product" "maxval" "minval"})
+
+(defn- stage-fn
+  "map(f) / filter(p): f, a function of the module with one scalar dummy, or a one-argument
+  elemental intrinsic; [kind-of-f-result description] or nil."
+  [env f elt]
+  (when (= :name (:op f))
+    (let [n (:v f) g (get-in env [:globals n])]
+      (cond (and g (= :proc (:what g)) (= :function (:kind (:proc g))))
+            (let [sig (sig-of env n) [d & more] (:dummies sig)]
+              (when (and d (not more) (zero? (:rank d)) (not= :val (:k d)))
+                (when-not (= (:k d) (:k elt)) (fail env f (str "map/filter passes " (tname elt) " elements to " n ", whose dummy is " (tname d))))
+                (swap! (:calls env) conj n)
+                {:fn n :t (:result sig)}))
+            (and (= :in (x/intrinsic-status env n)) (#{"abs" "sqrt" "exp" "log" "log10" "sin" "cos" "tan" "asin" "acos" "atan" "sinh" "cosh" "tanh"} (get x/aliases n n)))
+            (let [n2 (get x/aliases n n)]
+              {:fn n2 :intrinsic true :t (intrinsic-type env {:v n2 :args [f] :kwargs {} :line (:line f) :col (:col f)} [elt])})))))
+
+(defn- pipe-type [env e]
+  (let [init (tx env (:init e))
+        thread-last? (= "->>" (:o e))]
+    (loop [ss (:stages e) cur (:t init) loop-plan nil out []]
+      (if-let [s (first ss)]
+        (let [n (:v s)
+              free? (fn [n] (and (not (get-in env [:vars n])) (not (get-in env [:globals n])) (not ((:refers env) n))))
+              seq? (some? loop-plan)]
+          (cond
+            (clj? cur) (recur (rest ss) cur loop-plan (conj out (tx env s)))
+            ;; map(f), filter(p) over a rank-1 array or the sequence so far
+            (and thread-last? (= :ref (:op s)) (= :name (:fname s)) (#{"map" "filter"} n) (free? n)
+                 (or seq? (= 1 (:rank cur))) (= 1 (count (:args s))) (empty? (:kwargs s)))
+            (let [elt (dissoc (assoc cur :rank 0) :lo)
+                  f (stage-fn env (first (:args s)) elt)]
+              (cond (nil? f) (recur (rest ss) (find! env s "B001" (str n "(" (:v (first (:args s))) "): the function is not a one-argument function of this module or an elemental intrinsic")
+                                                      "map and filter lower to a DO loop when they apply a function of this module") loop-plan (conj out s))
+                    (and (= "filter" n) (not= :logical (:k (:t f)))) (fail env s (str "filter's predicate " (:fn f) " returns " (tname (:t f)) "; it must return a logical"))
+                    :else (recur (rest ss) (if (= "map" n) (assoc (:t f) :rank 1) cur) (conj (or loop-plan []) (assoc f :stage n :in elt)) (conj out s))))
+            ;; a Fortran reduction ends the loop
+            (and (= :name (:op s)) (reduction-names n) (= :in (x/intrinsic-status env n)))
+            (let [t (intrinsic-type env {:v n :args [s] :kwargs {} :line (:line s) :col (:col s)} [cur])]
+              (recur (rest ss) t nil (conj out (assoc s :reduce n :loop loop-plan :t t))))
+            seq?
+            (recur (rest ss) (find! env s "B001" (str "the sequence of the pipeline goes to " n ", which is not a Fortran reduction")
+                                    "end the map/filter chain with sum, product, maxval or minval") nil (conj out s))
+            ;; any other stage is a call: ->> passes the value last, -> first
+            (or (= :name (:op s)) (and (= :ref (:op s)) (= :name (:fname s))))
+            (let [hole {:op :hole :t cur :line (:line s) :col (:col s)}
+                  args (vec (:args s))
+                  call (assoc s :op :ref :fname :name :args (if thread-last? (conj args hole) (into [hole] args)) :kwargs (or (:kwargs s) {}))
+                  typed (tx env call)]
+              (recur (rest ss) (:t typed) nil (conj out (assoc typed :call true))))
+            :else (recur (rest ss) (find! env s "B003" (str "the pipeline stage " n " is a Clojure function") "write it as a procedure of the module") nil (conj out (tx env s)))))
+        (assoc e :init init :stages out
+               :t (if loop-plan (find! env e "B001" "the pipeline's result is a lazy sequence" "end it with sum, product, maxval or minval, so it is one DO loop") cur))))))
+
+(defn tx
+  "e with :t, and its operands typed."
+  [env e]
+  (case (:op e)
+    (:int :real) (assoc e :t (lit-type env e))
+    :str (assoc e :t {:k :char :len (count (:v e))})
+    :logical (assoc e :t {:k :logical})
+    :complex (let [part-k (fn [p] (let [p (if (= :un (:op p)) (:a p) p)] (when (= :real (:op p)) (x/lit-kind env p))))
+                   kn (max (or (part-k (:re e)) 4) (or (part-k (:im e)) 4))]
+               (tx env (:re e)) (tx env (:im e))
+               (assoc e :t {:k (keyword (str "complex" kn))}))
+    :hole e
+    :name (name-type env e)
+    :cname (assoc e :t (find! env e "B003" (str "uses the Clojure name " (:v e)) "a backtick name is Clojure's"))
+    :kw (assoc e :t (find! env e "B103" (str "the keyword :" (:v e)) "use an integer or character constant"))
+    :ref (ref-type env e)
+    :paren (let [a (tx env (:a e))] (assoc e :a a :t (:t a)))
+    :un (let [a (tx env (:a e)) t (:t a)]
+          (assoc e :a a :t (if (= "not" (:o e))
+                             (do (need-logical env (:a e) t "the operand of .not.") {:k :logical})
+                             (need-num env (:a e) t (str "the operand of unary " (:o e))))))
+    :bin (let [a (tx env (:a e)) b (tx env (:b e))]
+           (assoc e :a a :b b :t (bin-type env e (:t a) (:t b))))
+    :vec (do (doseq [i (:items e)] (tx env i)) (assoc e :t (find! env e "B010" "a vector literal #[...]" "a Fortran array: declare it and assign its elements")))
+    :map (do (doseq [[k v] (:pairs e)] (tx env k) (tx env v)) (assoc e :t (find! env e "B010" "a map literal #{...}" "a derived type is not in version 0; keep this procedure in tier B")))
+    :pipe (pipe-type env e)
+    (fail env e (str "not an expression of version 0: " (:op e)))))
+
+;; ---- declarations
+(defn- decl-type
+  "A declared entity's type: {:k :rank :len :lo :hi :intent :param? :dummy?}."
+  [env sp en dummies]
+  (let [ty (x/type-kind env (:type sp)) a (:attrs sp)
+        dims (or (:dims en) (:dims a)) [[lo hi]] dims]
+    (cond-> (assoc ty :rank (if dims 1 0) :intent (:intent a) :decl sp :ent en)
+      dims (assoc :lo (if lo (x/const-int env lo) 1) :hi hi)
+      (some #{(:name en)} dummies) (assoc :dummy? true)
+      (:parameter a) (assoc :param? true))))
+
+(defn- with-kind
+  "env with an integer parameter's value known (it may name a kind later)."
+  [env sp en]
+  (let [c (when (and (get-in sp [:attrs :parameter]) (#{:integer} (:base (:type sp)))) (x/const-int env (:init en)))]
+    (if c (assoc-in env [:kinds (:name en)] c) env)))
+
+(defn- decl-vars*
+  "[vars env]: the variables a procedure's (or the main program's) declarations make, and env
+  with the integer parameters among them known as kinds."
+  [env specs dummies]
+  (reduce (fn [[vars env] sp]
+            (if (= :decl (:spec sp))
+              (reduce (fn [[vars env] en]
+                        [(assoc vars (:name en)
+                                (if (= :val (:base (:type sp)))
+                                  {:k :val :val? true :rank 0 :dummy? true :ent en}
+                                  (decl-type env sp en dummies)))
+                         (with-kind env sp en)])
+                      [vars env] (:ents sp))
+              [vars env]))
+          [{} env] specs))
+
+(defn- decl-vars [env specs dummies] (first (decl-vars* env specs dummies)))
+
+(defn- result-name [p] (or (:result p) (when (= :function (:kind p)) (:name p))))
+
+(defn signature
+  "A procedure's interface: its dummies in order, each {:name :k :rank :len :intent}, and
+  the result's type."
+  [env p]
+  (let [vars (decl-vars env (:specs p) (:args p))
+        rn (result-name p)
+        res (when rn (if (:type p) (assoc (x/type-kind env (:type p)) :rank 0) (get vars rn)))]
+    {:dummies (mapv #(assoc (get vars %) :name %) (:args p))
+     :result (when res (select-keys res [:k :rank :len]))}))
+
+;; ---- statements. The val scope is lane 2's: the rest of the block it is in.
+(declare stmts calls-in)
+
+(defn- fresh-name!
+  "A Fortran name for a val: its own, unless the procedure already uses it for another type."
+  [env n t]
+  (let [vals (:vals env) taken (:taken env)]
+    (or (some (fn [v] (when (and (= n (:src v)) (= (select-keys t [:k :len :rank]) (select-keys (:t v) [:k :len :rank]))) (:fname v))) @vals)
+        (let [base (str/replace n "?" "_q")
+              nm (first (remove #(or (@taken %) (some (fn [v] (= % (:fname v))) @vals))
+                                (cons base (map #(str base "_" %) (iterate inc 2)))))]
+          (swap! vals conj {:src n :fname nm :t t})
+          nm))))
+
+(defn- assign-ok! [env node target t]
+  (let [tk (:k target) k (:k t)]
+    (when-not (or (clj? t)
+                  (and (num-k? tk) (num-k? k))
+                  (and (= tk :logical) (= k :logical))
+                  (and (= tk :char) (= k :char)))
+      (fail env node (str "cannot assign " (tname t) " to " (tname (assoc target :rank 0)))))))
+
+(defn- stmt [env s]
+  (case (:s s)
+    :continue [s env]
+    (:exit :cycle :return) [s env]
+    :assign
+    (let [l (:lhs s) n (:name l) v (get-in env [:vars n])
+          e (tx env (:e s))
+          idx (when (:idx l) (tx env (:idx l)))]
+      (when idx
+        (scalar! env (:idx l) (:t idx) "a subscript")
+        (when-not (or (clj? (:t idx)) (ik? (:k (:t idx)))) (fail env (:idx l) (str "a subscript is an integer; this is " (tname (:t idx))))))
+      (scalar! env (:e s) (:t e) "the value assigned")
+      (when (clj? (:t e))
+        (find! env (:e s) "B003" (str "assigns a Clojure value to " n) (str "its type is known only when it runs; compute it in Fortran as " (tname (assoc v :rank 0)))))
+      (assign-ok! env s v (:t e))
+      [(assoc s :e e :lhs (if idx (assoc l :idx idx) l) :target v) env])
+    :val
+    (let [e (tx env (:e s)) t (:t e) n (:name s)]
+      (when (= 1 (:rank t)) (find! env s "B102" (str "val " n " is an array, the same array (no copy)") "declare an array and assign it"))
+      (let [fname (when-not (or (clj? t) (= 1 (:rank t))) (fresh-name! env n t))]
+        [(assoc s :e e :fname fname) (assoc-in env [:vars n] {:val? true :rank 0 :t (when fname t) :fname fname})]))
+    :print
+    (let [items (mapv #(tx env %) (:items s))]
+      (doseq [i items]
+        (when (some (:printers env) (calls-in i))
+          (fail env i (str "this calls a function that prints (" (first (filter (:printers env) (calls-in i))) "): Fortran forbids I/O inside I/O (recursive input/output); assign it to a variable first"))))
+      [(assoc s :items items) env])
+    :call
+    (let [c (:callee s) n (:v c) g (get-in env [:globals n])]
+      (if (and g (= :name (:op c)))
+        (let [p (:proc g) sig (sig-of env n)
+              actuals (mapv #(tx env %) (x/proc-args env c (:args p) (:args s) (:kwargs s)))]
+          (check-args! env c sig actuals)
+          (swap! (:calls env) conj n)
+          [(assoc s :actuals actuals) env])
+        (do (doseq [a (concat (:args s) (vals (:kwargs s)))] (tx env a))
+            (find! env c (if ((:refers env) n) "B004" "B003") (str "calls " n ", which is not a subroutine of this module") "write it as a subroutine of the module")
+            [s env])))
+    :if
+    (let [arms (mapv (fn [[c b]] (let [ct (tx env c)] (need-logical env c (:t ct) "an IF condition") [ct (first (stmts env b))])) (:arms s))]
+      [(assoc s :arms arms :else (first (stmts env (:else s)))) env])
+    :do
+    (let [v (get-in env [:vars (:var s)])
+          [from to step] (map #(when % (tx env %)) [(:from s) (:to s) (:step s)])]
+      (doseq [[node t] [[(:from s) from] [(:to s) to] [(:step s) step]] :when t]
+        (scalar! env node (:t t) "a DO bound")
+        (when-not (or (clj? (:t t)) (ik? (:k (:t t)))) (fail env node (str "a DO loop's bounds are integers (R1124); this is " (tname (:t t)) ": write int(...)"))))
+      [(assoc s :from from :to to :step step :body (first (stmts (assoc-in env [:vars (:var s) :do-var?] true) (:body s)))) env])
+    :dowhile
+    (let [c (tx env (:c s))]
+      (need-logical env (:c s) (:t c) "a DO WHILE condition")
+      [(assoc s :c c :body (first (stmts env (:body s)))) env])
+    :loop [(assoc s :body (first (stmts env (:body s)))) env]))
+
+(defn- stmts [env ss]
+  (reduce (fn [[out env] s] (let [[s2 env2] (stmt env s)] [(conj out s2) env2])) [[] env] ss))
+
+(defn calls-in
+  "The names of the module procedures an expression calls."
+  [e]
+  (cond (map? e) (concat (when (and (= :ref (:op e)) (:actuals e)) [(:v e)])
+                         (mapcat calls-in (vals (dissoc e :t))))
+        (sequential? e) (mapcat calls-in e)
+        :else nil))
+
+(defn- stmt-calls
+  "Every module procedure a statement list calls, and whether it prints: [calls prints?]."
+  [ss]
+  (letfn [(walk [x] (cond (map? x) (concat (when (and (:v x) (#{:ref :name} (:op x))) [(:v x)])
+                                           (when (= :call (:s x)) [(:v (:callee x))])
+                                           (mapcat walk (vals x)))
+                          (sequential? x) (mapcat walk x) :else nil))
+          (prints? [x] (cond (map? x) (or (= :print (:s x)) (some prints? (vals x)))
+                             (sequential? x) (some prints? x) :else false))]
+    [(set (walk ss)) (boolean (prints? ss))]))
+
+(defn- printers
+  "The procedures that print, directly or through a call (so a reference to one inside a
+  PRINT is recursive I/O, 12.12)."
+  [procs]
+  (let [info (into {} (map (fn [p] [(:name p) (stmt-calls (:body p))]) procs))]
+    (loop [ps (set (keep (fn [[n [_ pr]]] (when pr n)) info))]
+      (let [ps2 (into ps (keep (fn [[n [cs _]]] (when (some ps cs) n)) info))]
+        (if (= ps ps2) ps (recur ps2))))))
+
+(defn- type-decl-exprs!
+  "The expressions in declarations: bounds are integers, a parameter's value is assignable."
+  [env vars]
+  (doseq [[n v] vars :when (not (:val? v))]
+    (when-let [hi (:hi v)]
+      (when (map? hi)
+        (let [t (:t (tx env hi))]
+          (when-not (or (clj? t) (ik? (:k t))) (fail env hi (str "an array bound is an integer; this is " (tname t)))))))
+    (when (:param? v)
+      (let [init (:init (:ent v)) t (:t (tx env init))]
+        (when (clj? t) (fail env init (str "the parameter " n "'s value is not a Fortran constant expression")))
+        (assign-ok! env init v t)))))
+
+(defn- proc-env [env vars self]
+  (assoc env :vars vars :self self :calls (atom #{})
+         :taken (atom (into (set (keys vars)) (keys (:globals env))))))
+
+(defn- type-proc [env p]
+  (let [[vars env] (decl-vars* env (:specs p) (:args p))
+        rn (result-name p)
+        vars (if (and rn (:type p)) (assoc vars rn (assoc (x/type-kind env (:type p)) :rank 0 :result? true)) vars)
+        penv (proc-env (assoc env :vals (atom [])) vars (:name p))]
+    (doseq [[n v] vars :when (= :val (:k v))]
+      (find! penv (:ent v) "B101" (str "the dummy " n " is a Clojure value (val ::)") (str "declare its Fortran type, e.g. real(8), intent(in) :: " n)))
+    (type-decl-exprs! penv vars)
+    (let [[body _] (stmts penv (:body p))]
+      (assoc p :body body :vars vars :vals @(:vals penv) :sig (sig-of env (:name p)) :calls @(:calls penv)))))
+
+(defn- module-params
+  "The module's (or program's) parameters, typed: {name {:what :param :t type}}."
+  [env unit]
+  (reduce (fn [env sp]
+            (if (and (= :decl (:spec sp)) (get-in sp [:attrs :parameter]))
+              (reduce (fn [env en]
+                        (let [v (decl-type env sp en [])
+                              t (:t (tx (assoc env :self (:name unit)) (:init en)))]
+                          (when (clj? t) (fail env (:init en) (str "the parameter " (:name en) "'s value is not a Fortran constant expression")))
+                          (assign-ok! env (:init en) v t)
+                          (-> (assoc-in env [:globals (:name en)] {:what :param :t (select-keys v [:k :rank :len])})
+                              (with-kind sp en))))
+                      env (:ents sp))
+              env))
+          env (:specs unit)))
+
+(defn tiers
+  "{proc {:tier :A|:B :findings [...]}}: B with a finding of its own, or calling a B procedure (B002)."
+  [procs findings]
+  (let [own (group-by :proc findings)
+        b0 (set (keys own))
+        calls (into {} (map (fn [p] [(:name p) (:calls p)]) procs))]
+    (loop [b b0]
+      (let [b2 (into b (keep (fn [[n cs]] (when (some b cs) n)) calls))]
+        (if (not= b b2) (recur b2)
+            (into {} (map (fn [p] (let [n (:name p)
+                                        via (when-not (b0 n) (first (filter b (sort (:calls p)))))]
+                                    [n {:tier (if (b n) :B :A)
+                                        :findings (vec (concat (own n)
+                                                               (when via [{:code "B002" :proc n :line (:line p) :col (:col p)
+                                                                           :msg (str "calls " via ", which is tier B")
+                                                                           :help (str "see the findings for " via)}])))}]))
+                          procs)))))))
+
+(defn check
+  "Type a Lemmis source text. Lane 2's reader reads it first, so whatever Lemmis refuses is
+  refused here with the same message; then every expression is typed."
+  [text path]
+  (reader/read-forms text path)
+  (let [[unit] (parse/units text path)
+        [env0 _] (@#'reader/module-env path unit)
+        procs (:procs unit)
+        main? (= :program (:unit unit))
+        mainp (when main? {:kind :subroutine :name (:name unit) :args [] :specs (:specs unit) :body (:body unit)
+                           :line (:line unit) :col (:col unit) :main true})
+        env (assoc env0 :findings (atom []) :printers #{})
+        env (module-params env unit)
+        env (reduce (fn [env p] (assoc-in env [:globals (:name p)] {:what :proc :proc p :kind (:kind p)})) env procs)
+        env (reduce (fn [env p] (assoc-in env [:globals (:name p) :sig] (signature env p))) env procs)
+        env (assoc env :printers (printers procs))
+        host (when main? (set (mapcat (fn [sp] (when (= :decl (:spec sp)) (map :name (:ents sp)))) (:specs unit))))
+        typed (mapv #(type-proc (assoc env :host (or host #{})) %) procs)
+        tmain (when main? (type-proc env mainp))
+        all (if tmain (conj typed tmain) typed)]
+    {:unit (assoc unit :procs typed :main tmain)
+     :env env
+     :procs (tiers all @(:findings env))}))

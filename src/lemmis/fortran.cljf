@@ -1,0 +1,288 @@
+(ns lemmis.fortran
+  "Lemmis to Fortran (PLAN.md, Compilation: Fortran first). A tier-A unit -- every procedure
+  typed by lemmis.typer with no Clojure value in it -- becomes free-form Fortran 2018 with the
+  source's names, its literals as written and its parentheses (only those: the tree is the
+  source's, so Fortran's precedence rebuilds it), so plain Fortran keeps its meaning.
+  The extensions become plain Fortran:
+    val x = e                 a local of e's type, declared with the others, assigned there
+    ->> a map(f) filter(p) r  one DO loop over a in a private function (r: sum, product,
+                              maxval, minval); any other stage f(b) is the call f(b, value)
+                              (->: f(value, b))
+  A unit with a tier-B procedure is not translated: (report text path) says which and why.
+
+    (to-fortran text path)              => Fortran text
+    (to-fortran text path {:tagged true}) PRINT as one tagged value per line (test/two_path.bb)
+    (report text path)                  the tiers and findings, clotran compile --report style
+    clotran -m lemmis.fortran [--report|--tagged] FILE.lms [OUT.f90]"
+  (:require [lemmis.typer :as ty]
+            [clojure.string :as str]))
+
+(defn- fname "A Lemmis name as a Fortran name: a dotted module name's dots and a ? become _."
+  [n] (-> n (str/replace "." "_") (str/replace "?" "_q")))
+
+;; ---- expressions
+(def ^:private bin-text {"and" ".and." "or" ".or." "eqv" ".eqv." "neqv" ".neqv."})
+
+(defn- quote-str [s] (str "'" (str/replace s "'" "''") "'"))
+
+(declare ex)
+
+(defn- kind-sfx [e] (if (:kind e) (str "_" (:kind e)) ""))
+
+(defn- args-text [ctx args kwargs]
+  (str/join ", " (concat (map #(ex ctx %) args) (map (fn [[k v]] (str (fname k) "=" (ex ctx v))) kwargs))))
+
+(defn- pipe-text [ctx e]
+  (loop [ss (:stages e) cur (ex ctx (:init e))]
+    (if-let [s (first ss)]
+      (cond (:reduce s) (recur (rest ss) (if (:loop s) (str ((:helper! ctx) s) "(" cur ")") (str (:reduce s) "(" cur ")")))
+            (:call s) (recur (rest ss) (ex (assoc ctx :hole cur) (dissoc s :call)))
+            ;; map/filter stages are folded into the reduction that follows them
+            :else (recur (rest ss) cur))
+      cur)))
+
+(defn ex
+  "An expression's Fortran text."
+  [ctx e]
+  (case (:op e)
+    :int (str (:v e) (kind-sfx e))
+    :real (str (:v e) (kind-sfx e))
+    :str (quote-str (:v e))
+    :logical (if (:v e) ".true." ".false.")
+    :complex (str "(" (ex ctx (:re e)) ", " (ex ctx (:im e)) ")")
+    :name (or (:fname e) (fname (:v e)))
+    :hole (:hole ctx)
+    :ref (str (if (:intrinsic e) (:src e (:v e)) (fname (:v e))) "(" (args-text ctx (:args e) (:kwargs e)) ")")
+    :paren (str "(" (ex ctx (:a e)) ")")
+    :un (if (= "not" (:o e)) (str ".not. " (ex ctx (:a e))) (str (:o e) (ex ctx (:a e))))
+    :bin (str (ex ctx (:a e)) " " (bin-text (:o e) (:o e)) " " (ex ctx (:b e)))
+    :pipe (pipe-text ctx e)))
+
+;; ---- types and declarations
+(defn- type-text [ctx ty]
+  (case (:base ty)
+    :integer (str "integer" (when (:kind ty) (str "(" (ex ctx (:kind ty)) ")")))
+    :real (str "real" (when (:kind ty) (str "(" (ex ctx (:kind ty)) ")")))
+    :complex (str "complex" (when (:kind ty) (str "(" (ex ctx (:kind ty)) ")")))
+    :logical "logical"
+    :character (str "character(len=" (let [l (:len ty)] (cond (nil? l) "1" (= :star l) "*" :else (ex ctx l))) ")")))
+
+(defn- t-text
+  "A type from the typer, spelled with kind numbers (for vals and helpers)."
+  [t]
+  (let [k (:k t)]
+    (cond (ty/ik? k) (str "integer(" (ty/kind-num k) ")")
+          (ty/rk? k) (str "real(" (ty/kind-num k) ")")
+          (ty/ck? k) (str "complex(" (ty/kind-num k) ")")
+          (= :logical k) "logical"
+          (= :char k) (if (integer? (:len t)) (str "character(len=" (:len t) ")") "character(len=:), allocatable"))))
+
+(defn- spec-text [ctx [lo hi]]
+  (str (when lo (str (ex ctx lo) ":"))
+       (case hi :colon (if lo "" ":") :star "*" (ex ctx hi))))
+
+(defn- dims-text [ctx dims] (str "(" (str/join ", " (map #(spec-text ctx %) dims)) ")"))
+
+(defn- decl-text [ctx sp]
+  (let [a (:attrs sp)
+        attrs (concat (when (:parameter a) ["parameter"])
+                      (when (:access a) [(name (:access a))])
+                      (when (:intent a) [(str "intent(" (name (:intent a)) ")")])
+                      (when (:dims a) [(str "dimension" (dims-text ctx (:dims a)))]))]
+    (str (type-text ctx (:type sp)) (str/join (map #(str ", " %) attrs)) " :: "
+         (str/join ", " (map (fn [en] (str (fname (:name en)) (when (:dims en) (dims-text ctx (:dims en)))
+                                           (when (:init en) (str " = " (ex ctx (:init en))))))
+                             (:ents sp))))))
+
+(defn- spec-lines [ctx specs]
+  (keep (fn [sp]
+          (case (:spec sp)
+            :implicit-none nil
+            :access (str (name (:v sp)) (when (seq (:names sp)) (str " :: " (str/join ", " (map fname (:names sp))))))
+            :decl (decl-text ctx sp)))
+        specs))
+
+(defn- use-line [u]
+  (when (= "iso_fortran_env" (:name u))
+    (str "use, intrinsic :: iso_fortran_env"
+         (cond (:only u) (str ", only: " (str/join ", " (map (fn [[l r]] (if (= l r) l (str l " => " r))) (:only u))))
+               (:renames u) (str ", " (str/join ", " (map (fn [[l r]] (str l " => " r)) (:renames u))))))))
+
+;; ---- statements
+(defn- ind [n] (apply str (repeat (* 2 n) " ")))
+
+(declare block)
+
+(defn- print-lines [ctx s d]
+  (if (:tagged ctx)
+    (concat (map #(str (ind d) "call lms_tag(" (ex ctx %) ")") (:items s)) [(str (ind d) "call lms_tag_end()")])
+    [(str (ind d) "print *" (when (seq (:items s)) (str ", " (str/join ", " (map #(ex ctx %) (:items s))))))]))
+
+(defn- stmt-lines [ctx s d]
+  (let [I (ind d)]
+    (case (:s s)
+      :continue [(str I "continue")]
+      :exit [(str I "exit")] :cycle [(str I "cycle")] :return [(str I "return")]
+      :assign (let [l (:lhs s)] [(str I (fname (:name l)) (when (:idx l) (str "(" (ex ctx (:idx l)) ")")) " = " (ex ctx (:e s)))])
+      :val [(str I (:fname s) " = " (ex ctx (:e s)))]
+      :print (print-lines ctx s d)
+      :call [(str I "call " (fname (:v (:callee s))) (when (or (seq (:args s)) (seq (:kwargs s)) true) (str "(" (args-text ctx (:args s) (:kwargs s)) ")")))]
+      :if (concat (mapcat (fn [i [c b]] (cons (str I (if (zero? i) "if (" "else if (") (ex ctx c) ") then") (block ctx b (inc d))))
+                          (range) (:arms s))
+                  (when (seq (:else s)) (cons (str I "else") (block ctx (:else s) (inc d))))
+                  [(str I "end if")])
+      :do (concat [(str I "do " (fname (:var s)) " = " (ex ctx (:from s)) ", " (ex ctx (:to s)) (when (:step s) (str ", " (ex ctx (:step s)))))]
+                  (block ctx (:body s) (inc d)) [(str I "end do")])
+      :dowhile (concat [(str I "do while (" (ex ctx (:c s)) ")")] (block ctx (:body s) (inc d)) [(str I "end do")])
+      :loop (concat [(str I "do")] (block ctx (:body s) (inc d)) [(str I "end do")]))))
+
+(defn- block [ctx ss d] (mapcat #(stmt-lines ctx % d) ss))
+
+;; ---- pipelines: one private function per map/filter chain ending in a reduction
+(defn- helper-lines
+  "The function for a chain: a DO over the array, each map stage's value in its own local,
+  a filter stage a CYCLE, the reduction accumulated in r in the order the elements come."
+  [nm elt-t stage]
+  (let [plan (:loop stage) red (:reduce stage) rt (:t stage)
+        temps (keep-indexed (fn [i st] (when (= "map" (:stage st)) [i (str "t" (inc i))])) plan)
+        tmp-of (into {} temps)
+        body (loop [ps (map-indexed vector plan) cur "a(i)" out []]
+               (if-let [[i st] (first ps)]
+                 (if (= "map" (:stage st))
+                   (recur (rest ps) (tmp-of i) (conj out (str "      " (tmp-of i) " = " (:fn st) "(" cur ")")))
+                   (recur (rest ps) cur (conj out (str "      if (.not. " (:fn st) "(" cur ")) cycle"))))
+                 [cur out]))
+        [v lines] body]
+    (concat
+     [(str "  function " nm "(a) result(r)")
+      (str "    " (t-text elt-t) ", intent(in) :: a(:)")
+      (str "    " (t-text rt) " :: r")
+      "    integer :: i"]
+     (when (#{"maxval" "minval"} red) ["    integer :: n"])
+     (map (fn [[i t]] (str "    " (t-text (:t (nth plan i))) " :: " t)) temps)
+     (case red "sum" ["    r = 0"] "product" ["    r = 1"] ("maxval" "minval") ["    n = 0"])
+     ["    do i = 1, size(a)"]
+     lines
+     (case red
+       "sum" [(str "      r = r + " v)]
+       "product" [(str "      r = r * " v)]
+       ("maxval" "minval") ["      n = n + 1"
+                            (str "      if (n == 1) then")
+                            (str "        r = " v)
+                            "      else"
+                            (str "        r = " (if (= red "maxval") "max" "min") "(r, " v ")")
+                            "      end if"])
+     ["    end do"]
+     (when (#{"maxval" "minval"} red) [(str "    if (n == 0) error stop '" red " of an empty sequence'")])
+     [(str "  end function " nm)])))
+
+;; ---- procedures and units
+(defn- val-decls [p]
+  (map (fn [v] (str (t-text (:t v)) " :: " (:fname v))) (:vals p)))
+
+(defn- proc-lines [ctx p]
+  (let [fn? (= :function (:kind p))
+        head (str (str/join (map #(str % " ") (:prefixes p)))
+                  (when (:type p) (str (type-text ctx (:type p)) " "))
+                  (name (:kind p)) " " (fname (:name p)) "(" (str/join ", " (map fname (:args p))) ")"
+                  (when (:result p) (str " result(" (fname (:result p)) ")")))]
+    (concat [(str "  " head)]
+            (map #(str "    " %) (keep use-line (:uses p)))
+            (map #(str "    " %) (spec-lines ctx (:specs p)))
+            (map #(str "    " %) (val-decls p))
+            (block ctx (:body p) 2)
+            [(str "  end " (name (:kind p)) " " (fname (:name p)))])))
+
+(defn- not-tier-a! [path r]
+  (let [bs (sort (keep (fn [[n {:keys [tier]}]] (when (= :B tier) n)) (:procs r)))]
+    (when (seq bs)
+      (throw (ex-info (str path ": not translated to Fortran: " (str/join ", " bs) " "
+                           (if (next bs) "are" "is") " tier B (Clojure values; lemmis.fortran/report says why)")
+                      {:tier-b bs})))))
+
+(defn to-fortran
+  "The Fortran of a Lemmis source text, or an error: a type error at path:line:column, or the
+  procedures that are tier B."
+  ([text path] (to-fortran text path {}))
+  ([text path opts]
+   (let [r (ty/check text path)
+         _ (not-tier-a! path r)
+         unit (:unit r)
+         helpers (atom [])
+         taken (atom (set (map :name (:procs unit))))
+         ctx {:tagged (:tagged opts)
+              :helper! (fn [stage]
+                         (let [nm (first (remove @taken (map #(str "lms_pipe" %) (iterate inc 1))))]
+                           (swap! taken conj nm)
+                           (swap! helpers conj [nm stage])
+                           nm))}
+         mod? (= :module (:unit unit))
+         nm (fname (:name unit))
+         ;; procedures first: their pipelines register helpers
+         procs (doall (mapcat #(proc-lines ctx %) (:procs unit)))
+         main (when-not mod? (doall (concat (map #(str "  " %) (spec-lines ctx (:specs unit)))
+                                            (map #(str "  " %) (val-decls (:main unit)))
+                                            (block ctx (:body (:main unit)) 1))))
+         helper-text (mapcat (fn [[hn stage]] (helper-lines hn (:in (first (:loop stage))) stage)) @helpers)
+         uses (concat (keep use-line (:uses unit)) (when (:tagged opts) ["use lms_tagio"]))
+         contains (concat procs helper-text)]
+     (str/join "\n"
+               (concat
+                [(str (if mod? "module " "program ") nm)]
+                (map #(str "  " %) uses)
+                ["  implicit none"]
+                (when mod? (map #(str "  " %) (spec-lines ctx (:specs unit))))
+                (when mod? (when (seq @helpers) (map #(str "  private :: " (first %)) @helpers)))
+                main
+                (when (seq contains) (cons "contains" contains))
+                [(str "end " (if mod? "module " "program ") nm) ""])))))
+
+;; ---- the report, in clotran compile --report's form (clotran/src/clj/clotran/tiers.cljf)
+(defn explain "What a finding code means." [code]
+  (if-let [c (ty/codes code)] (str code ": " (:title c) "\n\n" (:explain c)) (str code ": no such code")))
+
+(defn- render [lib f lines path]
+  (let [{:keys [line col code msg help proc]} f
+        src (when (and line (<= 1 line (count lines))) (nth lines (dec line)))
+        gutter (apply str (repeat (count (str line)) " "))]
+    (str "warning[" code "]: " msg "\n"
+         "  in `" lib "/" proc "`
+"
+         (when line (str gutter " --> " path ":" line ":" col "
+"))
+         (when src (str gutter " |
+" line " | " src "
+" gutter " | " (apply str (repeat (max 0 (dec (or col 1))) " ")) "^
+"))
+         (when (seq help) (str gutter " = help: " help "
+")))))
+
+(defn report
+  "The tier of every procedure (A: translated to plain Fortran; B: it needs clotran's runtime),
+  then each finding that keeps one out of tier A, with its fix. Answers {proc {:tier :findings}}.
+  A type error is thrown, as to-fortran throws it."
+  [text path]
+  (let [r (ty/check text path)
+        lib (:name (:unit r))
+        lines (str/split-lines text)]
+    (doseq [[n {:keys [tier]}] (sort-by key (:procs r))]
+      (println (str "tier " (name tier) "  " lib "/" n)))
+    (println)
+    (doseq [[_ {:keys [findings]}] (sort-by key (:procs r)) f (distinct findings)]
+      (println (render lib f lines path)))
+    (let [used (sort (distinct (map :code (mapcat :findings (vals (:procs r))))))]
+      (when (seq used) (println (str "For what a code means: clotran -m lemmis.fortran --explain " (first used)))))
+    (:procs r)))
+
+(defn -main
+  "clotran -m lemmis.fortran [--report | --tagged | --explain CODE] FILE.lms [OUT.f90]"
+  [& args]
+  (let [flags (set (filter #(str/starts-with? % "--") args))
+        [f out] (remove #(str/starts-with? % "--") args)]
+    (cond
+      (flags "--explain") (println (explain f))
+      (nil? f) (println "usage: clotran -m lemmis.fortran [--report | --tagged | --explain CODE] FILE.lms [OUT.f90]")
+      (flags "--report") (report (slurp f) f)
+      :else (let [t (to-fortran (slurp f) f {:tagged (flags "--tagged")})]
+              (if out (spit out t) (print t))
+              (flush)))))
