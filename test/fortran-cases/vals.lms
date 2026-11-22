@@ -1,0 +1,30 @@
+! val: a local of its expression's type (tier A), in every kind
+module vals
+  implicit none
+contains
+  subroutine run()
+    integer :: i
+    integer(1) :: b
+    real :: s
+    b = 7_1
+    s = 0.1
+    val a = b + 3_2
+    val c = s * 2
+    val d = c + 0.1d0
+    val z = cmplx(s, 2, 8) + (1.0, 0.5)
+    val t = 'ab' // 'cde'
+    val p = a > 9 .and. c < 1.0
+    print *, a, kind(a), c, d, z, t, len(t), p
+    do i = 1, 3
+      val sq = i * i
+      val half = sq / 2.0
+      if (sq > 3) then
+        val big = sq * 1000_8
+        print *, big, kind(big)
+      end if
+      print *, sq, half
+    end do
+    val u = trim(t // '   ') // '!'
+    print *, u, len(u)
+  end subroutine run
+end module vals

@@ -1,0 +1,45 @@
+! ->> over arrays through module functions into a Fortran reduction: one DO loop each
+module pipes
+  implicit none
+contains
+  pure real(8) function sq(t)
+    real(8), intent(in) :: t
+    sq = t * t
+  end function sq
+  pure logical function big(t)
+    real(8), intent(in) :: t
+    big = t > 2.0d0
+  end function big
+  pure integer function tri(n)
+    integer, intent(in) :: n
+    tri = n * (n + 1) / 2
+  end function tri
+  pure logical function odd(n)
+    integer, intent(in) :: n
+    odd = mod(n, 2) == 1
+  end function odd
+  real(8) function norm2sq(a, n)
+    integer, intent(in) :: n
+    real(8), intent(in) :: a(n)
+    norm2sq = ->> a map(sq) sum
+  end function norm2sq
+  subroutine run()
+    real(8) :: v(5)
+    integer :: k(0:5), i
+    real :: r(3)
+    do i = 1, 5
+      v(i) = i * 0.75d0
+    end do
+    do i = 0, 5
+      k(i) = i * 3 - 4
+    end do
+    r(1) = 1.5; r(2) = -2.25; r(3) = 0.5
+    print *, ->> v map(sq) sum, ->> v filter(big) map(sq) sum, ->> v map(sq) filter(big) maxval
+    print *, ->> k map(tri) sum, ->> k filter(odd) map(tri) product, ->> k filter(odd) minval
+    print *, ->> r map(abs) sum, ->> r map(abs) maxval, ->> v map(sqrt) sum
+    print *, norm2sq(v, 3), ->> v sum, -> v size, ->> v map(sq) sum + 1
+    val total = ->> k map(tri) filter(odd) sum
+    val m = ->> v filter(big) minval
+    print *, total, m, sq(->> v sum), -> 2.0d0 sq
+  end subroutine run
+end module pipes

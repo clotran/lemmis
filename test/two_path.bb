@@ -109,6 +109,7 @@
                 (let [src (slurp f) drv (driver src)
                       e (first (get em f))
                       mine (get cl f)
+                      expect-diff (second (re-find #"^! differs: (.*)" src))
                       cerr (some #(when-let [[_ m] (re-matches #"!!! (.*)" %)] m) mine)]
                   [f (cond
                        (nil? e) [:no-output "the translator printed nothing"]
@@ -131,7 +132,10 @@
                                                   ;; valid Fortran as written: the translation prints the same bytes
                                                   (and (not (:error orig)) (not= (:out orig) (:out pl))) [:pass-through-differs (str fc ": source and translation print differently")]
                                                   :else [:agree (if (:error orig) :extended :plain)])))))]
-                         (or (first (remove #(= :agree (first %)) rs)) (first rs))))]))
+                         (let [v (or (first (remove #(= :agree (first %)) rs)) (first rs))]
+                           (cond (not expect-diff) v
+                                 (= :differ (first v)) [:differs-as-expected expect-diff]
+                                 :else [:expected-a-difference (str "it was marked 'differs: " expect-diff "' -- " (pr-str v))]))))]))
               (map-indexed vector files))
         by (group-by (comp first second) results)]
     (doseq [[k rs] (sort-by key by)]
@@ -144,6 +148,6 @@
     (when-let [keep (System/getenv "LEMMIS_KEEP")]
       (doseq [[f [k]] results :when (not= :agree k)] (fs/create-dirs keep) (fs/copy f keep {:replace-existing true})))
     (fs/delete-tree tmp)
-    (System/exit (if (= #{:agree} (set (keys by))) 0 1))))
+    (System/exit (if (every? #{:agree :differs-as-expected} (keys by)) 0 1))))
 
 (-main)

@@ -1,0 +1,14 @@
+! differs: lane 2's sum of an empty sequence is integer(4) 0; Fortran's is 0 of the array's kind (16.9.196) -- the Clojure path has no types to know the kind
+module empty_sum
+  implicit none
+contains
+  pure logical function big(t)
+    real(8), intent(in) :: t
+    big = t > 100.0d0
+  end function big
+  subroutine run()
+    real(8) :: v(3)
+    v(1) = 1.0d0; v(2) = 2.0d0; v(3) = 3.0d0
+    print *, ->> v filter(big) sum
+  end subroutine run
+end module empty_sum

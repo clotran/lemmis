@@ -111,6 +111,25 @@
 ;; ---- statements
 (defn- ind [n] (apply str (repeat (* 2 n) " ")))
 
+(defn- split-at-blank
+  "The last index <= n of a blank outside a character literal, or nil."
+  [line n]
+  (loop [i 0 q nil best nil]
+    (if (or (>= i (count line)) (> i n)) best
+        (let [c (nth line i)]
+          (cond q (recur (inc i) (if (= c q) nil q) best)
+                (#{\' \"} c) (recur (inc i) c best)
+                (= c \space) (recur (inc i) q (if (> i 0) i best))
+                :else (recur (inc i) q best))))))
+
+(defn- wrap
+  "A line longer than free form allows (132, 6.3.2.1) continued with & at a blank."
+  [line]
+  (if (<= (count line) 100) [line]
+      (if-let [i (split-at-blank line 96)]
+        (cons (str (subs line 0 i) " &") (wrap (str "    & " (subs line (inc i)))))
+        [line])))
+
 (declare block)
 
 (defn- print-lines [ctx s d]
@@ -227,7 +246,7 @@
          uses (concat (keep use-line (:uses unit)) (when (:tagged opts) ["use lms_tagio"]))
          contains (concat procs helper-text)]
      (str/join "\n"
-               (concat
+               (mapcat wrap (concat
                 [(str (if mod? "module " "program ") nm)]
                 (map #(str "  " %) uses)
                 ["  implicit none"]
@@ -235,7 +254,7 @@
                 (when mod? (when (seq @helpers) (map #(str "  private :: " (first %)) @helpers)))
                 main
                 (when (seq contains) (cons "contains" contains))
-                [(str "end " (if mod? "module " "program ") nm) ""])))))
+                [(str "end " (if mod? "module " "program ") nm) ""]))))))
 
 ;; ---- the report, in clotran compile --report's form (clotran/src/clj/clotran/tiers.cljf)
 (defn explain "What a finding code means." [code]

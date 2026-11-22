@@ -95,6 +95,8 @@
 (defn- int-range [k] (case k :int1 [-128 127] :int2 [-32768 32767] :int4 [-2147483648 2147483647]
                        :int8 [(- -9223372036854775807 1) 9223372036854775807]))
 
+(defn- kind-sfx-of [e] (if (:kind e) (str "_" (:kind e)) ""))
+
 (defn- lit-type [env e]
   (let [n (x/lit-kind env e)]
     (case (:op e)
@@ -102,7 +104,8 @@
                  v (parse-long (:v e))]
              (when-not (ik? k) (fail env e (str "integer(" n ") is not a kind here (1, 2, 4, 8)")))
              (when-not (and v (<= (first (int-range k)) v (second (int-range k))))
-               (fail env e (str "the literal " (:v e) " does not fit " (tname {:k k}) (when (not= k :int8) (str ": write " (:v e) "_8")))))
+               (fail env e (str "the literal " (:v e) (kind-sfx-of e) " does not fit " (tname {:k k}) " (" (str/join " to " (int-range k)) ")"
+                              (when (and (nil? (:kind e)) (not= k :int8)) (str ": write " (:v e) "_8")))))
              {:k k})
       :real (let [k (keyword (str "real" n))]
               (when-not (rk? k) (fail env e (str "real(" n ") is not a kind here (4, 8)")))
@@ -277,9 +280,11 @@
   "A reference to a procedure of this module: the actuals typed and checked, the result's type."
   [env e g]
   (let [p (:proc g) sig (sig-of env (:v e))
-        actuals (mapv #(tx env %) (x/proc-args env e (:args p) (:args e) (:kwargs e)))]
+        args (mapv #(tx env %) (:args e))
+        kw (into {} (map (fn [[k a]] [k (tx env a)]) (:kwargs e)))
+        actuals (x/proc-args env e (:args p) args kw)]
     (check-args! env e sig actuals)
-    [actuals (:result sig)]))
+    [args kw actuals (:result sig)]))
 
 (defn- ref-type [env e]
   (let [n (:v e) v (get-in env [:vars n]) g (get-in env [:globals n])]
@@ -297,9 +302,9 @@
       (let [args (mapv #(tx env %) (:args e))]
         (assoc e :args args :t (find! env e "B104" (str "calls the val " n) "call a module procedure by name")))
       (and g (= :proc (:what g)))
-      (let [[actuals rt] (call-type env e g)]
+      (let [[args kw actuals rt] (call-type env e g)]
         (swap! (:calls env) conj n)
-        (assoc e :actuals actuals :t rt))
+        (assoc e :args args :kwargs kw :actuals actuals :t rt))
       (= :in (x/intrinsic-status env n))
       (let [n2 (get x/aliases n n)
             e2 (assoc e :v n2)
@@ -512,11 +517,9 @@
     :call
     (let [c (:callee s) n (:v c) g (get-in env [:globals n])]
       (if (and g (= :name (:op c)))
-        (let [p (:proc g) sig (sig-of env n)
-              actuals (mapv #(tx env %) (x/proc-args env c (:args p) (:args s) (:kwargs s)))]
-          (check-args! env c sig actuals)
+        (let [[args kw actuals _] (call-type env (assoc c :args (:args s) :kwargs (:kwargs s)) g)]
           (swap! (:calls env) conj n)
-          [(assoc s :actuals actuals) env])
+          [(assoc s :args args :kwargs kw :actuals actuals) env])
         (do (doseq [a (concat (:args s) (vals (:kwargs s)))] (tx env a))
             (find! env c (if ((:refers env) n) "B004" "B003") (str "calls " n ", which is not a subroutine of this module") "write it as a subroutine of the module")
             [s env])))

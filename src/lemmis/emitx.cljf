@@ -239,13 +239,16 @@
     :bin (m env e (list (bin-ops (:o e)) (ex env (:a e)) (ex env (:b e))))
     :vec (vec (map #(ex env %) (:items e)))
     :map (m env e (list* 'clojure.core/hash-map (mapcat (fn [[k v]] [(ex env k) (ex env v)]) (:pairs e))))
-    :pipe (m env e (list* (if (= "->>" (:o e)) 'clojure.core/->> 'clojure.core/->) (ex env (:init e))
+    :pipe (m env e (list* (if (= "->>" (:o e)) 'clojure.core/->> 'clojure.core/->) (whole env (:init e))
                           (map (fn [s]
                                  (let [n (:v s) v (get-in env [:vars n])]
                                    (when (and v (= :name (:op s))) (fail env s (str n " is a variable, not a pipeline stage")))
                                    (when v (fail env s (str n " is an array, not a pipeline stage")))
                                    (if (and (= :ref (:op s)) (= :name (:fname s)) (intrinsic-or-fail? env s n))
                                      (fail env s "an intrinsic stage takes no arguments in a pipeline (write it alone, or call a Clojure function)")
-                                     (if (= :ref (:op s)) (m env s (list* (symbol n) (map #(ex env %) (:args s)))) (ex env s)))))
+                                     (cond (= :ref (:op s)) (m env s (list* (symbol n) (map #(ex env %) (:args s))))
+                                           ;; a bare array intrinsic (sum, size, maxval ...) is lemmis.rt's
+                                           (and (= :name (:op s)) (intrinsic? env n) (rt-direct (get aliases n n))) (rt-direct (get aliases n n))
+                                           :else (ex env s)))))
                                (:stages e))))
     (fail env e (str "not an expression of version 0: " (:op e)))))
