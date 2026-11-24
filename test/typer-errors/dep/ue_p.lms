@@ -1,0 +1,9 @@
+module dep.ue_p
+  implicit none
+contains
+  integer function noisy(n)
+    integer, intent(in) :: n
+    print *, n
+    noisy = n
+  end function noisy
+end module dep.ue_p

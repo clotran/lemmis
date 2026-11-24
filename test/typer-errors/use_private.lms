@@ -1,0 +1,9 @@
+! error: 3:3: module dep.ue_a has no public procedure or parameter hidden
+module use_private
+  use dep.ue_a, only: hidden
+  implicit none
+contains
+  subroutine run()
+    print *, hidden(1.0d0)
+  end subroutine run
+end module use_private

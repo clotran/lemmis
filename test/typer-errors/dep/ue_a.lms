@@ -1,0 +1,14 @@
+module dep.ue_a
+  implicit none
+  private
+  public :: sq
+contains
+  pure real(8) function sq(x)
+    real(8), intent(in) :: x
+    sq = x * x
+  end function sq
+  pure real(8) function hidden(x)
+    real(8), intent(in) :: x
+    hidden = x
+  end function hidden
+end module dep.ue_a

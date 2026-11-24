@@ -28,7 +28,8 @@
 
 (def files
   (let [[fuzz paths] (parse-args *command-line-args*)
-        paths (if (and (empty? paths) (empty? fuzz)) [(str here "/cases") (str here "/model-cases")] paths)
+        multi (for [d (sort (map str (fs/list-dir (str here "/multi"))))] (str d "/" (fs/file-name d) ".lms"))
+        paths (if (and (empty? paths) (empty? fuzz)) (concat [(str here "/cases") (str here "/model-cases")] multi) paths)
         given (mapcat #(if (fs/directory? %) (sort (map str (fs/glob % "*.lms"))) [(str (fs/absolutize %))]) paths)
         fdir (str tmp "/fuzz")]
     (fs/create-dirs fdir)
@@ -36,6 +37,7 @@
             (for [[seed n] fuzz i (range n)]
               (let [nm (str "tp" seed "_" i) f (str fdir "/" nm ".lms")]
                 (spit f (gen-program nm (+ (* 1000 seed) i)))
+                (when-let [lib (gen-lib nm (+ (* 1000 seed) i))] (fs/create-dirs (str fdir "/" nm)) (spit (str fdir "/" nm "/lib.lms") lib))
                 f)))))
 
 (defn sh [opts & args] (apply p/shell (merge {:out :string :err :string :continue true :timeout 120000} opts) args))
@@ -51,7 +53,9 @@
       acc)))
 
 (defn clotran-run [script & args]
-  (let [r (apply sh {:extra-env {"CLOTRAN_PATH" src-path} :timeout 1800000} clotran (str here "/" script) args)]
+  (let [roots (concat (distinct (map #(str (fs/parent %)) (filter #(str/includes? % "/multi/") files)))
+                      (when (some #(str/includes? % "/fuzz/") files) [(str tmp "/fuzz")]))  ; a multi-module case's root: its used modules are found under it
+        r (apply sh {:extra-env {"CLOTRAN_PATH" (str/join ":" (cons src-path roots))} :timeout 1800000} clotran (str here "/" script) args)]
     (when (and (str/blank? (:out r)) (seq args)) (println "clotran failed:" (:exit r) (:err r) (pr-str (take 3 args))) (System/exit 1))
     (sections (:out r))))
 

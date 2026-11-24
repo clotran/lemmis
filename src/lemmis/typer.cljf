@@ -95,6 +95,14 @@
 ;; ---- expressions
 (declare tx)
 
+(defn- b004-help
+  "The help for a name from another namespace: where the module is a Lemmis one with tier-B
+  procedures, say so (that is why its names are not typed here)."
+  [env n]
+  (if-let [[m bs] (get-in env [:b-from n])]
+    (str "module " m " has tier-B procedures (" (str/join ", " bs) "), so it cannot be built as Fortran: make those tier A (lemmis.fortran --report on its file) and its names are typed here")
+    "its types are not declared in this file"))
+
 (defn- int-range [k] (case k :int1 [-128 127] :int2 [-32768 32767] :int4 [-2147483648 2147483647]
                        :int8 [(- -9223372036854775807 1) 9223372036854775807]))
 
@@ -331,7 +339,7 @@
       (assoc e :t {:k :int4} :const (x/const-int env e))
       ((:refers env) n)
       (let [args (mapv #(tx env %) (:args e))]
-        (assoc e :args args :t (find! env e "B004" (str "calls " n ", a name from another namespace") "its types are not declared in this file")))
+        (assoc e :args args :t (find! env e "B004" (str "calls " n ", a name from another namespace") (b004-help env n))))
       :else
       (let [args (mapv #(tx env %) (:args e))]
         (assoc e :args args :t (find! env e "B003" (str "calls the Clojure function " n) "write it as a Fortran procedure of the module, or declare the name"))))))
@@ -342,7 +350,7 @@
           (= :param (:what g)) (assoc e :t (:t g))
           g (assoc e :t (find! env e "B007" (str "uses the procedure " n " as a value") "call it by name"))
           (x/intrinsic? env n) (assoc e :t (find! env e "B007" (str "uses the intrinsic " n " as a value") "call it"))
-          ((:refers env) n) (assoc e :t (find! env e "B004" (str "uses " n ", a name from another namespace") "its type is not declared in this file"))
+          ((:refers env) n) (assoc e :t (find! env e "B004" (str "uses " n ", a name from another namespace") (b004-help env n)))
           :else (assoc e :t (find! env e "B003" (str "uses the Clojure name " n) "declare it (implicit none: an undeclared name is Clojure's)")))))
 
 ;; ---- pipelines: ->> over an array through map(f) / filter(p) into sum, product, maxval
@@ -533,7 +541,7 @@
           (called! env n c)
           [(assoc s :args args :kwargs kw :actuals actuals) env])
         (do (doseq [a (concat (:args s) (vals (:kwargs s)))] (tx env a))
-            (find! env c (if ((:refers env) n) "B004" "B003") (str "calls " n ", which is not a subroutine of this module") "write it as a subroutine of the module")
+            (find! env c (if ((:refers env) n) "B004" "B003") (str "calls " n ", which is not a subroutine of this module") (if ((:refers env) n) (b004-help env n) "write it as a subroutine of the module"))
             [s env])))
     :if
     (let [arms (mapv (fn [[c b]] (let [ct (tx env c)] (need-logical env c (:t ct) "an IF condition") [ct (first (stmts env b))])) (:arms s))]
@@ -587,10 +595,10 @@
 
 (defn- printers
   "The procedures that print, directly or through a call (so a reference to one inside a
-  PRINT is recursive I/O, 12.12)."
-  [procs]
+  PRINT is recursive I/O, 12.12). seed: imported procedures known to print."
+  [procs seed]
   (let [info (into {} (map (fn [p] [(:name p) (stmt-calls (:body p))]) procs))]
-    (loop [ps (set (keep (fn [[n [_ pr]]] (when pr n)) info))]
+    (loop [ps (into (set seed) (keep (fn [[n [_ pr]]] (when pr n)) info))]
       (let [ps2 (into ps (keep (fn [[n [cs _]]] (when (some ps cs) n)) info))]
         (if (= ps ps2) ps (recur ps2))))))
 
@@ -666,26 +674,125 @@
                                                                            :help (str "see the findings for " via)}])))}]))
                           procs)))))))
 
+;; ---- use of another Lemmis module: the compiled path of require. A `use` whose module is a
+;; .lms file under the roots (its own root first, then opts :roots) is typed from that file; its
+;; public procedures and parameters join this module's names, so a call of one is typed and
+;; stays tier A, and the Fortran gets a real use statement. A module with a tier-B procedure
+;; cannot be built as Fortran, so a use of it, like a use of a clotran namespace, leaves its
+;; names B004.
+(declare check)
+
+(defn- root-of
+  "The root a module's file is under: its path without a/b/c.lms for module a.b.c, else its directory."
+  [path nm]
+  (let [p (if (or (str/starts-with? path "/") (str/starts-with? path "./")) path (str "./" path))
+        tail (str "/" (str/replace nm "." "/") ".lms")]
+    (if (str/ends-with? p tail)
+      (subs p 0 (- (count p) (count tail)))
+      (let [i (str/last-index-of p "/")] (subs p 0 i)))))
+
+(defn- module-file
+  "[path text] of Lemmis module m under the first root that has it, or nil."
+  [roots m]
+  (some (fn [r] (let [p (str r "/" (str/replace m "." "/") ".lms")]
+                  (when-let [t (try (slurp p) (catch clotran.host.throwable _ nil))] [p t])))
+        roots))
+
+(defn- access-of
+  "A module's access: {:default :public|:private :names {name access}}."
+  [unit]
+  (reduce (fn [acc sp]
+            (case (:spec sp)
+              :access (if (empty? (:names sp))
+                        (assoc acc :default (:v sp))
+                        (reduce #(assoc-in %1 [:names %2] (:v sp)) acc (:names sp)))
+              :decl (if-let [a (get-in sp [:attrs :access])]
+                      (reduce #(assoc-in %1 [:names (:name %2)] a) acc (:ents sp))
+                      acc)
+              acc))
+          {:default :public :names {}} (:specs unit)))
+
+(defn- public-of
+  "{name global} for a module's public procedures and parameters (a checked module's result)."
+  [dep]
+  (let [acc (access-of (:unit dep))]
+    (into {} (keep (fn [[n g]] (when (and (#{:proc :param} (:what g))
+                                          (= :public (get-in acc [:names n] (:default acc))))
+                                 [n g]))
+                   (:globals (:env dep))))))
+
+(defn- import-names
+  "env with the names use u brings from the checked module dep."
+  [env u dep]
+  (let [m (:name u)
+        pub (public-of dep)
+        renamed (set (map second (:renames u)))
+        pairs (if (:only u)
+                (:only u)
+                (concat (map (fn [n] [n n]) (remove renamed (sort (keys pub)))) (:renames u)))]
+    (reduce (fn [env [l r]]
+              (let [g (or (get pub r) (fail env u (str "module " m " has no public procedure or parameter " r)))]
+                (cond-> (assoc-in env [:globals l] (assoc g :from m))
+                  ((:printers (:env dep)) r) (update :printers conj l))))
+            env pairs)))
+
+(defn- note-b
+  "env with the names of use u (of a module with tier-B procedures) marked, for the B004 help."
+  [env u dep]
+  (let [bs (vec (sort (keep (fn [[n {:keys [tier]}]] (when (= :B tier) n)) (:procs dep))))]
+    (reduce (fn [env [l _]] (assoc-in env [:b-from l] [(:name u) bs]))
+            env (concat (:only u) (:renames u)))))
+
+(defn- import-uses
+  "[env deps uses]: env with the names that the module-level uses of Lemmis modules bring in;
+  deps the modules to build first ([module path text], dependencies first); uses with :lms
+  set on each of those. A use of anything else is left as it is."
+  [env unit roots opts]
+  (reduce
+   (fn [[env deps uses] u]
+     (let [m (:name u)
+           [dp dtext] (when-not (= "iso_fortran_env" m) (module-file roots m))]
+       (when (and dp ((:stack opts) m))
+         (fail env u (str "module " m " uses itself, directly or through the modules it uses (Fortran: a circular use)")))
+       (let [dep (when dp
+                   (or (get @(:cache opts) dp)
+                       (let [r (check dtext dp (update opts :stack conj m))] (swap! (:cache opts) assoc dp r) r)))]
+         (if (and dep (= :module (:unit (:unit dep))) (every? #(= :A (:tier %)) (vals (:procs dep))))
+           [(import-names env u dep) (concat deps (:deps dep) [[m dp dtext]]) (conj uses (assoc u :lms dp))]
+           [(if dep (note-b env u dep) env) deps (conj uses u)]))))
+   [env [] []] (remove #(= "iso_fortran_env" (:name %)) (:uses unit))))
+
 (defn check
   "Type a Lemmis source text. Lane 2's reader reads it first, so whatever Lemmis refuses is
-  refused here with the same message; then every expression is typed."
-  [text path]
+  refused here with the same message; then every expression is typed. opts: :roots, directories
+  to look for used modules in besides the file's own root."
+  ([text path] (check text path {}))
+  ([text path opts]
   (reader/read-forms text path)
   (let [[unit] (parse/units text path)
         [env0 _] (@#'reader/module-env path unit)
+        opts (-> opts (update :stack (fnil conj #{}) (:name unit)) (update :cache #(or % (atom {}))))
+        roots (vec (distinct (cons (root-of path (:name unit)) (:roots opts))))
         procs (:procs unit)
         main? (= :program (:unit unit))
         mainp (when main? {:kind :subroutine :name (:name unit) :args [] :specs (:specs unit) :body (:body unit)
                            :line (:line unit) :col (:col unit) :main true})
         env (assoc env0 :findings (atom []) :printers #{})
+        [env deps uses] (import-uses env unit roots opts)
         env (module-params env unit)
-        env (reduce (fn [env p] (assoc-in env [:globals (:name p)] {:what :proc :proc p :kind (:kind p)})) env procs)
+        env (reduce (fn [env p]
+                      (when-let [g (get-in env [:globals (:name p)])]
+                        (fail env p (str (:name p) " is defined here and imported from module " (:from g))))
+                      (assoc-in env [:globals (:name p)] {:what :proc :proc p :kind (:kind p)}))
+                    env procs)
         env (reduce (fn [env p] (assoc-in env [:globals (:name p) :sig] (signature env p))) env procs)
-        env (assoc env :printers (printers procs))
+        env (assoc env :printers (printers procs (:printers env)))
         host (when main? (set (mapcat (fn [sp] (when (= :decl (:spec sp)) (map :name (:ents sp)))) (:specs unit))))
         typed (mapv #(type-proc (assoc env :host (or host #{})) %) procs)
         tmain (when main? (type-proc env mainp))
         all (if tmain (conj typed tmain) typed)]
-    {:unit (assoc unit :procs typed :main tmain)
+    {:unit (assoc unit :uses (let [m (into {} (map (juxt :name identity) uses))] (mapv #(get m (:name %) %) (:uses unit))) :procs typed :main tmain)
      :env env
-     :procs (tiers all @(:findings env))}))
+     :deps (vec (:val (reduce (fn [{:keys [seen val]} d] (if (seen (first d)) {:seen seen :val val} {:seen (conj seen (first d)) :val (conj val d)}))
+                              {:seen #{} :val []} deps)))
+     :procs (tiers all @(:findings env))})))

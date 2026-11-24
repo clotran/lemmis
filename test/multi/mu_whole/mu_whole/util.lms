@@ -1,0 +1,11 @@
+module mu_whole.util
+  implicit none
+  private
+  public :: twice, offset
+  integer, parameter :: offset = 7
+contains
+  pure integer function twice(n)
+    integer, intent(in) :: n
+    twice = 2 * n + offset
+  end function twice
+end module mu_whole.util

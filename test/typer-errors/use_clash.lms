@@ -1,0 +1,10 @@
+! error: 6:3: sq is defined here and imported from module dep.ue_a
+module use_clash
+  use dep.ue_a, only: sq
+  implicit none
+contains
+  pure real(8) function sq(x)
+    real(8), intent(in) :: x
+    sq = x
+  end function sq
+end module use_clash

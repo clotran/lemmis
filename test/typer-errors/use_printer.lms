@@ -1,0 +1,9 @@
+! error: 7:14: this calls a function that prints (noisy): Fortran forbids I/O inside I/O (recursive input/output); assign it to a variable first
+module use_printer
+  use dep.ue_p, only: noisy
+  implicit none
+contains
+  subroutine run()
+    print *, noisy(1)
+  end subroutine run
+end module use_printer

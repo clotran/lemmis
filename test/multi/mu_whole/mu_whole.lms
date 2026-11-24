@@ -1,0 +1,9 @@
+! use of a whole module (every public name), with a rename of one of them
+module mu_whole
+  use mu_whole.util, dbl => twice
+  implicit none
+contains
+  subroutine run()
+    print *, dbl(5), offset
+  end subroutine run
+end module mu_whole

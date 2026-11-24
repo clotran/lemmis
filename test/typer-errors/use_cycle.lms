@@ -1,0 +1,10 @@
+! error: dep/cyc_b.lms:2:3: module use_cycle uses itself, directly or through the modules it uses (Fortran: a circular use)
+module use_cycle
+  use dep.cyc_b, only: g
+  implicit none
+contains
+  pure integer function f(n)
+    integer, intent(in) :: n
+    f = g(n)
+  end function f
+end module use_cycle

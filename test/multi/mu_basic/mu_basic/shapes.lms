@@ -1,0 +1,18 @@
+module mu_basic.shapes
+  use mu_basic.util, only: scale2, half
+  implicit none
+  real(8), parameter :: pi = 3.141592653589793d0
+contains
+  pure real(8) function area(r)
+    real(8), intent(in) :: r
+    area = pi * r**2 * scale2(half)
+  end function area
+  subroutine fill(a, n)
+    integer, intent(in) :: n
+    real(8), intent(out) :: a(n)
+    integer :: i
+    do i = 1, n
+      a(i) = area(real(i, 8))
+    end do
+  end subroutine fill
+end module mu_basic.shapes

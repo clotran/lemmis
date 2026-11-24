@@ -261,11 +261,26 @@
        "  subroutine sc(c, n, m)\n    complex(8), intent(inout) :: c\n    integer(1), intent(in) :: n\n    integer, intent(out) :: m\n"
        "    c = cmplx(mod(int(real(c)) + n, 100), mod(int(aimag(c)) - n, 100), 8)\n    m = int(n) * 2\n  end subroutine sc\n"))
 
+;; The helper procedures are in the program's module, or (by seed) in the module nm.lib that it uses whole,
+;; or with an only list of every one of them: the multi-module path of require, on every shape of procedure.
+(def ^:private helper-names ["fi" "fr" "fk" "fs" "ipos" "rpos" "fl" "sb" "sc"])
+(defn- split-form [seed] (case (mod seed 3) 0 :inline 1 :whole 2 :only))
+(defn gen-lib
+  "The text of module nm.lib (the helper procedures) for a seed whose program uses it, or nil."
+  [nm seed]
+  (when (not= :inline (split-form seed))
+    (str "module " nm ".lib\n  implicit none\ncontains\n" procs "end module " nm ".lib\n")))
+
 (defn gen-program [nm seed]
   (binding [*rnd* (atom (long seed)) *val-n* (atom 0)]
     (let [body (block {:busy #{} :vals []} 3 2 false)
           body (str/replace body #"call sc\((w|z), " (fn [[_ v]] (str "call sc(" (if (= v "z") "w" v) ", ")))]
-      (str "module " nm "\n  implicit none\ncontains\n" procs
+      (str "module " nm "\n"
+           (case (split-form seed)
+             :inline ""
+             :whole (str "  use " nm ".lib\n")
+             :only (str "  use " nm ".lib, only: " (str/join ", " helper-names) "\n"))
+           "  implicit none\ncontains\n" (if (= :inline (split-form seed)) procs "")
            "  subroutine run()\n"
            "    integer(1) :: b1\n    integer(2) :: h2\n    integer :: i, j, k, nw\n    integer(8) :: m8\n"
            "    real :: s\n    real(8) :: x, y\n    complex :: z\n    complex(8) :: w\n    logical :: p, q\n    character(len=8) :: t\n"

@@ -49,11 +49,21 @@
    ["typer.cljf" "(if thread-last? (conj args hole) (into [hole] args))" "(into [hole] args)" "->> passes its value first" :two-path]
    ["fortran.cljf" ":val [(str I (:fname s) \" = \" (ex ctx (:e s)))]" ":val []" "a val is declared but never assigned" :two-path]
    ["fortran.cljf" "(str \"'\" (str/replace s \"'\" \"''\") \"'\")" "(str \"'\" s \"'\")" "a quote in a character literal not doubled" :two-path]
-   ["fortran.cljf" "(cons (str (subs line 0 i) \" &\")" "(cons (subs line 0 i)" "a long line is split with no &" :two-path]])
+   ["fortran.cljf" "(cons (str (subs line 0 i) \" &\")" "(cons (subs line 0 i)" "a long line is split with no &" :two-path]
+   ;; use of another Lemmis module (the compiled path of require)
+   ["typer.cljf" "(= :public (get-in acc [:names n] (:default acc)))" "true" "a private name of a used module is imported" :typer]
+   ["typer.cljf" "((:printers (:env dep)) r) (update :printers conj l)" "false (update :printers conj l)" "an imported function that prints is not known to print" :typer]
+   ["typer.cljf" "(concat deps (:deps dep) [[m dp dtext]])" "(concat deps [[m dp dtext]] (:deps dep))" "a module is built before the modules it uses" :two-path]
+   ["typer.cljf" "(if (seen (first d)) {:seen seen :val val}" "(if false {:seen seen :val val}" "a module used twice is built twice" :two-path]
+   ["typer.cljf" "(conj uses (assoc u :lms dp))" "(conj uses u)" "a use of a Lemmis module has no use statement" :two-path]
+   ["typer.cljf" "(assoc-in env [:b-from l] [(:name u) bs])" "env" "the B004 help does not name the module's tier-B procedures" :typer]
+   ["typer.cljf" "(every? #(= :A (:tier %)) (vals (:procs dep)))" "true" "a module with a tier-B procedure is imported as if tier A" :typer]
+   ["typer.cljf" "(when (and dp ((:stack opts) m))" "(when false" "a circular use is not refused" :typer]
+   ["fortran.cljf" "(if (= l r) l (str l \" => \" r))) (:only u))" "(if (= l r) l (str r \" => \" l))) (:only u))" "a renamed import is written the wrong way round" :two-path]])
 
 (def mutations (if only (filterv #(str/includes? (nth % 3) only) mutations) mutations))
 
-(def corpus [(str here "/cases") (str here "/model-cases") (str here "/fortran-cases") "--fuzz" "1" "25"])
+(def corpus [(str here "/cases") (str here "/model-cases") (str here "/fortran-cases") (str here "/multi/mu_basic/mu_basic.lms") (str here "/multi/mu_whole/mu_whole.lms") "--fuzz" "1" "25"])
 
 (defn run-check [check src]
   (case check

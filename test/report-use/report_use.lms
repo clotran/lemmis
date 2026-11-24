@@ -1,0 +1,11 @@
+! a use of a module that has a tier-B procedure: the module cannot be built as Fortran, so what
+! it exports stays a name from another namespace (B004), as a clotran namespace's does
+module report_use
+  use ru.b, only: inc
+  implicit none
+contains
+  pure integer function twice(n)
+    integer, intent(in) :: n
+    twice = inc(inc(n))
+  end function twice
+end module report_use

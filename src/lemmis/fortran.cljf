@@ -103,9 +103,12 @@
             :decl (decl-text ctx sp)))
         specs))
 
-(defn- use-line [u]
-  (when (= "iso_fortran_env" (:name u))
-    (str "use, intrinsic :: iso_fortran_env"
+(defn- use-line
+  "A use statement: iso_fortran_env, or a Lemmis module the typer found (:lms); a use of
+  anything else (a clotran namespace) has no Fortran."
+  [u]
+  (when (or (= "iso_fortran_env" (:name u)) (:lms u))
+    (str (if (:lms u) (str "use " (fname (:name u))) "use, intrinsic :: iso_fortran_env")
          (cond (:only u) (str ", only: " (str/join ", " (map (fn [[l r]] (if (= l r) l (str l " => " r))) (:only u))))
                (:renames u) (str ", " (str/join ", " (map (fn [[l r]] (str l " => " r)) (:renames u))))))))
 
@@ -229,7 +232,7 @@
   procedures that are tier B."
   ([text path] (to-fortran text path {}))
   ([text path opts]
-   (let [r (ty/check text path)
+   (let [r (ty/check text path opts)
          _ (not-tier-a! path r)
          unit (:unit r)
          helpers (atom [])
@@ -260,6 +263,15 @@
                 main
                 (when (seq contains) (cons "contains" contains))
                 [(str "end " (if mod? "module " "program ") nm) ""]))))))
+
+(defn to-fortran-all
+  "The Fortran of a Lemmis source text and of every Lemmis module it uses, as one text,
+  dependencies first (Fortran needs a module before the unit that uses it)."
+  ([text path] (to-fortran-all text path {}))
+  ([text path opts]
+   (let [r (ty/check text path opts)]
+     (str/join "\n" (concat (map (fn [[_ p t]] (to-fortran t p opts)) (:deps r))
+                            [(to-fortran text path opts)])))))
 
 ;; ---- the report, in clotran compile --report's form (clotran/src/clj/clotran/tiers.cljf)
 (defn explain "What a finding code means." [code]
@@ -307,6 +319,6 @@
       (flags "--explain") (println (explain f))
       (nil? f) (println "usage: clotran -m lemmis.fortran [--report | --tagged | --explain CODE] FILE.lms [OUT.f90]")
       (flags "--report") (report (slurp f) f)
-      :else (let [t (to-fortran (slurp f) f {:tagged (flags "--tagged")})]
+      :else (let [t (to-fortran-all (slurp f) f {:tagged (flags "--tagged")})]
               (if out (spit out t) (print t))
               (flush)))))

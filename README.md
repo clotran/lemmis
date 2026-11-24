@@ -107,6 +107,20 @@ prints (examples/run.out):
 it in turn and calls a Clojure function it is passed; `examples/run.clj` is
 clotran calling both.
 
+### To Fortran (no clotran at run time)
+
+    CLOTRAN_PATH=/path/to/lemmis/src clotran -m lemmis.fortran FILE.lms [OUT.f90]
+    CLOTRAN_PATH=/path/to/lemmis/src clotran -m lemmis.fortran --report FILE.lms
+
+writes plain Fortran for a unit whose procedures are all tier A, and says, for each that is not, what
+keeps it out and how to fix it. A `use` of another Lemmis module (`use geo.shapes, only: area`) is
+found as `geo/shapes.lms` under the file's own root, typed from that file (its public procedures and
+parameters, with Fortran's rules for access and renames) and written as a Fortran `use` of module
+`geo_shapes`; the output holds every module the unit uses, dependencies first. A use of a clotran
+namespace, or of a Lemmis module with a tier-B procedure, leaves its names untyped (B004), so a
+procedure that calls one is tier B. `test/two_path.bb` runs each program both ways (Fortran by gfortran
+and flang, and the same `.lms` through `require` on clotran) and compares the printed values.
+
 ### The checks
 
 `bb test/all.bb` runs them all (`--mutate` adds the mutation test); gfortran,

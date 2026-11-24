@@ -55,26 +55,27 @@
       acc)))
 (def error-results
   (for [f err-files]
-    (let [[_ lc text] (re-find #"^! error: (\d+:\d+): (.*)" (slurp f))
+    (let [[_ at lc text] (re-find #"^! error: (?:(\S+\.lms):)?(\d+:\d+): (.*)" (slurp f))   ; an error in a used module names its file
+          at (if at (str (fs/parent f) "/" at) f)
           got (get err-out f)]
-      (if (and got (str/starts-with? got (str "!!! " f ":" lc ": ")) (str/includes? got text))
+      (if (and got (str/starts-with? got (str "!!! " at ":" lc ": ")) (str/includes? got text))
         [:error-at-position]
         [:error-wrong (str (fs/file-name f) ": want " lc ": " text "\n        got " got)]))))
 
 ;; (3) the report
 (def report-results
-  (let [f (str here "/report/report.lms")
-        got (clotran-run "-m" "lemmis.fortran" "--report" f)
-        want (slurp (str here "/report/report.expected"))
-        got (str/replace got (str here "/") "test/")]
-    (if (= (str/trim want) (str/trim got)) [[:report-as-expected]] [[:report-differs (str "got:\n" got)]])))
+  (for [[f e] [["report/report.lms" "report/report.expected"] ["report-use/report_use.lms" "report-use/report_use.expected"]]]
+    (let [got (clotran-run "-m" "lemmis.fortran" "--report" (str here "/" f))
+          want (slurp (str here "/" e))
+          got (str/replace got (str here "/") "test/")]
+      (if (= (str/trim want) (str/trim got)) [:report-as-expected] [:report-differs (str f " got:\n" got)]))))
 
 (def all (concat oracle-results error-results report-results))
 (def by (group-by first all))
 (doseq [[k rs] (sort-by key by)]
   (println (format "%-22s %d" (name k) (count rs)))
   (doseq [[_ msg] (take 5 rs) :when msg] (println "   " msg)))
-(println (format "%d oracle cases (%d defined, %d ill-typed, %d undefined), %d error cases, 1 report"
+(println (format "%d oracle cases (%d defined, %d ill-typed, %d undefined), %d error cases, 2 reports"
                  ncases (count (filter #(= :ok (first %)) answers)) (count (filter #(= :ill-typed (first %)) answers))
                  (count (filter #(= :undefined (first %)) answers)) (count err-files)))
 (fs/delete-tree tmp)

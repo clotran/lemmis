@@ -71,6 +71,23 @@ A Lemmis program compiles to Fortran; it does not have to run through clotran.
 - (Terms: "tier A/B" is clotran's compile tiers; "Tier 1/2" in COORDINATION.md is
   the proof scope. They are unrelated.)
 
+## The require hook on the compiled path (2026-11-24)
+
+`use m` on the Fortran path (lemmis.typer `import-uses`): m is looked up as `a/b.lms` under the file's root
+(its path without its module name's path) and `opts :roots`, checked as a unit of its own, and, when it is a
+module with every procedure tier A, its public procedures and parameters (Fortran's access: `private`,
+`public`, per-name) enter the importing unit's names under their local names (`only` lists, renames, a whole
+module with renames). A call of one is typed from its signature (15.5.2's checks), stays tier A, and the output
+has a `use` of the module with the dotted name's dots as `_`; `to-fortran-all` writes the modules it uses
+first. A module with a tier-B procedure cannot be built as Fortran: its names stay B004, and the help names
+that module and the procedures to fix. Not yet: a clotran namespace's tier-A functions as Fortran modules
+(clotran's compiler never writes a module a Lemmis file could use: purefort specializes by argument types, and
+compiler.cljf says a module file is a private format), a procedure-level `use`, module variables (v0 refuses
+them), and an imported kind constant (the reader refuses `real(dp)` with an imported `dp`). Checks: the
+two-path oracle over test/multi and a fuzz arm that moves the generator's helpers into `nm.lib`
+(whole, or an only list), typer-errors for a private or missing name, a clash, a cycle and an imported printing
+function, a report for a used tier-B module, 9 mutation rules.
+
 ## Macros and the compiler layer (James, 2026-11-24)
 
 Lemmis is a layer on top of Fortran, and the transpiler is the compiler: a program is read, macro-expanded,

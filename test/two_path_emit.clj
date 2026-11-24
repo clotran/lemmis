@@ -8,8 +8,8 @@
     (println "===" p)
     (try
       (let [src (slurp p)]
-        (spit (str out "/" i ".plain.f90") (lemmis.fortran/to-fortran src p))
-        (spit (str out "/" i ".tagged.f90") (lemmis.fortran/to-fortran src p {:tagged true}))
+        (spit (str out "/" i ".plain.f90") (lemmis.fortran/to-fortran-all src p))
+        (spit (str out "/" i ".tagged.f90") (lemmis.fortran/to-fortran-all src p {:tagged true}))
         (println "ok"))
       (catch clotran.host.exception e
         (println (if (:tier-b (ex-data e)) "tier-b:" "!!!") (ex-message e))))

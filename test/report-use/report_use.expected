@@ -1,0 +1,27 @@
+tier B  report_use/twice
+
+warning[B004]: calls inc, a name from another namespace
+  in `report_use/twice`
+  --> test/report-use/report_use.lms:9:17
+  |
+9 |     twice = inc(inc(n))
+  |                 ^
+  = help: module ru.b has tier-B procedures (show), so it cannot be built as Fortran: make those tier A (lemmis.fortran --report on its file) and its names are typed here
+
+warning[B004]: calls inc, a name from another namespace
+  in `report_use/twice`
+  --> test/report-use/report_use.lms:9:13
+  |
+9 |     twice = inc(inc(n))
+  |             ^
+  = help: module ru.b has tier-B procedures (show), so it cannot be built as Fortran: make those tier A (lemmis.fortran --report on its file) and its names are typed here
+
+warning[B003]: assigns a Clojure value to twice
+  in `report_use/twice`
+  --> test/report-use/report_use.lms:9:13
+  |
+9 |     twice = inc(inc(n))
+  |             ^
+  = help: its type is known only when it runs; compute it in Fortran as integer(4)
+
+For what a code means: clotran -m lemmis.fortran --explain B003

@@ -1,0 +1,19 @@
+module mu_basic.util
+  implicit none
+  real(8), parameter :: half = 0.5d0
+  integer, parameter :: ten = 10
+  private :: hidden
+contains
+  pure real(8) function scale2(x)
+    real(8), intent(in) :: x
+    scale2 = 2.0d0 * x
+  end function scale2
+  pure integer function hidden(n)
+    integer, intent(in) :: n
+    hidden = n + 100
+  end function hidden
+  pure integer function bump(n)
+    integer, intent(in) :: n
+    bump = hidden(n) + 1
+  end function bump
+end module mu_basic.util

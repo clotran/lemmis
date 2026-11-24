@@ -1,0 +1,9 @@
+module dep.cyc_b
+  use use_cycle, only: f
+  implicit none
+contains
+  pure integer function g(n)
+    integer, intent(in) :: n
+    g = n
+  end function g
+end module dep.cyc_b

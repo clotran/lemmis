@@ -1,0 +1,14 @@
+! a module that uses two others (one of which uses a third): an only list with a rename, a parameter,
+! a function and a subroutine from another module. The compiled path builds all three as Fortran modules.
+module mu_basic
+  use mu_basic.shapes, only: area, fill
+  use mu_basic.util, only: dbl => scale2, bump, ten
+  implicit none
+contains
+  subroutine run()
+    real(8) :: a(3)
+    call fill(a, 3)
+    print *, a
+    print *, area(2.0d0), dbl(1.5d0), bump(1), ten
+  end subroutine run
+end module mu_basic

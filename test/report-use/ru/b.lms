@@ -1,0 +1,14 @@
+module ru.b
+  implicit none
+contains
+  ! tier B: a val dummy (a Clojure value)
+  function show(x) result(s)
+    val :: x
+    character(len=20) :: s
+    s = 'x'
+  end function show
+  pure integer function inc(n)
+    integer, intent(in) :: n
+    inc = n + 1
+  end function inc
+end module ru.b
