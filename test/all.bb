@@ -6,7 +6,7 @@
 (require '[babashka.process :as p] '[babashka.fs :as fs])
 (def here (str (fs/parent (fs/absolutize *file*))))
 (def steps (cond-> [["cases.bb"] ["cases.bb" (str here "/model-cases")] ["cases.bb" (str here "/refused")]
-                    ["ext.bb"] ["fuzz.bb" "7" "40"]]
+                    ["ext.bb"] ["macro.bb"] ["fuzz.bb" "7" "40"]]
              (some #{"--mutate"} *command-line-args*) (conj ["mutate.bb"])))
 (let [root (str (fs/parent here))
       r (p/shell {:continue true :out :string :err :string :dir root

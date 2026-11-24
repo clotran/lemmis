@@ -1,0 +1,10 @@
+module nomatch
+  implicit none
+contains
+  subroutine run()
+    integer :: i
+    when (i, i)
+      i = 1
+    end when
+  end subroutine run
+end module nomatch

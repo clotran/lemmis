@@ -1,0 +1,17 @@
+module when
+  implicit none
+contains
+  subroutine run()
+    integer :: i, n
+    n = 0
+    do i = 1, 9
+      when (mod(i, 3) == 0)
+        n = n + i
+        when (i > 5)
+          print *, i
+        end when
+      end when
+    end do
+    print *, n
+  end subroutine run
+end module when

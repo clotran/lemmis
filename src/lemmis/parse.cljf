@@ -14,6 +14,7 @@
           {:s :print :items [e]}
   Every node carries the :line :col of its first token."
   (:require [lemmis.lex :as lex]
+            [lemmis.macro]
             [lemmis.expr :as x :refer [cursor peek-t next-t! at-end? op? name? err expect! expect-name!]]))
 
 ;; 6.3.2.2: these keywords may be written without their blank
@@ -375,7 +376,7 @@
 (defn units
   "The program units of a source text (R502: modules and a main program)."
   [text path]
-  (let [sts (atom (seq (lex/statements text path)))]
+  (let [sts (atom (seq (lemmis.macro/statements text path)))]
     (loop [us []]
       (if-let [st (first @sts)]
         (let [c (stmt-cursor st path) t (peek-t c)]

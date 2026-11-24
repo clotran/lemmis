@@ -130,7 +130,7 @@ typed (Fortran's declarations), lowered to Fortran, and built by gfortran or fla
   CUDA Fortran is nvfortran only, and OpenCL has no Fortran target, so an OpenCL path would be a
   kernel emitter from the tier-A subset, not a use of the Fortran compiler.
 
-### Macro syntax and `lemmis expand` (designed with James, 2026-11-24; not built)
+### Macro syntax and `lemmis expand` (designed with James, 2026-11-24; first slice built: src/lemmis/macro.cljf)
 
 Settled in conversation, in the order they are to be built (the require interchange first, then these):
 

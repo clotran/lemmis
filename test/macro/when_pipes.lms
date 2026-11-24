@@ -1,0 +1,21 @@
+module when_pipes
+  implicit none
+contains
+  subroutine run()
+    integer :: i, n
+    n = 0
+    do i = 1, 6
+      when (mod(i, 2) == 0)
+        n = n + i
+        when (i > 4)
+          print *, 'big', i
+        end when
+      end when
+    end do
+    print *, n
+    val xs = #[1, 2, 3, 4, 5]
+    print *, ->>(xs, `filter`(`even?`), `map`(`inc`), `reduce`(`+`))
+    print *, ->(xs, `first`, `inc`)
+    print *, ->>(xs, `count`)
+  end subroutine run
+end module when_pipes
