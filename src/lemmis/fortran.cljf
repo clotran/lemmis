@@ -349,7 +349,8 @@
       (flags "--explain") (println (explain f))
       (nil? f) (println "usage: clotran -m lemmis.fortran [--report | --expand | --tagged | --explain CODE] FILE.lms [OUT.f90]")
       (flags "--report") (report (slurp f) f)
-      (flags "--expand") (println ((resolve 'lemmis.macro/expand) (slurp f) f))
+      (flags "--expand") (do (println ((resolve 'lemmis.macro/expand) (slurp f) f (flags "--once")))
+                          (when (flags "--tier") (println) (report (slurp f) f)))
       :else (let [t (to-fortran-all (slurp f) f {:tagged (flags "--tagged")})]
               (if out (spit out t) (print t))
               (flush)))))

@@ -1,0 +1,23 @@
+module loops
+  implicit none
+contains
+  subroutine run()
+    integer :: i, j, n, k
+    n = 0
+    k = 4
+    do i = 0, (k) - 1
+      n = n + i
+      do j = 0, (2) - 1
+        n = n + 100
+      end do
+    end do
+    print *, n, i
+    if (.not. (n < 0)) then
+      print *, 'ok'
+    end if
+    val xs = #[3, 4, 5]
+    do x in xs
+      print *, x * 2
+    end do
+  end subroutine run
+end module loops

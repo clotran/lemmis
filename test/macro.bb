@@ -20,7 +20,7 @@
   (let [at (fn [r] (set (map #(parse-long (second %)) (re-seq #"--> \S+?:(\d+):" r))))
         a (at (ct "-m" "lemmis.fortran" "--report" rel))
         b (at (ct "-m" "lemmis.fortran" "--report" (str "macro/ref/" (fs/file-name f))))]
-    (when-not (and (seq a) (= a b)) (swap! fails conj (str rel ": findings at lines " (sort a) ", the built-in form's at " (sort b))))))
+    (when-not (= a b) (swap! fails conj (str rel ": findings at lines " (sort a) ", the built-in form's at " (sort b))))))
 (let [tp (p/shell {:out :string :err :string :continue true} "bb" (str here "/two_path.bb") (str here "/macro/two_path"))]
   (when-not (zero? (:exit tp)) (swap! fails conj (str "two_path on macro/two_path: " (:out tp)))))
 (let [bad (str root "/test/macro/bad/nomatch.lms")

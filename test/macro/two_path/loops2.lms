@@ -1,0 +1,16 @@
+module loops2
+  implicit none
+contains
+  subroutine run()
+    integer :: i, j, n
+    n = 0
+    dotimes (i, 5)
+      dotimes (j, i)
+        n = n + 1
+      end dotimes
+    end dotimes
+    unless (n == 0)
+      print *, n
+    end unless
+  end subroutine run
+end module loops2

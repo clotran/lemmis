@@ -1,0 +1,23 @@
+module loops
+  implicit none
+contains
+  subroutine run()
+    integer :: i, j, n, k
+    n = 0
+    k = 4
+    dotimes (i, k)
+      n = n + i
+      dotimes (j, 2)
+        n = n + 100
+      end dotimes
+    end dotimes
+    print *, n, i
+    unless (n < 0)
+      print *, 'ok'
+    end unless
+    val xs = #[3, 4, 5]
+    doseq (x, xs)
+      print *, x * 2
+    end doseq
+  end subroutine run
+end module loops

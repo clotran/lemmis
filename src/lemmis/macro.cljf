@@ -26,6 +26,21 @@
     body...
   end if
 end macro
+macro stmt unless(test, body...)
+  if (.not. (test)) then
+    body...
+  end if
+end macro
+macro stmt dotimes(i, n, body...)
+  do i = 0, (n) - 1
+    body...
+  end do
+end macro
+macro stmt doseq(x, coll, body...)
+  do x in coll
+    body...
+  end do
+end macro
 macro expr ->(x, f(args...), rest...)
   ->(f(x, args...), rest...)
 end macro
@@ -165,7 +180,7 @@ end macro
           (let [j (or (close-of ts (inc i)) (fail-at path t (str "the call of " (:v t) " is not closed")))
                 [r b] (try-rules rules (split-args (subvec ts (+ i 2) j)) path t (:v t))]
             (too-deep! path t depth)
-            (recur (inc j) (into out (expand-expr tbl (sub-line (first (:body r)) b t) path (inc depth)))))
+            (recur (inc j) (into out (let [e (sub-line (first (:body r)) b t)] (if (:once tbl) e (expand-expr tbl e path (inc depth)))))))
           (recur (inc i) (conj out t)))))))
 
 (defn- take-block [sts nm path t]
@@ -187,18 +202,18 @@ end macro
                 [r b] (try-rules rules (split-args (subvec st 2 (dec (count st)))) path t nm)
                 b (if (:block r) (assoc b (:block r) {:block (vec blk)}) b)]
             (too-deep! path t depth)
-            (recur after (into out (expand-stmts tbl (sub-stmts (:body r) b t nm) path (inc depth)))))
+            (recur after (into out (let [s (sub-stmts (:body r) b t nm)] (if (:once tbl) s (expand-stmts tbl s path (inc depth)))))))
           (let [e (expand-expr tbl st path 0)]
             (recur (rest sts) (conj out (if (= e st) st (with-meta e (or (meta st) {:macro "expr" :line (:line (first st)) :col (:col (first st))}))))))))
       out)))
 
 (defn statements
   "lemmis.lex/statements, then the macros expanded: definitions (the prelude's and the file's own)
-  removed, calls replaced by their expansion."
-  [text path]
+  removed, calls replaced by their expansion (once: only the outermost calls)."
+  [text path & [once]]
   (let [[pre _] (defs (lex/statements prelude "prelude") "prelude")
         [user sts] (defs (lex/statements text path) path)]
-    (expand-stmts (merge-with (fn [a b] (into b a)) pre user) sts path 0)))
+    (expand-stmts (cond-> (merge-with (fn [a b] (into b a)) pre user) once (assoc :once true)) sts path 0)))
 
 ;; ---- lemmis expand
 (defn- tok-text [t]
@@ -220,8 +235,8 @@ end macro
       out)))
 
 (defn expand
-  "The Lemmis after expansion, each expanded statement followed by a comment naming its call."
-  [text path]
+  "The Lemmis after expansion, each expanded statement preceded by a comment naming its call."
+  [text path & [once]]
   (str/join "\n" (mapcat (fn [st] (let [m (meta st)]
                                     (if m [(str "! " (:macro m) " at " (:line m) ":" (:col m)) (st-text st)] [(st-text st)])))
-                         (statements text path))))
+                         (statements text path once))))
