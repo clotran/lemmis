@@ -1,0 +1,10 @@
+! error: 8:9: mean is not a pure procedure
+module use_cproc_pure
+  use dep.ue_c, only: mean
+  implicit none
+contains
+  pure real(8) function f(a)
+    real(8), intent(in) :: a(3)
+    f = mean(a)
+  end function f
+end module use_cproc_pure

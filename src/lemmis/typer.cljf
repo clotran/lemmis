@@ -99,9 +99,7 @@
   "The help for a name from another namespace: where the module is a Lemmis one with tier-B
   procedures, say so (that is why its names are not typed here)."
   [env n]
-  (if-let [[m bs] (get-in env [:b-from n])]
-    (str "module " m " has tier-B procedures (" (str/join ", " bs) "), so it cannot be built as Fortran: make those tier A (lemmis.fortran --report on its file) and its names are typed here")
-    "its types are not declared in this file"))
+  (or (get-in env [:b-from n]) "its types are not declared in this file"))
 
 (defn- int-range [k] (case k :int1 [-128 127] :int2 [-32768 32767] :int4 [-2147483648 2147483647]
                        :int8 [(- -9223372036854775807 1) 9223372036854775807]))
@@ -306,6 +304,37 @@
     (check-args! env e sig actuals)
     [args kw actuals (:result sig)]))
 
+;; ---- a clotran namespace's functions lowered to pure Fortran (clotran.purefort): a generic name with
+;; one specific procedure per argument type, which the call picks as Fortran does
+(def ^:private ts-type
+  {:long {:k :int8} :int4 {:k :int4} :int2 {:k :int2} :int1 {:k :int1}
+   :double {:k :real8} :real4 {:k :real4} :bool {:k :logical}
+   :complex4 {:k :complex4} :complex8 {:k :complex8}
+   :longs {:k :int8 :rank 1} :ints {:k :int4 :rank 1} :shorts {:k :int2 :rank 1} :bytes {:k :int1 :rank 1}
+   :doubles {:k :real8 :rank 1} :floats {:k :real4 :rank 1}})
+(def ^:private type-ts (into {} (for [[ts t] ts-type] [[(:k t) (:rank t 0)] ts])))
+
+(defn- cproc-call
+  "[type args] of a call of the clotran function n (global g): the version is picked by the
+  actual argument types; none that takes them is a B004 finding that lists the versions there are."
+  [env e g sub?]
+  (let [n (:v e) args (mapv #(tx env %) (:args e))
+        _ (when (seq (:kwargs e)) (fail env e (str "keyword arguments to " n ", a clotran function, are refused")))
+        ts (mapv #(get type-ts [(:k (:t %)) (or (:rank (:t %)) 0)]) args)
+        v (when (every? some? ts) (first (filter #(= ts (:ts %)) (:versions g))))]
+    (cond
+      (nil? v)
+      [(find! env e "B004" (str "calls " n ", a function of " (:from g) ", with argument types it has no pure-Fortran version for")
+              (str "its versions take " (str/join "; " (map #(str "(" (str/join ", " (map name (:ts %))) ")") (:versions g)))
+                   "; this call passes (" (str/join ", " (map #(tname (:t %)) args)) "): convert the arguments, or hint the function's parameters"))
+       args]
+      :else
+      (do (when (and (:pure? env) (not (:fpure v)))
+            (fail env e (str n " is not a pure procedure (clotran's pure Fortran marks a function pure only where nothing in it can fail): a pure procedure may reference only pure procedures (15.7)")))
+          (when (and (not sub?) (= :nil (:ret v))) (fail env e (str n " is a subroutine for these arguments: write call " n "(...)")))
+          (when (and sub? (not= :nil (:ret v))) (fail env e (str n " is a function for these arguments, not a subroutine")))
+          [(when-not sub? (assoc (ts-type (:ret v)) :rank 0)) args]))))
+
 (defn- ref-type [env e]
   (let [n (:v e) v (get-in env [:vars n]) g (get-in env [:globals n])]
     (cond
@@ -321,6 +350,9 @@
       (:val? v)
       (let [args (mapv #(tx env %) (:args e))]
         (assoc e :args args :t (find! env e "B104" (str "calls the val " n) "call a module procedure by name")))
+      (and g (= :cproc (:what g)))
+      (let [[t args] (cproc-call env e g false)]
+        (assoc e :args args :t t))
       (and g (= :proc (:what g)))
       (let [[args kw actuals rt] (call-type env e g)]
         (called! env n e)
@@ -536,10 +568,15 @@
       [(assoc s :items items) env])
     :call
     (let [c (:callee s) n (:v c) g (get-in env [:globals n])]
-      (if (and g (= :name (:op c)))
+      (cond
+        (and g (= :cproc (:what g)) (= :name (:op c)))
+        (let [[_ args] (cproc-call env (assoc c :args (:args s) :kwargs (:kwargs s)) g true)]
+          [(assoc s :args args :kwargs {} :actuals args) env])
+        (and g (= :name (:op c)))
         (let [[args kw actuals _] (call-type env (assoc c :args (:args s) :kwargs (:kwargs s)) g)]
           (called! env n c)
           [(assoc s :args args :kwargs kw :actuals actuals) env])
+        :else
         (do (doseq [a (concat (:args s) (vals (:kwargs s)))] (tx env a))
             (find! env c (if ((:refers env) n) "B004" "B003") (str "calls " n ", which is not a subroutine of this module") (if ((:refers env) n) (b004-help env n) "write it as a subroutine of the module"))
             [s env])))
@@ -623,7 +660,7 @@
   (let [[vars env] (decl-vars* env (:specs p) (:args p))
         rn (result-name p)
         vars (if (and rn (:type p)) (assoc vars rn (assoc (x/type-kind env (:type p)) :rank 0 :result? true)) vars)
-        penv (proc-env (assoc env :vals (atom [])) vars (:name p))]
+        penv (assoc (proc-env (assoc env :vals (atom [])) vars (:name p)) :pure? (boolean (some #{"pure" "elemental"} (:prefixes p))))]
     (doseq [[n v] vars :when (= :val (:k v))]
       (find! penv (:ent v) "B101" (str "the dummy " n " is a Clojure value (val ::)") (str "declare its Fortran type, e.g. real(8), intent(in) :: " n)))
     (type-decl-exprs! penv vars)
@@ -692,11 +729,42 @@
       (let [i (str/last-index-of p "/")] (subs p 0 i)))))
 
 (defn- module-file
-  "[path text] of Lemmis module m under the first root that has it, or nil."
+  "[path text ext] of module m under the first root that has it, as require finds it (cljf, cljc, clj,
+  then lms in each root), or nil."
   [roots m]
-  (some (fn [r] (let [p (str r "/" (str/replace m "." "/") ".lms")]
-                  (when-let [t (try (slurp p) (catch clotran.host.throwable _ nil))] [p t])))
+  (some (fn [r] (some (fn [ext]
+                        (let [p (str r "/" (str/replace m "." "/") "." ext)]
+                          (when-let [t (try (slurp p) (catch clotran.host.throwable _ nil))] [p t ext])))
+                      ["cljf" "cljc" "clj" "lms"]))
         roots))
+
+(defn- pure-interface
+  "What clotran's compiler lowers of the namespace in file path to pure Fortran: its interface
+  (generic name to versions, only those whose types Fortran has), the module's text and the
+  support module's. Loads the namespace, as clotran compile does."
+  [path]
+  (require 'clotran.purefort)
+  (let [g ((resolve 'clotran.purefort/generate) path)
+        iface (into {} (for [[n vs] (:interface g)
+                             :let [vs (filterv #(and (every? ts-type (:ts %)) (or (= :nil (:ret %)) (ts-type (:ret %)))) vs)]
+                             :when (seq vs)]
+                         [n vs]))]
+    {:module (:module g) :support (:support g) :module-text (:module-text g) :interface iface
+     :why (into {} (map (fn [[s w]] [(str/lower-case (str/replace (name s) #"[^A-Za-z0-9]" "_")) w]) (:skipped g)))}))
+
+(defn- import-cljf-names
+  "env with the functions use u names from a clotran namespace: lowered ones typed, the others B004
+  with the reason clotran gives."
+  [env u dep]
+  (let [m (:name u) iface (:interface dep)
+        renamed (set (map second (:renames u)))
+        pairs (if (:only u) (:only u) (concat (map (fn [n] [n n]) (remove renamed (sort (keys iface)))) (:renames u)))]
+    (reduce (fn [env [l r]]
+              (if-let [vs (get iface r)]
+                (assoc-in env [:globals l] {:what :cproc :versions vs :from m :remote r})
+                (assoc-in env [:b-from l]
+                          (str m "'s " r " is not lowered to pure Fortran: " (get (:why dep) r "it is not a public function clotran can lower") " (clotran compile --report on its file says more)"))))
+            env pairs)))
 
 (defn- access-of
   "A module's access: {:default :public|:private :names {name access}}."
@@ -740,7 +808,9 @@
   "env with the names of use u (of a module with tier-B procedures) marked, for the B004 help."
   [env u dep]
   (let [bs (vec (sort (keep (fn [[n {:keys [tier]}]] (when (= :B tier) n)) (:procs dep))))]
-    (reduce (fn [env [l _]] (assoc-in env [:b-from l] [(:name u) bs]))
+    (reduce (fn [env [l _]]
+              (assoc-in env [:b-from l]
+                        (str "module " (:name u) " has tier-B procedures (" (str/join ", " bs) "), so it cannot be built as Fortran: make those tier A (lemmis.fortran --report on its file) and its names are typed here")))
             env (concat (:only u) (:renames u)))))
 
 (defn- import-uses
@@ -751,15 +821,23 @@
   (reduce
    (fn [[env deps uses] u]
      (let [m (:name u)
-           [dp dtext] (when-not (= "iso_fortran_env" m) (module-file roots m))]
-       (when (and dp ((:stack opts) m))
+           [dp dtext ext] (when-not (= "iso_fortran_env" m) (module-file roots m))
+           cljf? (and dp (not= "lms" ext))]
+       (when (and dp (not cljf?) ((:stack opts) m))
          (fail env u (str "module " m " uses itself, directly or through the modules it uses (Fortran: a circular use)")))
+       (if cljf?
+         (let [dep (or (get @(:cache opts) dp) (let [r (pure-interface dp)] (swap! (:cache opts) assoc dp r) r))
+               env (import-cljf-names env u dep)
+               u2 (cond-> (assoc u :lms dp :fmod (:module dep)) (:only u) (update :only (fn [ps] (filterv #((:interface dep) (second %)) ps))))]
+           (if (and (:only u) (empty? (:only u2)))
+             [env deps (conj uses u)]
+             [env (concat deps [[m dp nil (:module-text dep) (:support dep)]]) (conj uses u2)]))
        (let [dep (when dp
                    (or (get @(:cache opts) dp)
                        (let [r (check dtext dp (update opts :stack conj m))] (swap! (:cache opts) assoc dp r) r)))]
          (if (and dep (= :module (:unit (:unit dep))) (every? #(= :A (:tier %)) (vals (:procs dep))))
            [(import-names env u dep) (concat deps (:deps dep) [[m dp dtext]]) (conj uses (assoc u :lms dp))]
-           [(if dep (note-b env u dep) env) deps (conj uses u)]))))
+           [(if dep (note-b env u dep) env) deps (conj uses u)])))))
    [env [] []] (remove #(= "iso_fortran_env" (:name %)) (:uses unit))))
 
 (defn check
@@ -793,6 +871,7 @@
         all (if tmain (conj typed tmain) typed)]
     {:unit (assoc unit :uses (let [m (into {} (map (juxt :name identity) uses))] (mapv #(get m (:name %) %) (:uses unit))) :procs typed :main tmain)
      :env env
+     :support (some #(nth % 4 nil) deps)
      :deps (vec (:val (reduce (fn [{:keys [seen val]} d] (if (seen (first d)) {:seen seen :val val} {:seen (conj seen (first d)) :val (conj val d)}))
                               {:seen #{} :val []} deps)))
      :procs (tiers all @(:findings env))})))

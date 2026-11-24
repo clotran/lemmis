@@ -69,17 +69,33 @@
             "flang" ["-pedantic" "-O2" "-ffp-contract=off"]})
 
 (defn build-run
-  "Compile text (one file) with fc and run it: {:out text :warn diagnostics} or {:error msg}."
+  "Compile text with fc and run it: {:out text :warn diagnostics} or {:error msg}. Text with modules
+  clotran wrote (a !@clotran line before each) is built a module at a time, those with clotran's own
+  flags (no -std, no -pedantic) and the rest with the strict ones; only the strict ones' diagnostics count."
   [fc base text]
   (let [dir (str tmp "/" base "-" fc) _ (fs/create-dirs dir)
-        f90 (str dir "/p.f90") exe (str dir "/p")]
-    (spit f90 text)
-    (let [c (apply sh {:dir dir} fc (concat (flags fc) ["-o" exe f90]))]
-      (if (pos? (:exit c))
-        {:error (str fc " compile: " (str/join " | " (take 3 (str/split-lines (str (:err c) (:out c))))))}
-        (let [r (sh {:dir dir} exe)]
-          (if (pos? (:exit r)) {:error (str fc " run exit " (:exit r) ": " (str/trim (str (:err r))))}
-              {:out (:out r) :warn (str/trim (str (:err c) (:out c)))}))))))
+        exe (str dir "/p")
+        blocks (if (str/includes? text "!@clotran")
+                 (remove str/blank? (str/split text #"(?m)^(?=(?:!@clotran\n)?(?:module|program) )(?<!!@clotran\n)"))
+                 [text])
+        strict (flags fc)
+        loose (remove #{"-pedantic"} (remove #(str/starts-with? % "-std=") strict))
+        built (reduce (fn [acc [i b]]
+                        (if (:error acc) acc
+                            (let [f90 (str dir "/b" i ".f90") o (str dir "/b" i ".o") clo? (str/starts-with? b "!@clotran")]
+                              (spit f90 b)
+                              (let [c (apply sh {:dir dir} fc (concat (if clo? loose strict) ["-c" "-o" o f90]))]
+                                (if (pos? (:exit c))
+                                  {:error (str fc " compile: " (str/join " | " (take 3 (str/split-lines (str (:err c) (:out c))))))}
+                                  (-> acc (update :objs conj o) (update :warn str (if clo? "" (str (:err c) (:out c))))))))))
+                      {:objs [] :warn ""} (map-indexed vector blocks))]
+    (if (:error built) built
+        (let [l (apply sh {:dir dir} fc (concat (flags fc) ["-o" exe] (:objs built)))]
+          (if (pos? (:exit l))
+            {:error (str fc " link: " (str/join " | " (take 3 (str/split-lines (str (:err l) (:out l))))))}
+            (let [r (sh {:dir dir} exe)]
+              (if (pos? (:exit r)) {:error (str fc " run exit " (:exit r) ": " (str/trim (str (:err r))))}
+                  {:out (:out r) :warn (str/trim (:warn built))})))))))
 
 (defn bits [k s]
   (case k

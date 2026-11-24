@@ -1,0 +1,19 @@
+! a clotran function called with argument types it has no pure-Fortran version for (a real(4) array): B004
+! lists the versions there are; the same function with real(8) is tier A
+module report_cproc
+  use dep.ue_c, only: mean, big, show
+  implicit none
+contains
+  real(8) function wrong(a)
+    real, intent(in) :: a(3)
+    wrong = mean(a)
+  end function wrong
+  integer(8) function right(a)
+    real(8), intent(in) :: a(3)
+    right = big(a)
+  end function right
+  pure integer(8) function right_pure(a)
+    real(8), intent(in) :: a(3)
+    right_pure = big(a)
+  end function right_pure
+end module report_cproc

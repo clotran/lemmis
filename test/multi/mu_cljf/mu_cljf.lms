@@ -1,0 +1,26 @@
+! a Lemmis module calling a clotran namespace through its pure-Fortran module (clotran compile --pure):
+! the specific procedure is picked by the argument types, and the output needs no clotran at run time
+module mu_cljf
+  use mu_cljf.stats, only: mean, spread, sq, cube, big, describe
+  implicit none
+contains
+  ! big is pure Fortran (nothing in it can fail), so a pure procedure may call it
+  pure integer(8) function nbig(v)
+    real(8), intent(in) :: v(4)
+    nbig = big(v)
+  end function nbig
+  subroutine run()
+    real(8) :: a(4), b(4)
+    integer(8) :: k(3)
+    integer :: i
+    a(1) = 1.5d0; a(2) = -2.25d0; a(3) = 4.0d0; a(4) = 0.125d0
+    k(1) = 7_8; k(2) = -3_8; k(3) = 12_8
+    print *, mean(a), spread(a)
+    print *, spread(k), cube(k(1))
+    print *, sq(mean(a)), cube(4_8) + k(2)
+    do i = 1, 4
+      b(i) = 10.5d0 + real(i, 8)
+    end do
+    print *, nbig(a), nbig(b)
+  end subroutine run
+end module mu_cljf

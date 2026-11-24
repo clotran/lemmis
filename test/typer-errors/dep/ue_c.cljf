@@ -1,0 +1,11 @@
+(ns dep.ue_c)
+
+(defn total [a]
+  (let [n (alength a)]
+    (loop [i 0 s 0.0] (if (< i n) (recur (inc i) (+ s (aget a i))) s))))
+
+(defn mean [a] (/ (total a) (alength a)))
+
+(defn show [a] (println "mean:" (mean a)))
+
+(defn big [xs] (count (filter #(> % 10.0) xs)))

@@ -1,0 +1,21 @@
+tier A  report_cproc/right
+tier A  report_cproc/right_pure
+tier B  report_cproc/wrong
+
+warning[B004]: calls mean, a function of dep.ue_c, with argument types it has no pure-Fortran version for
+  in `report_cproc/wrong`
+  --> test/report-use/report_cproc.lms:9:13
+  |
+9 |     wrong = mean(a)
+  |             ^
+  = help: its versions take (doubles); (longs); this call passes (a rank-1 real(4) array): convert the arguments, or hint the function's parameters
+
+warning[B003]: assigns a Clojure value to wrong
+  in `report_cproc/wrong`
+  --> test/report-use/report_cproc.lms:9:13
+  |
+9 |     wrong = mean(a)
+  |             ^
+  = help: its type is known only when it runs; compute it in Fortran as real(8)
+
+For what a code means: clotran -m lemmis.fortran --explain B003

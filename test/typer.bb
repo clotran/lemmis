@@ -64,7 +64,7 @@
 
 ;; (3) the report
 (def report-results
-  (for [[f e] [["report/report.lms" "report/report.expected"] ["report-use/report_use.lms" "report-use/report_use.expected"]]]
+  (for [[f e] [["report/report.lms" "report/report.expected"] ["report-use/report_use.lms" "report-use/report_use.expected"] ["report-use/report_cproc.lms" "report-use/report_cproc.expected"]]]
     (let [got (clotran-run "-m" "lemmis.fortran" "--report" (str here "/" f))
           want (slurp (str here "/" e))
           got (str/replace got (str here "/") "test/")]
@@ -75,7 +75,7 @@
 (doseq [[k rs] (sort-by key by)]
   (println (format "%-22s %d" (name k) (count rs)))
   (doseq [[_ msg] (take 5 rs) :when msg] (println "   " msg)))
-(println (format "%d oracle cases (%d defined, %d ill-typed, %d undefined), %d error cases, 2 reports"
+(println (format "%d oracle cases (%d defined, %d ill-typed, %d undefined), %d error cases, 3 reports"
                  ncases (count (filter #(= :ok (first %)) answers)) (count (filter #(= :ill-typed (first %)) answers))
                  (count (filter #(= :undefined (first %)) answers)) (count err-files)))
 (fs/delete-tree tmp)

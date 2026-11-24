@@ -108,7 +108,7 @@
   anything else (a clotran namespace) has no Fortran."
   [u]
   (when (or (= "iso_fortran_env" (:name u)) (:lms u))
-    (str (if (:lms u) (str "use " (fname (:name u))) "use, intrinsic :: iso_fortran_env")
+    (str (if (:lms u) (str "use " (or (:fmod u) (fname (:name u)))) "use, intrinsic :: iso_fortran_env")
          (cond (:only u) (str ", only: " (str/join ", " (map (fn [[l r]] (if (= l r) l (str l " => " r))) (:only u))))
                (:renames u) (str ", " (str/join ", " (map (fn [[l r]] (str l " => " r)) (:renames u))))))))
 
@@ -270,7 +270,10 @@
   ([text path] (to-fortran-all text path {}))
   ([text path opts]
    (let [r (ty/check text path opts)]
-     (str/join "\n" (concat (map (fn [[_ p t]] (to-fortran t p opts)) (:deps r))
+     ;; modules clotran wrote (its support module once, a namespace's pure module) carry a !@clotran line, so a
+     ;; build can hold them to clotran's own flags and the Lemmis modules to the strict ones
+     (str/join "\n" (concat (when-let [s (:support r)] [(str "!@clotran\n" s)])
+                            (map (fn [[_ p t f]] (if f (str "!@clotran\n" f) (to-fortran t p opts))) (:deps r))
                             [(to-fortran text path opts)])))))
 
 ;; ---- the report, in clotran compile --report's form (clotran/src/clj/clotran/tiers.cljf)

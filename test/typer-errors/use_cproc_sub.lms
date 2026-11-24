@@ -1,0 +1,10 @@
+! error: 8:9: show is a subroutine for these arguments: write call show(...)
+module use_cproc_sub
+  use dep.ue_c, only: show
+  implicit none
+contains
+  subroutine run()
+    real(8) :: a(3), x
+    x = show(a)
+  end subroutine run
+end module use_cproc_sub

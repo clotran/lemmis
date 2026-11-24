@@ -1,0 +1,19 @@
+(ns mu_cljf.stats
+  "A clotran namespace that the Lemmis module mu_cljf uses: the compiler lowers most of it to pure Fortran.")
+
+(defn total [a]
+  (let [n (alength a)]
+    (loop [i 0 s 0.0] (if (< i n) (recur (inc i) (+ s (aget a i))) s))))
+
+(defn mean [a] (/ (total a) (alength a)))
+
+(defn spread [xs] (- (reduce max xs) (reduce min xs)))
+
+(defn sq ^double [^double x] (* x x))
+
+(defn cube ^long [^long n] (* n n n))
+
+(defn big [xs] (count (filter #(> % 10.0) xs)))
+
+;; a map is a heap value: tier B, not lowered, so it is left out of the Fortran use
+(defn describe [a] {:n (alength a) :mean (mean a)})
