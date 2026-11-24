@@ -30,7 +30,11 @@
     (seq? e)
     (let [[op & args] e
           kw (filter keyword? args) as (remove keyword? args)]
-      (cond (and ('#{+ - * / **} op) (= 2 (count as))) (str "(" (lms (first as)) " " op " " (lms (second as)) ")")
+      (cond (and (= 'store op) (= 1 (count kw)) (= 1 (count as)))
+            ;; a store into an array of kind k is a conversion by assignment: the same as int/real/cmplx(v, kind=k)
+            (str ({:int1 "int" :int2 "int" :int4 "int" :int8 "int" :real4 "real" :real8 "real" :complex4 "cmplx" :complex8 "cmplx"} (first kw))
+                 "(" (lms (first as)) ", kind=" (kn (first kw)) ")")
+            (and ('#{+ - * / **} op) (= 2 (count as))) (str "(" (lms (first as)) " " op " " (lms (second as)) ")")
             (and (= '- op) (= 1 (count as))) (str "(-" (lms (first as)) ")")
             :else (str op "(" (str/join ", " (concat (map lms as) (map #(str "kind=" (kn %)) kw))) ")")))))
 

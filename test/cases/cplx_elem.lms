@@ -1,0 +1,18 @@
+! complex EXP LOG SQRT SIN COS (F2018 16.9) at values every processor agrees on. Not here: sqrt of a
+! negative real as a complex (flang's complex(4) answer has a real part of 1.5e-7) and the sign of a
+! zero part (cos((0,0))'s imaginary part is -0 or +0 by processor): the standard leaves them open.
+module cplx_elem
+  implicit none
+contains
+  subroutine run()
+    complex :: z
+    complex(8) :: d
+    z = (3.0, 4.0)
+    d = (3.0d0, 4.0d0)
+    print *, sqrt(z), sqrt(d)
+    print *, exp((0.0, 0.0)), exp((0.0d0, 0.0d0))
+    print *, log((1.0, 0.0)), log((1.0d0, 0.0d0))
+    print *, sqrt(sqrt((16.0, 0.0))), sqrt(sqrt((16.0d0, 0.0d0)))
+    print *, real(sin((0.0, 0.0))), real(cos((0.0, 0.0))), real(sin((0.0d0, 0.0d0))), real(cos((0.0d0, 0.0d0)))
+  end subroutine run
+end module cplx_elem

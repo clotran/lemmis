@@ -71,6 +71,36 @@ A Lemmis program compiles to Fortran; it does not have to run through clotran.
 - (Terms: "tier A/B" is clotran's compile tiers; "Tier 1/2" in COORDINATION.md is
   the proof scope. They are unrelated.)
 
+## Macros and the compiler layer (James, 2026-11-24)
+
+Lemmis is a layer on top of Fortran, and the transpiler is the compiler: a program is read, macro-expanded,
+typed (Fortran's declarations), lowered to Fortran, and built by gfortran or flang. The interpreter
+(clotran) is used at compile time and not at run time, so a macro may be any Lemmis or Clojure code.
+
+- **Staging.** A macro runs at compile time on the interpreted path (the reader's forms, run by clotran),
+  and returns a Lemmis syntax tree, which the typer and the Fortran emitter then see as if it had been
+  written. Macros therefore cost nothing in the program, and need no runtime in tier A.
+- **Hygiene is not free, and Clojure's is not Scheme's.** Clojure's syntax-quote qualifies symbols and
+  makes auto-gensyms; that is hygiene by convention, not by construction. Lemmis can do better than
+  convention, because Fortran gives a construct that makes scope explicit: a macro that introduces
+  locals expands to a `block ... end block` (F2008), whose declarations are local to it, so an
+  introduced name can neither capture nor be captured by the user's. Where a block is not allowed (a
+  declaration or specification macro), names are renamed to unused ones (gensym), as in Clojure.
+- **Three kinds of macro, because Fortran has statements and expressions.** An expression macro
+  (`->`, `->>`, `as->`, `cond->`, `some->` where the types allow, `and`, `or`) expands to an expression, with
+  helper functions where Fortran needs a statement (as pipelines already do); a statement macro
+  (`when`, `dotimes`, `doseq`, `if-let`) expands to statements, with its own `block`; a declaration
+  macro expands to specification statements (a derived type for a record).
+- **First slice**: syntax-only macros over the typed forms already there (threading, `when`, `dotimes`,
+  `doseq` over an array, `cond` and `case` as `select case`), each with a two-path oracle case, then
+  user-written macros through the interpreted path, then the macro table checked by the same fuzzer.
+- **Concurrency and accelerators** are a later layer and a different oracle (the clotran runtime's proofs
+  do not cover transpiled code). Fortran's own mechanisms are the target: `do concurrent` and OpenMP for
+  local parallelism, coarrays and teams for remote images (James: "local" and "remote" threads), and
+  OpenMP target or OpenACC (supported by flang and gfortran) for GPUs, from the same tier-A Fortran.
+  CUDA Fortran is nvfortran only, and OpenCL has no Fortran target, so an OpenCL path would be a
+  kernel emitter from the tier-A subset, not a use of the Fortran compiler.
+
 ## The rule
 
 **Every valid Fortran program means exactly what Fortran says. Every

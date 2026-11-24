@@ -1,4 +1,4 @@
-! error: 8:19: sqrt needs a real (an integer is not converted: write real(x, 8))
+! error: 8:19: sqrt needs a real or a complex (an integer is not converted: write real(x, 8))
 module sqrt_int
   implicit none
 contains
