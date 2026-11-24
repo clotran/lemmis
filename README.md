@@ -223,4 +223,4 @@ EPL-2.0 (LICENSE).
 and `->(x, f, ...)`, `->>(x, f(args...), ...)` in call form (the prefix pipelines still work). A file may define its own
 (`macro stmt|expr name(params) ... end macro`, first matching rule wins). Tokens from a template take the call's position,
 so findings and errors point at the line written. `clotran -m lemmis.fortran --expand FILE.lms` prints the expansion.
-Checked by test/macro.bb (against the built-in forms; two-path oracle for `when`). Not yet: `--tier`/`--once`, dotimes/doseq/cond/case, hygiene blocks, procedural macros.
+Checked by test/macro.bb (against the built-in forms; two-path oracle for `when`). Also in the prelude: `unless`, `dotimes`, `doseq`; `--expand --once` (outermost calls only) and `--expand --tier` (adds the report). Not yet: `cond`/`case` (an expression `cond` needs a typed helper, a statement one needs clause syntax: a decision), hygiene blocks (v0 has no `block`), procedural macros.

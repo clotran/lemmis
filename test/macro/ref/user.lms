@@ -1,0 +1,11 @@
+module user
+  implicit none
+contains
+  subroutine run()
+    integer :: a
+    a = 1
+    a = a + 1
+    a = a + (10 * 2)
+    print *, a
+  end subroutine run
+end module user

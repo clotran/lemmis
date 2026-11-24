@@ -1,0 +1,17 @@
+macro stmt incr(v)
+  v = v + 1
+end macro
+macro stmt incr(v, by)
+  v = v + (by)
+end macro
+module user
+  implicit none
+contains
+  subroutine run()
+    integer :: a
+    a = 1
+    incr (a)
+    incr (a, 10 * 2)
+    print *, a
+  end subroutine run
+end module user
