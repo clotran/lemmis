@@ -1,0 +1,227 @@
+(ns lemmis.macro
+  "Pattern macros (PLAN.md, 'Macro syntax'), over tokens, before the parser sees a statement.
+
+    macro stmt when(test, body...)        a statement macro: the call is when(c) ... end when,
+      if (test) then                       body... is the block between them
+        body...
+      end if
+    end macro
+    macro expr ->(x, f(args...), rest...)  an expression macro, called ->(a, g(1), h): rules are tried in
+      ->(f(x, args...), rest...)           order, the first match wins; a hole is a name, name... takes
+    end macro                              the rest, name(sub...) matches a call
+
+  Both are text Fortran rejects (two names before a parenthesis), so they pass the extension rule.
+  Spans: every token a template contributes takes the position of the call, so the typer's findings
+  and every error point at the line the user wrote; tokens that came from the call's arguments keep
+  their own. Hygiene: a template that introduces locals must use block ... end block (none of the
+  first slice's macros do). Recursion is limited to depth 64. (expand text path) is lemmis expand."
+  (:require [lemmis.lex :as lex]
+            [clojure.string :as str]))
+
+(def ^:private max-depth 64)
+
+(def prelude
+  "macro stmt when(test, body...)
+  if (test) then
+    body...
+  end if
+end macro
+macro expr ->(x, f(args...), rest...)
+  ->(f(x, args...), rest...)
+end macro
+macro expr ->(x, f, rest...)
+  ->(f(x), rest...)
+end macro
+macro expr ->(x)
+  x
+end macro
+macro expr ->>(x, f(args...), rest...)
+  ->>(f(args..., x), rest...)
+end macro
+macro expr ->>(x, f, rest...)
+  ->>(f(x), rest...)
+end macro
+macro expr ->>(x)
+  x
+end macro
+")
+
+(defn- op? [t v] (and t (= :op (:t t)) (= v (:v t))))
+(defn- name? [t v] (and t (= :name (:t t)) (= v (:v t))))
+(defn- nameish? [t] (and t (contains? #{:name :cname} (:t t))))
+(defn- fail-at [path t msg] (lex/fail path (:line t) (:col t) msg))
+
+(def ^:private openers #{"(" "[" "#[" "#{"})
+(def ^:private closers #{")" "]" "}"})
+(defn- step [t] (cond (and (= :op (:t t)) (contains? openers (:v t))) 1
+                      (and (= :op (:t t)) (contains? closers (:v t))) -1
+                      :else 0))
+
+(defn- close-of
+  "The index of the bracket closing the one at i, or nil."
+  [ts i]
+  (loop [j (inc i) d 1]
+    (when-let [t (get ts j)]
+      (let [d (+ d (step t))] (if (zero? d) j (recur (inc j) d))))))
+
+(defn- split-args
+  "Tokens between the parentheses, split at depth-0 commas."
+  [ts]
+  (if (empty? ts)
+    []
+    (loop [ts ts d 0 cur [] out []]
+      (if-let [t (first ts)]
+        (if (and (zero? d) (op? t ","))
+          (recur (rest ts) d [] (conj out cur))
+          (recur (rest ts) (+ d (step t)) (conj cur t) out))
+        (conj out cur)))))
+
+(defn- call? [ts] (and (nameish? (first ts)) (op? (second ts) "(") (= (close-of ts 1) (dec (count ts)))))
+
+;; ---- patterns
+(defn- item [path ts]
+  (let [a (first ts)]
+    (cond (and (nameish? a) (= 1 (count ts))) {:bind (:v a)}
+          (and (nameish? a) (= 2 (count ts)) (op? (second ts) "...")) {:rest (:v a)}
+          (call? ts) {:call (:v a) :sub (mapv #(item path %) (split-args (subvec ts 2 (dec (count ts)))))}
+          :else (fail-at path (or a {:line 0 :col 0}) "a macro parameter is name, name... or name(parameters)"))))
+
+(declare match-list)
+(defn- match-item [it arg]
+  (cond (:bind it) {(:bind it) arg}
+        (:call it) (when (call? arg)
+                     (when-let [b (match-list (:sub it) (split-args (subvec arg 2 (dec (count arg)))))]
+                       (assoc b (:call it) [(first arg)])))))
+
+(defn- match-list [items args]
+  (let [r (:rest (peek items))
+        fixed (if r (pop items) items)]
+    (when (if r (>= (count args) (count fixed)) (= (count args) (count fixed)))
+      (reduce (fn [b [it a]] (if-let [m (match-item it a)] (merge b m) (reduced nil)))
+              (if r {r {:args (vec (drop (count fixed) args))}} {})
+              (map vector fixed args)))))
+
+;; ---- definitions
+(defn- end-macro? [st] (and (= 2 (count st)) (name? (first st) "end") (name? (second st) "macro")))
+
+(defn- defs
+  "[table statements-without-definitions]; table {[kind name] [rule]}, rule {:items :block :body}."
+  [sts path]
+  (loop [sts (seq sts) tbl {} out []]
+    (if-let [st (first sts)]
+      (if (and (name? (first st) "macro") (or (name? (second st) "stmt") (name? (second st) "expr")) (get st 2) (op? (get st 3) "("))
+        (let [kind (keyword (:v (second st))) nm (:v (get st 2))
+              pat (subvec st 3)
+              _ (when-not (= (close-of st 3) (dec (count st))) (fail-at path (first st) "a macro header is: macro stmt|expr name(parameters)"))
+              items (mapv #(item path %) (split-args (subvec st 4 (dec (count st)))))
+              blk (when (and (= :stmt kind) (:rest (peek items))) (:rest (peek items)))
+              [body more] (split-with #(not (end-macro? %)) (rest sts))
+              _ (when (empty? more) (fail-at path (first st) (str "macro " nm " has no end macro")))
+              _ (when (and (= :expr kind) (not= 1 (count body))) (fail-at path (first st) "an expression macro's body is one line"))]
+          (recur (rest more) (update tbl [kind nm] (fnil conj []) {:items (if blk (pop items) items) :block blk :body (vec body)}) out))
+        (recur (rest sts) tbl (conj out st)))
+      [tbl out])))
+
+;; ---- instantiation
+(defn- sub-line [ts b at]
+  (loop [ts ts out []]
+    (if-let [t (first ts)]
+      (let [v (when (= :name (:t t)) (get b (:v t)))]
+        (cond
+          (nil? v) (recur (rest ts) (conj out (assoc t :line (:line at) :col (:col at))))
+          (map? v) (let [args (:args v) more (drop 2 ts)
+                         comma {:t :op :v "," :line (:line at) :col (:col at)}]
+                     (cond (seq args) (recur more (into out (apply concat (interpose [comma] args))))
+                           (op? (first more) ",") (recur (rest more) out)
+                           (op? (peek out) ",") (recur more (pop out))
+                           :else (recur more out)))
+          :else (recur (rest ts) (into out v))))
+      out)))
+
+(defn- sub-stmts [tmpl b at nm]
+  (vec (mapcat (fn [st]
+                 (let [v (when (= 2 (count st)) (get b (:v (first st))))]
+                   (if (and (map? v) (:block v))
+                     (:block v)
+                     [(with-meta (sub-line st b at) {:macro nm :line (:line at) :col (:col at)})])))
+               tmpl)))
+
+(defn- try-rules [rules args path t nm]
+  (or (some (fn [r] (when-let [b (match-list (:items r) args)] [r b])) rules)
+      (fail-at path t (str "no rule of the macro " nm " matches these arguments"))))
+
+;; ---- expansion
+(defn- too-deep! [path t depth]
+  (when (> depth max-depth) (fail-at path t (str "macro expansion is nested deeper than " max-depth))))
+
+(defn- expand-expr [tbl ts path depth]
+  (loop [i 0 out []]
+    (if (>= i (count ts))
+      out
+      (let [t (get ts i) nx (get ts (inc i))
+            rules (when (and (contains? #{:name :op} (:t t)) (op? nx "(") (= (:line t) (:line nx)) (or (= (:col t) (:col nx)) (= (+ (:col t) (count (:v t))) (:col nx))))
+                    (get tbl [:expr (:v t)]))]
+        (if rules
+          (let [j (or (close-of ts (inc i)) (fail-at path t (str "the call of " (:v t) " is not closed")))
+                [r b] (try-rules rules (split-args (subvec ts (+ i 2) j)) path t (:v t))]
+            (too-deep! path t depth)
+            (recur (inc j) (into out (expand-expr tbl (sub-line (first (:body r)) b t) path (inc depth)))))
+          (recur (inc i) (conj out t)))))))
+
+(defn- take-block [sts nm path t]
+  (loop [sts sts d 0 blk []]
+    (if-let [st (first sts)]
+      (cond (and (= 2 (count st)) (name? (first st) "end") (name? (second st) nm))
+            (if (zero? d) [blk (rest sts)] (recur (rest sts) (dec d) (conj blk st)))
+            (and (call? st) (= nm (:v (first st)))) (recur (rest sts) (inc d) (conj blk st))
+            :else (recur (rest sts) d (conj blk st)))
+      (fail-at path t (str "the call of " nm " has no end " nm)))))
+
+(defn- expand-stmts [tbl sts path depth]
+  (loop [sts (seq sts) out []]
+    (if-let [st (first sts)]
+      (let [rules (when (call? st) (get tbl [:stmt (:v (first st))]))]
+        (if rules
+          (let [t (first st) nm (:v t)
+                [blk after] (if (some :block rules) (take-block (rest sts) nm path t) [nil (rest sts)])
+                [r b] (try-rules rules (split-args (subvec st 2 (dec (count st)))) path t nm)
+                b (if (:block r) (assoc b (:block r) {:block (vec blk)}) b)]
+            (too-deep! path t depth)
+            (recur after (into out (expand-stmts tbl (sub-stmts (:body r) b t nm) path (inc depth)))))
+          (let [e (expand-expr tbl st path 0)]
+            (recur (rest sts) (conj out (if (= e st) st (with-meta e (or (meta st) {:macro "expr" :line (:line (first st)) :col (:col (first st))}))))))))
+      out)))
+
+(defn statements
+  "lemmis.lex/statements, then the macros expanded: definitions (the prelude's and the file's own)
+  removed, calls replaced by their expansion."
+  [text path]
+  (let [[pre _] (defs (lex/statements prelude "prelude") "prelude")
+        [user sts] (defs (lex/statements text path) path)]
+    (expand-stmts (merge-with (fn [a b] (into b a)) pre user) sts path 0)))
+
+;; ---- lemmis expand
+(defn- tok-text [t]
+  (case (:t t)
+    :str (str "'" (str/replace (:v t) "'" "''") "'")
+    :cname (str "`" (:v t) "`")
+    :logical (str (if (:v t) ".true." ".false.") (when (:kind t) (str "_" (:kind t))))
+    :dop (str "." (:v t) ".")
+    (:int :real) (str (:v t) (when (:kind t) (str "_" (:kind t))))
+    (or (:raw t) (str (:v t)))))
+
+(defn- st-text [st]
+  (loop [ts st prev nil out ""]
+    (if-let [t (first ts)]
+      (let [tight? (or (nil? prev) (and (= :op (:t prev)) (contains? #{"(" "[" "#[" "#{" ":"} (:v prev)))
+                       (and (= :op (:t t)) (contains? #{")" "]" "}" "," "..."} (:v t)))
+                       (and (op? t "(") (nameish? prev)))]
+        (recur (rest ts) t (str out (if tight? "" " ") (tok-text t) (when (op? t ",") ""))))
+      out)))
+
+(defn expand
+  "The Lemmis after expansion, each expanded statement followed by a comment naming its call."
+  [text path]
+  (str/join "\n" (mapcat (fn [st] (let [m (meta st)]
+                                    (if m [(str "! " (:macro m) " at " (:line m) ":" (:col m)) (st-text st)] [(st-text st)])))
+                         (statements text path))))

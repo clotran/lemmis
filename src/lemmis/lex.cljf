@@ -16,7 +16,7 @@
 (def ^:private dot-ops #{"and" "or" "not" "eqv" "neqv" "eq" "ne" "lt" "le" "gt" "ge" "true" "false"})
 
 ;; longest first
-(def ^:private ops ["->>" "**" "//" "==" "/=" "<=" ">=" "=>" "->" "::" "#[" "#{"
+(def ^:private ops ["..." "->>" "**" "//" "==" "/=" "<=" ">=" "=>" "->" "::" "#[" "#{"
                     "(" ")" "," "=" "+" "-" "*" "/" "<" ">" ":" "%" "[" "]" "}"])
 
 (defn- kind-suffix [s] (when-let [[_ k] (re-find #"^_([A-Za-z0-9_]+)" s)] k))

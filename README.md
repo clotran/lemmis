@@ -216,3 +216,11 @@ the cases in test/refused show each one on valid Fortran.
 ## License
 
 EPL-2.0 (LICENSE).
+
+## Pattern macros (first slice)
+
+`src/lemmis/macro.cljf` expands pattern macros over tokens before the parser: a prelude with `when(test) ... end when`,
+and `->(x, f, ...)`, `->>(x, f(args...), ...)` in call form (the prefix pipelines still work). A file may define its own
+(`macro stmt|expr name(params) ... end macro`, first matching rule wins). Tokens from a template take the call's position,
+so findings and errors point at the line written. `clotran -m lemmis.fortran --expand FILE.lms` prints the expansion.
+Checked by test/macro.bb (against the built-in forms; two-path oracle for `when`). Not yet: `--tier`/`--once`, dotimes/doseq/cond/case, hygiene blocks, procedural macros.
