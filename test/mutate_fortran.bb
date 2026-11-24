@@ -56,9 +56,9 @@
    ["typer.cljf" "(concat deps (:deps dep) [[m dp dtext]])" "(concat deps [[m dp dtext]] (:deps dep))" "a module is built before the modules it uses" :two-path]
    ["typer.cljf" "(if (seen (first d)) {:seen seen :val val}" "(if false {:seen seen :val val}" "a module used twice is built twice" :two-path]
    ["typer.cljf" "(conj uses (assoc u :lms dp))" "(conj uses u)" "a use of a Lemmis module has no use statement" :two-path]
-   ["typer.cljf" "(assoc-in env [:b-from l] [(:name u) bs])" "env" "the B004 help does not name the module's tier-B procedures" :typer]
+   ["typer.cljf" "(str/join \", \" bs) \"), so it cannot" "\"\" \"), so it cannot" "the B004 help does not name the module's tier-B procedures" :typer]
    ["typer.cljf" "(every? #(= :A (:tier %)) (vals (:procs dep)))" "true" "a module with a tier-B procedure is imported as if tier A" :typer]
-   ["typer.cljf" "(when (and dp ((:stack opts) m))" "(when false" "a circular use is not refused" :typer]
+   ["typer.cljf" "(when (and dp (not cljf?) ((:stack opts) m))" "(when false" "a circular use is not refused" :typer]
    ["fortran.cljf" "(if (= l r) l (str l \" => \" r))) (:only u))" "(if (= l r) l (str r \" => \" l))) (:only u))" "a renamed import is written the wrong way round" :two-path]
    ;; a clotran function calling a Lemmis module (the other direction)
    ["fortran.cljf" "(when (and (= :function (:kind p)) res (zero? (or (:rank res) 0)))\n                                          (get ty/type-ts [(:k res) 0]))" "(when (and (= :function (:kind p)) res (zero? (or (:rank res) 0)))\n                                          (get ty/type-ts [(:k res) 1]))" "a Lemmis function's result type is looked up as an array" :to-clotran]])
