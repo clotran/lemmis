@@ -130,6 +130,40 @@ typed (Fortran's declarations), lowered to Fortran, and built by gfortran or fla
   CUDA Fortran is nvfortran only, and OpenCL has no Fortran target, so an OpenCL path would be a
   kernel emitter from the tier-A subset, not a use of the Fortran compiler.
 
+### Macro syntax and `lemmis expand` (designed with James, 2026-11-24; not built)
+
+Settled in conversation, in the order they are to be built (the require interchange first, then these):
+
+- **Two kinds, as Rust has them.** *Pattern* macros (a pattern and the code it becomes, no quoting operators; hygienic
+  by construction, as Scheme's syntax-rules and Rust's macro_rules) for the common case, then *procedural* macros (code
+  that builds a syntax tree, where the parens come back) for what must compute. Both run at compile time on the
+  interpreted path; the macro's own code has no tier, only its expansion does.
+- **The header says where the macro may appear**: `macro stmt when(test, body...)`, `macro expr ->(x, f(args...), rest...)`,
+  `macro decl ...`. `macro name(...)` is text Fortran rejects (two names before a parenthesis), so it passes the
+  extension rule; the grammar check must confirm each spelling. The body is the Fortran it generates, the parameters
+  are holes, `name...` takes the rest; rules are tried in order and the first match wins, so `->` is defined by
+  recursion (x; x, f(args...), rest...; x, f, rest...) with no reduce.
+- **Hygiene** (Rust's mixed-site: locals hygienic, items not): a statement macro that introduces locals expands to
+  `block ... end block`, whose declarations are local by construction. Watch the user-supplied bound in
+  `dotimes(i, n, ...)`: `n` must be evaluated outside the block (`associate (m => n)`), or `dotimes(i, i)` reads the
+  block's `i`.
+- **What an expression macro cannot do**: put a statement in an expression, so `some->` and `cond->` (which need a
+  temporary) lift it into a helper function, which needs a declared result type; macros cannot ask for types in the
+  first slice, so those two wait for type-aware expansion (Template Haskell's reify; Fortran declares every type, so
+  Lemmis could). No reader macros, no new operators; recursion has a depth limit.
+- **`lemmis expand FILE.lms[:LINE] [--once] [--tier] [--fortran]`**: the Lemmis after expansion, each form commented with
+  its call site and the rule that matched; `--tier` adds each node's tier and hint (the report, with provenance);
+  `--fortran` the emitted Fortran. It builds and runs nothing; pattern macros are safe to expand, procedural ones
+  run code.
+- **Provenance**: every expanded node keeps the span of its call site (Rust's spans), so the tier report's hint points
+  at the line the user wrote ("->> expands to a lazy map: tier B, B001"), not at generated code. This must land with
+  the macro stage, not after it. An expansion that fails to type is reported at the call, with the expansion under it.
+- **Also from Rust**: `derive`/attribute macros on derived types (Fortran types have no equality, printing or copying;
+  the declaration-macro kind), the same two-path oracle for each macro, and the build-time-code caveat (a procedural
+  macro in a library runs on the builder's machine).
+- **First slice**: the pattern form with `when`, `->`, `->>` in a prelude `.lms` checked against the current
+  built-in pipelines, then `dotimes`, `doseq`, `cond`, `case`, then user macros, then procedural.
+
 ## The rule
 
 **Every valid Fortran program means exactly what Fortran says. Every
