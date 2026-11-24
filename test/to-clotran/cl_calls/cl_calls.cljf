@@ -1,0 +1,26 @@
+(ns cl_calls
+  "A clotran namespace calling a Lemmis module: tier A, so clotran compile --pure writes the call as a
+  Fortran call of the module's function and the output needs no clotran at run time."
+  (:require [lm_geo.shapes :as s]))
+
+(defn ring ^double [^double r] (- (s/area (* 2.0 r)) (s/area r)))
+
+(defn weighted ^double [^doubles xs ^doubles ws] (s/dot xs ws))
+
+(defn tri-sum ^long [^long n]
+  (loop [i 1 acc 0] (if (> i n) acc (recur (inc i) (+ acc (s/tri i))))))
+
+(defn sign-of ^long [^long x] (if (s/pos x) 1 -1))
+
+(defn twice-it ^double [^double x] (+ 1.0 (s/twice x)))
+
+(defn -main []
+  (let [xs (double-array 3)
+        ws (double-array 3)]
+    (aset xs 0 1.0) (aset xs 1 2.0) (aset xs 2 3.0)
+    (aset ws 0 0.5) (aset ws 1 0.25) (aset ws 2 2.0)
+    (println "ring" (ring 1.5))
+    (println "weighted" (weighted xs ws))
+    (println "tri-sum" (tri-sum 10))
+    (println "signs" (sign-of 5) (sign-of -3) (sign-of 0))
+    (println "twice-it" (twice-it 2.5))))

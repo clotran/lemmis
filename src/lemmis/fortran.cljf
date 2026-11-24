@@ -276,6 +276,33 @@
                             (map (fn [[_ p t f]] (if f (str "!@clotran\n" f) (to-fortran t p opts))) (:deps r))
                             [(to-fortran text path opts)])))))
 
+(defn interface
+  "What a clotran function may call of the Lemmis module in file path as pure Fortran (the other way of
+  require on the compiled path: clotran.purefort calls a Lemmis module). Its functions whose dummies are all
+  intent(in) scalars or assumed-shape rank-1 arrays of a kind clotran has (clotran's :long :double :bool
+  :longs ...), and whose result is such a scalar. Answers {:module fortran-name :text the module and what it
+  uses :procs {name [{:ts [...] :ret ts :fpure bool :prints bool}]}}, or nil when the module is not all
+  tier A, needs a clotran module itself, or has no such function."
+  [path]
+  (let [text (slurp path)
+        r (ty/check text path {})]
+    (when (and (= :module (:unit (:unit r))) (every? #(= :A (:tier %)) (vals (:procs r))) (nil? (:support r)))
+      (let [unit (:unit r)
+            acc (ty/access-of unit)
+            printers (:printers (:env r))
+            procs (into {}
+                        (for [p (:procs unit)
+                              :let [n (:name p) sig (:sig p) res (:result sig) ds (:dummies sig)
+                                    ts (mapv (fn [d] (when (and (= :in (:intent d)) (or (zero? (or (:rank d) 0)) (= :colon (:hi d))))
+                                                       (get ty/type-ts [(:k d) (or (:rank d) 0)])))
+                                             ds)
+                                    ret (when (and (= :function (:kind p)) res (zero? (or (:rank res) 0)))
+                                          (get ty/type-ts [(:k res) 0]))]
+                              :when (and (= :public (get-in acc [:names n] (:default acc))) ret (seq ts) (every? some? ts))]
+                          [n [{:ts ts :ret ret :name n :fpure (boolean (some #{"pure"} (:prefixes p))) :prints (boolean (printers n))}]]))]
+        (when (seq procs)
+          {:module (fname (:name unit)) :procs procs :text (to-fortran-all text path {})})))))
+
 ;; ---- the report, in clotran compile --report's form (clotran/src/clj/clotran/tiers.cljf)
 (defn explain "What a finding code means." [code]
   (if-let [c (ty/codes code)] (str code ": " (:title c) "\n\n" (:explain c)) (str code ": no such code")))

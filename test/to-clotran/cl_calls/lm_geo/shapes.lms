@@ -1,0 +1,39 @@
+module lm_geo.shapes
+  implicit none
+  real(8), parameter :: pi = 3.141592653589793d0
+contains
+  pure real(8) function area(r)
+    real(8), intent(in) :: r
+    area = pi * r**2
+  end function area
+  pure real(8) function dot(a, b)
+    real(8), intent(in) :: a(:), b(:)
+    integer :: i
+    dot = 0.0d0
+    do i = 1, size(a)
+      dot = dot + a(i) * b(i)
+    end do
+  end function dot
+  pure logical function pos(x)
+    integer(8), intent(in) :: x
+    pos = x > 0_8
+  end function pos
+  pure integer(8) function tri(n)
+    integer(8), intent(in) :: n
+    tri = n * (n + 1_8) / 2_8
+  end function tri
+  ! not pure (no pure prefix): a clotran function calling it cannot be pure Fortran either
+  real(8) function twice(x)
+    real(8), intent(in) :: x
+    twice = 2.0d0 * x
+  end function twice
+  ! not called from clotran: a subroutine has no interface there, and stays out of the Fortran use
+  subroutine fill(a, n)
+    integer, intent(in) :: n
+    real(8), intent(out) :: a(n)
+    integer :: i
+    do i = 1, n
+      a(i) = real(i, 8)
+    end do
+  end subroutine fill
+end module lm_geo.shapes

@@ -306,13 +306,13 @@
 
 ;; ---- a clotran namespace's functions lowered to pure Fortran (clotran.purefort): a generic name with
 ;; one specific procedure per argument type, which the call picks as Fortran does
-(def ^:private ts-type
+(def ts-type
   {:long {:k :int8} :int4 {:k :int4} :int2 {:k :int2} :int1 {:k :int1}
    :double {:k :real8} :real4 {:k :real4} :bool {:k :logical}
    :complex4 {:k :complex4} :complex8 {:k :complex8}
    :longs {:k :int8 :rank 1} :ints {:k :int4 :rank 1} :shorts {:k :int2 :rank 1} :bytes {:k :int1 :rank 1}
    :doubles {:k :real8 :rank 1} :floats {:k :real4 :rank 1}})
-(def ^:private type-ts (into {} (for [[ts t] ts-type] [[(:k t) (:rank t 0)] ts])))
+(def type-ts (into {} (for [[ts t] ts-type] [[(:k t) (:rank t 0)] ts])))
 
 (defn- cproc-call
   "[type args] of a call of the clotran function n (global g): the version is picked by the
@@ -766,7 +766,7 @@
                           (str m "'s " r " is not lowered to pure Fortran: " (get (:why dep) r "it is not a public function clotran can lower") " (clotran compile --report on its file says more)"))))
             env pairs)))
 
-(defn- access-of
+(defn access-of
   "A module's access: {:default :public|:private :names {name access}}."
   [unit]
   (reduce (fn [acc sp]

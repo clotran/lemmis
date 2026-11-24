@@ -59,7 +59,9 @@
    ["typer.cljf" "(assoc-in env [:b-from l] [(:name u) bs])" "env" "the B004 help does not name the module's tier-B procedures" :typer]
    ["typer.cljf" "(every? #(= :A (:tier %)) (vals (:procs dep)))" "true" "a module with a tier-B procedure is imported as if tier A" :typer]
    ["typer.cljf" "(when (and dp ((:stack opts) m))" "(when false" "a circular use is not refused" :typer]
-   ["fortran.cljf" "(if (= l r) l (str l \" => \" r))) (:only u))" "(if (= l r) l (str r \" => \" l))) (:only u))" "a renamed import is written the wrong way round" :two-path]])
+   ["fortran.cljf" "(if (= l r) l (str l \" => \" r))) (:only u))" "(if (= l r) l (str r \" => \" l))) (:only u))" "a renamed import is written the wrong way round" :two-path]
+   ;; a clotran function calling a Lemmis module (the other direction)
+   ["fortran.cljf" "(when (and (= :function (:kind p)) res (zero? (or (:rank res) 0)))\n                                          (get ty/type-ts [(:k res) 0]))" "(when (and (= :function (:kind p)) res (zero? (or (:rank res) 0)))\n                                          (get ty/type-ts [(:k res) 1]))" "a Lemmis function's result type is looked up as an array" :to-clotran]])
 
 (def mutations (if only (filterv #(str/includes? (nth % 3) only) mutations) mutations))
 
@@ -68,7 +70,8 @@
 (defn run-check [check src]
   (case check
     :two-path (apply p/shell {:continue true :out :string :err :string :extra-env {"LEMMIS_SRC" src}} "bb" (str here "/two_path.bb") corpus)
-    :typer (p/shell {:continue true :out :string :err :string :extra-env {"LEMMIS_SRC" src}} "bb" (str here "/typer.bb"))))
+    :typer (p/shell {:continue true :out :string :err :string :extra-env {"LEMMIS_SRC" src}} "bb" (str here "/typer.bb"))
+    :to-clotran (p/shell {:continue true :out :string :err :string :extra-env {"LEMMIS_SRC" src}} "bb" (str here "/to_clotran.bb") "--fuzz" "1" "6" (str here "/to-clotran/cl_calls"))))
 
 (println "baseline (no mutation) ...")
 (doseq [c [:two-path :typer]]

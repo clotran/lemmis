@@ -118,8 +118,23 @@ found as `geo/shapes.lms` under the file's own root, typed from that file (its p
 parameters, with Fortran's rules for access and renames) and written as a Fortran `use` of module
 `geo_shapes`; the output holds every module the unit uses, dependencies first. A use of a clotran
 namespace, or of a Lemmis module with a tier-B procedure, leaves its names untyped (B004), so a
-procedure that calls one is tier B. `test/two_path.bb` runs each program both ways (Fortran by gfortran
-and flang, and the same `.lms` through `require` on clotran) and compares the printed values.
+procedure that calls one is tier B.
+
+A `use` of a clotran namespace (`use geo.stats, only: mean`, found as `geo/stats.cljf`) is typed from what
+clotran's compiler lowers of it (`clotran compile --pure`): the functions that have a pure-Fortran version, one
+specific procedure per argument type, picked by the call's argument types (`real(8)` array to `doubles`,
+`integer(8)` to `long`, and so on). The output has the namespace's `geo_stats_pure` module, clotran's support
+module (plain Fortran, no clotran runtime) and a `use`; a call with types that have no version stays tier B (B004),
+and the hint lists the versions there are. A `pure` procedure may call only a clotran function that is Fortran-pure.
+The other way round, a clotran function that calls a Lemmis module (`(:require [geo.shapes :as s])`, `(s/area r)`)
+is tier A, and `clotran compile --pure` / `clotran build --pure` write the call as a call of the module's Fortran:
+the Lemmis functions whose dummies are `intent(in)` numbers, logicals or assumed-shape arrays of numbers and whose
+result is a number or a logical (`lemmis.fortran/interface`).
+
+`test/two_path.bb` runs each program both ways (Fortran by gfortran
+and flang, and the same `.lms` through `require` on clotran) and compares the printed values;
+`test/to_clotran.bb` does the same for clotran namespaces that call Lemmis modules (interpreted against
+`clotran build --pure`, gfortran and flang), with a seeded fuzz mode.
 
 ### The checks
 

@@ -80,13 +80,25 @@ module with every procedure tier A, its public procedures and parameters (Fortra
 module with renames). A call of one is typed from its signature (15.5.2's checks), stays tier A, and the output
 has a `use` of the module with the dotted name's dots as `_`; `to-fortran-all` writes the modules it uses
 first. A module with a tier-B procedure cannot be built as Fortran: its names stay B004, and the help names
-that module and the procedures to fix. Not yet: a clotran namespace's tier-A functions as Fortran modules
-(clotran's compiler never writes a module a Lemmis file could use: purefort specializes by argument types, and
-compiler.cljf says a module file is a private format), a procedure-level `use`, module variables (v0 refuses
-them), and an imported kind constant (the reader refuses `real(dp)` with an imported `dp`). Checks: the
-two-path oracle over test/multi and a fuzz arm that moves the generator's helpers into `nm.lib`
+that module and the procedures to fix. A `use` of a clotran
+namespace (a .cljf found as the require hook finds it) is typed from clotran.purefort's interface for that file
+(`:interface`: generic name to versions, `:ts` the argument types, `:ret`, `:fpure`): the call picks the
+version by the actual types (Fortran's generic resolution), none that fits is B004 with the versions listed, a
+`pure` caller of a function the compiler did not write `pure` is a Fortran error, and the output holds clotran's
+support module once and the namespace's module (`!@clotran` lines mark them so the oracle builds them with
+clotran's flags, not -pedantic). (My first claim, that clotran's compiler never writes a module a Lemmis file could
+use, was wrong: the "private format" in compiler.cljf is the .mod file of the runtime in the library path;
+`--pure` has always written an ordinary module.) The other direction: clotran.lmsface finds the Lemmis modules a
+`.cljf` requires, asks lemmis.fortran/interface (functions whose dummies are intent(in) scalars or assumed-shape
+rank-1 arrays of a kind clotran has, result a scalar), and tiers/purefort treat the calls as tier A and call the
+module; the Lemmis module's Fortran goes into the output before the namespace's. Not yet: a Lemmis subroutine
+called from clotran (no clotran counterpart for intent(out)), a clotran function calling another .cljf
+namespace's pure module (purefort resolves calls within the file it compiles only), strings and records across
+the seam, a procedure-level `use`, module variables (v0 refuses them), and an imported kind constant (the reader
+refuses `real(dp)` with an imported `dp`). Checks: the
+two-path oracle over test/multi (mu_cljf for a clotran namespace) and a fuzz arm that moves the generator's helpers into `nm.lib`
 (whole, or an only list), typer-errors for a private or missing name, a clash, a cycle and an imported printing
-function, a report for a used tier-B module, 9 mutation rules.
+function, a report for a used tier-B module, test/to_clotran.bb (clotran calling Lemmis: corpus and fuzz), 10 mutation rules.
 
 ## Macros and the compiler layer (James, 2026-11-24)
 
