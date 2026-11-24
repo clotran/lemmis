@@ -11,8 +11,11 @@
 ;; intent(inout)/(out), PRINT.
 (require '[clojure.string :as str])
 
+;; a seeded generator of its own (64-bit LCG, Knuth's MMIX constants), so a seed is a program
 (def ^:dynamic *rnd* nil)
-(defn- r [n] (.nextInt *rnd* n))
+(defn- r [n]
+  (let [s (swap! *rnd* #(unchecked-add (unchecked-multiply % 6364136223846793005) 1442695040888963407))]
+    (mod (unsigned-bit-shift-right s 33) n)))
 (defn- pick [xs] (nth xs (r (count xs))))
 (defn- chance [n] (zero? (r n)))
 
@@ -207,7 +210,7 @@
   (let [I (ind k) busy (:busy env)
         free (remove busy ["i" "j" "k"])
         target (fn [] (pick (remove busy (keys scalars))))]
-    (case (r (if (pos? d) 17 11))
+    (case (r (if (pos? d) 18 11))
       (0 1 2) (let [n (target) e (num-e env 2)] [(str I n " = " (assign-to env n e)) env])
       3 [(str I "ia(" (pick ["1" "modulo(i, 5) + 1" "5"]) ") = " (:s (conv-int (num-e env 2) :int4))) env]
       4 [(str I "ra(" (pick ["0" "modulo(j, 5)" "4"]) ") = mod(" (:s (conv-real (num-e env 2) :real8)) ", 100.0d0) + 0.0d0") env]
@@ -235,7 +238,10 @@
                 [(str I "continue") env])
       15 (if (busy "nw") [(str I "continue") env] [(str I "nw = 0\n" I "do while (nw < " (inc (r 5)) ")\n" I "  nw = nw + 1\n"
                (block (update env :busy conj "nw") (dec d) (inc k) false) I "end do") env])
-      16 [(str I "do\n" (block env (dec d) (inc k) false) I "  if (" (:s (logic-e env 1)) ") exit\n" I "  exit\n" I "end do") env])))
+      16 [(str I "do\n" (block env (dec d) (inc k) false) I "  if (" (:s (logic-e env 1)) ") exit\n" I "  exit\n" I "end do") env]
+      17 (let [nm (str "e" (swap! *val-n* inc))
+               [arr ek eb] (pick [["ia" :int4 1000] ["ra" :real8 100] ["sa" :real4 100]])]
+           [(str I "do " nm " in " arr "\n" (block (update env :vals conj {:s nm :k ek :b eb :q (when (= ek :int4) 0)}) (dec d) (inc k) true) I "end do") env]))))
 
 (defn block [env d k loop?]
   (loop [n (inc (r 4)) env env out []]
@@ -256,7 +262,7 @@
        "    c = cmplx(mod(int(real(c)) + n, 100), mod(int(aimag(c)) - n, 100), 8)\n    m = int(n) * 2\n  end subroutine sc\n"))
 
 (defn gen-program [nm seed]
-  (binding [*rnd* (java.util.Random. seed) *val-n* (atom 0)]
+  (binding [*rnd* (atom (long seed)) *val-n* (atom 0)]
     (let [body (block {:busy #{} :vals []} 3 2 false)
           body (str/replace body #"call sc\((w|z), " (fn [[_ v]] (str "call sc(" (if (= v "z") "w" v) ", ")))]
       (str "module " nm "\n  implicit none\ncontains\n" procs

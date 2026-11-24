@@ -81,6 +81,8 @@
            :explain "val b = a binds b to the same array a is (no copy), so a later change to a shows in b. Fortran has no such alias: declare b as an array and assign it."}
    "B103" {:title "a keyword"
            :explain "A keyword is a Clojure value; Fortran has none. Use an integer or character constant."}
+   "B105" {:title "do x in something that is not an array"
+           :explain "do x in coll over a rank-1 array variable is a DO over its index. Over a Clojure collection (a vector, a lazy sequence) it walks a sequence, which needs clotran's runtime."}
    "B104" {:title "a val holding a function"
            :explain "Calling a val calls whatever function it holds, known only at run time. Call a module procedure by name."}})
 
@@ -197,7 +199,11 @@
                           (same-kind! env e targs (let [k (reduce promote (map :k (remove clj? targs)))]
                                                    (str "convert each to " (tname {:k k}) ", e.g. " (if (ik? k) "int" "real") "(..., " (kind-num k) ")")))
                           {:k (:k t0)})
-        ("sqrt" "exp" "log" "log10" "sin" "cos" "tan" "asin" "acos" "sinh" "cosh" "tanh")
+        ;; F2018 16.9: these take a real or a complex, the result of the argument's kind (the oracle has
+        ;; complex cases for exactly these five; the rest stay real-only, a refusal being always safe)
+        ("sqrt" "exp" "log" "sin" "cos")
+        (do (num1 "a real or a complex (an integer is not converted: write real(x, 8))" #(or (rk? %) (ck? %))) {:k (:k t0)})
+        ("log10" "tan" "asin" "acos" "sinh" "cosh" "tanh")
         (do (num1 "a real (an integer is not converted: write real(x, 8))" rk?) {:k (:k t0)})
         "atan" (do (num1 "a real" rk?) (when b (same-kind! env e targs nil)) {:k (:k t0)})
         "atan2" (do (num1 "reals" rk?) (same-kind! env e targs nil) {:k (:k t0)})
@@ -479,7 +485,7 @@
   [env n t]
   (let [vals (:vals env) taken (:taken env)]
     (or (some (fn [v] (when (and (= n (:src v)) (= (select-keys t [:k :len :rank]) (select-keys (:t v) [:k :len :rank]))) (:fname v))) @vals)
-        (let [base (str/replace n "?" "_q")
+        (let [base (-> n (str/replace "?" "_q") (str/replace "$" "_"))
               nm (first (remove #(or (@taken %) (some (fn [v] (= % (:fname v))) @vals))
                                 (cons base (map #(str base "_" %) (iterate inc 2)))))]
           (swap! vals conj {:src n :fname nm :t t})
@@ -543,7 +549,19 @@
     (let [c (tx env (:c s))]
       (need-logical env (:c s) (:t c) "a DO WHILE condition")
       [(assoc s :c c :body (first (stmts env (:body s)))) env])
-    :loop [(assoc s :body (first (stmts env (:body s)))) env]))
+    :loop [(assoc s :body (first (stmts env (:body s)))) env]
+    ;; ext: do x in a: over a rank-1 array, a DO over its index with x the element, a val
+    :doin
+    (let [c (tx env (:coll s)) t (:t c) n (:var s)]
+      (if (and (= 1 (:rank t)) (= :name (:op (:coll s))))
+        (let [elt (select-keys t [:k :len])
+              fname (fresh-name! env n elt)
+              idx (fresh-name! env (str "lms$i" (count @(:vals env))) {:k :int4})]
+          [(assoc s :coll c :fname fname :idx (str/replace idx "$" "_")
+                  :body (first (stmts (assoc-in env [:vars n] {:val? true :rank 0 :t elt :fname fname}) (:body s))))
+           env])
+        (do (when-not (clj? t) (find! env (:coll s) "B105" (str "do " n " in a value that is not an array variable") "walk a declared rank-1 array, or keep this in tier B"))
+            [(assoc s :coll c :body (first (stmts (assoc-in env [:vars n] {:val? true :rank 0}) (:body s)))) env])))))
 
 (defn- stmts [env ss]
   (reduce (fn [[out env] s] (let [[s2 env2] (stmt env s)] [(conj out s2) env2])) [[] env] ss))

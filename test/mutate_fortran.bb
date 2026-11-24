@@ -70,7 +70,7 @@
         _ (fs/copy-tree (str root "/src") tmp)
         path (str tmp "/lemmis/" f)
         text (slurp path)
-        n (count (re-seq (re-pattern (java.util.regex.Pattern/quote old)) text))]
+        n (loop [i 0 n 0] (if-let [j (str/index-of text old i)] (recur (inc j) (inc n)) n))]
     (if-not (= 1 n)
       (do (fs/delete-tree tmp) [why :bad (str "the text occurs " n " times in " f)])
       (do (spit path (str/replace text old new))

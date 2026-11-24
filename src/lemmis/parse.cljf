@@ -9,6 +9,7 @@
     type  {:base :integer|:real|:complex|:logical|:character :kind expr-or-nil :len expr|:star|nil}
     stmt  {:s :assign :lhs ref :e e} {:s :val :name n :e e} {:s :if :arms [[c stmts]] :else stmts}
           {:s :do :var n :from e :to e :step e :body} {:s :dowhile :c e :body} {:s :loop :body}
+          {:s :doin :var n :coll e :body}   (ext: do x in coll)
           {:s :exit} {:s :cycle} {:s :return} {:s :continue} {:s :call :callee e :args :kwargs}
           {:s :print :items [e]}
   Every node carries the :line :col of its first token."
@@ -235,6 +236,9 @@
                          (let [v (:v (next-t! c)) _ (next-t! c) a (x/expr c) _ (expect! c ",") b (x/expr c)
                                s (when (op? (peek-t c) ",") (next-t! c) (x/expr c))]
                            (done! c) {:s :do :var v :from a :to b :step s})
+                         ;; ext: do x in coll walks a collection (Fortran has no 'in' here)
+                         (and (name? (peek-t c)) (name? (peek-t c 1) "in"))
+                         (let [v (:v (next-t! c)) _ (next-t! c) e (x/expr c)] (done! c) {:s :doin :var v :coll e})
                          (kw? c "concurrent") (err c "do concurrent is refused in version 0")
                          :else (err c "construct names and this do form are refused in version 0"))
                 [body _] (block sts path #{"end do"})]

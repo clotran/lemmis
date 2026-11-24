@@ -22,7 +22,7 @@
              (case (:s s)
                :assign (if (:idx (:lhs s)) acc (conj acc (:name (:lhs s))))
                :do (into (conj acc (:var s)) (assigned (:body s) env))
-               (:dowhile :loop) (into acc (assigned (:body s) env))
+               (:dowhile :loop :doin) (into acc (assigned (:body s) env))
                :if (into (into acc (mapcat #(assigned (second %) env) (:arms s))) (assigned (:else s) env))
                :call (let [p (get-in env [:globals (:v (:callee s)) :proc])
                            ;; a callee not in this module: lemmis.rt/out-unchanged checks at run time
@@ -41,13 +41,13 @@
             (:exit :cycle) in-loop?
             :return true
             :if (or (some #(jumps? (second %) in-loop?) (:arms s)) (jumps? (:else s) in-loop?))
-            (:do :dowhile :loop) (jumps? (:body s) false)
+            (:do :dowhile :loop :doin) (jumps? (:body s) false)
             false))
         stmts))
 
 (defn- returns? [stmts]
   (some (fn [s] (case (:s s) :return true :if (or (some #(returns? (second %)) (:arms s)) (returns? (:else s)))
-                  (:do :dowhile :loop) (returns? (:body s)) false))
+                  (:do :dowhile :loop :doin) (returns? (:body s)) false))
         stmts))
 
 (defn- carried
@@ -112,15 +112,22 @@
   "A DO construct: the loop, then the rest of the block with what it yields rebound."
   [env s more cx]
   (let [vs (carried env [s])
-        dv (:var s)
+        dv (when (= :do (:s s)) (:var s))
+        ;; do x in coll: x is a val bound to each element in turn, sq what is left of the seq
+        xin (when (= :doin (:s s)) (x/check-local-name env s (:var s)))
+        sq (gen! env "sq")
         _ (when dv (let [v (target env s dv)] (when-not (#{:int1 :int2 :int4 :int8} (:k v)) (fail env s "a DO variable is an integer"))))
         vs (if dv (vec (cons dv (remove #{dv} vs))) vs)
-        body-env (if dv (assoc-in env [:vars dv :do-var?] true) env)
+        body-env (cond dv (assoc-in env [:vars dv :do-var?] true)
+                       xin (assoc-in env [:vars xin] {:val? true :rank 0})
+                       :else env)
         ret? (returns? (:body s))
         ret (gen! env "ret") n (gen! env "n") st (gen! env "s")
         syms (map symbol vs)
         yield (fn [flag] (if ret? (vec (cons flag syms)) (vec syms)))
-        again (if dv (list* 'recur (list 'fortran.ops/+ (symbol dv) st) (list 'clojure.core/dec n) (rest syms)) (list* 'recur syms))
+        again (cond dv (list* 'recur (list 'fortran.ops/+ (symbol dv) st) (list 'clojure.core/dec n) (rest syms))
+                    xin (list* 'recur (list 'clojure.core/next sq) syms)
+                    :else (list* 'recur syms))
         bcx {:fall (constantly again) :cycle (constantly again) :exit #(yield false) :ret #(yield true)}
         body (tr body-env (:body s) bcx)
         lp (case (:s s)
@@ -130,7 +137,9 @@
                          (list 'loop (into [(symbol dv) a n (list 'lemmis.rt/trips a b st)] (mapcat (fn [y] [y y]) (rest syms)))
                                (list 'if (list 'clojure.core/pos? n) body (yield false)))))
              :dowhile (list 'loop (into [] (mapcat (fn [y] [y y]) syms)) (list 'if (ex env (:c s)) body (yield false)))
-             :loop (list 'loop (into [] (mapcat (fn [y] [y y]) syms)) body))
+             :loop (list 'loop (into [] (mapcat (fn [y] [y y]) syms)) body)
+             :doin (list 'loop (into [sq (list 'clojure.core/seq (x/whole env (:coll s)))] (mapcat (fn [y] [y y]) syms))
+                         (list 'if sq (list 'clojure.core/let [(symbol xin) (list 'clojure.core/first sq)] body) (yield false))))
         after (tr env more cx)
         after (if ret? (list 'if ret ((:ret cx)) after) after)
         names (if ret? (vec (cons ret syms)) (vec syms))]
@@ -165,7 +174,7 @@
         :exit (if-let [f (:exit cx)] (f) (fail env s "exit outside a DO loop"))
         :cycle (if-let [f (:cycle cx)] (f) (fail env s "cycle outside a DO loop"))
         :return ((:ret cx))
-        (:do :dowhile :loop) (loop-form env s more cx)
+        (:do :dowhile :loop :doin) (loop-form env s more cx)
         :if (if (jumps? [s] (boolean (:exit cx)))
               ;; a jump inside: the rest of the block goes into each branch (tail position)
               (m env s (if-chain env (:arms s) (:else s) #(tr env (concat % more) cx)))

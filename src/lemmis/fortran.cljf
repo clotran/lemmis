@@ -5,6 +5,7 @@
   source's, so Fortran's precedence rebuilds it), so plain Fortran keeps its meaning.
   The extensions become plain Fortran:
     val x = e                 a local of e's type, declared with the others, assigned there
+    do x in a                 a DO over a's index, x (a local of a's element type) each element
     ->> a map(f) filter(p) r  one DO loop over a in a private function (r: sum, product,
                               maxval, minval); any other stage f(b) is the call f(b, value)
                               (->: f(value, b))
@@ -153,6 +154,10 @@
       :do (concat [(str I "do " (fname (:var s)) " = " (ex ctx (:from s)) ", " (ex ctx (:to s)) (when (:step s) (str ", " (ex ctx (:step s)))))]
                   (block ctx (:body s) (inc d)) [(str I "end do")])
       :dowhile (concat [(str I "do while (" (ex ctx (:c s)) ")")] (block ctx (:body s) (inc d)) [(str I "end do")])
+      :doin (let [a (ex ctx (:coll s)) i (:idx s)]
+              (concat [(str I "do " i " = lbound(" a ", 1), ubound(" a ", 1)")
+                       (str I "  " (:fname s) " = " a "(" i ")")]
+                      (block ctx (:body s) (inc d)) [(str I "end do")]))
       :loop (concat [(str I "do")] (block ctx (:body s) (inc d)) [(str I "end do")]))))
 
 (defn- block [ctx ss d] (mapcat #(stmt-lines ctx % d) ss))

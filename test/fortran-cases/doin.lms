@@ -1,0 +1,49 @@
+! do x in a: a DO over a rank-1 array, x each element (a val); EXIT, CYCLE, RETURN, nesting
+module doin
+  implicit none
+contains
+  integer function first_neg(a)
+    integer, intent(in) :: a(:)
+    first_neg = 0
+    do x in a
+      if (x < 0) then
+        first_neg = x
+        return
+      end if
+    end do
+  end function first_neg
+  subroutine run()
+    integer :: k(0:5), i, n
+    real(8) :: v(3), s
+    character(len=3) :: w(2)
+    do i = 0, 5
+      k(i) = i * i - 6
+    end do
+    v(1) = 0.5d0; v(2) = -1.25d0; v(3) = 2.0d0
+    w(1) = 'ab'; w(2) = 'xyz'
+    s = 0
+    n = 0
+    do x in v
+      s = s + x * 2
+      n = n + 1
+    end do
+    print *, s, n
+    do x in k
+      if (x == -2) cycle
+      if (x > 10) exit
+      print *, x, kind(x)
+      do y in v
+        if (y < 0) cycle
+        n = n + 1
+      end do
+    end do
+    print *, n, first_neg(k)
+    do c in w
+      print *, '[', c, ']', len(c)
+    end do
+    do x in k
+      k(5) = 100
+    end do
+    print *, k
+  end subroutine run
+end module doin
