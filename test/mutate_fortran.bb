@@ -61,20 +61,29 @@
    ["typer.cljf" "(when (and dp (not cljf?) ((:stack opts) m))" "(when false" "a circular use is not refused" :typer]
    ["fortran.cljf" "(if (= l r) l (str l \" => \" r))) (:only u))" "(if (= l r) l (str r \" => \" l))) (:only u))" "a renamed import is written the wrong way round" :two-path]
    ;; a clotran function calling a Lemmis module (the other direction)
-   ["fortran.cljf" "(when (and (= :function (:kind p)) res (zero? (or (:rank res) 0)))\n                                          (get ty/type-ts [(:k res) 0]))" "(when (and (= :function (:kind p)) res (zero? (or (:rank res) 0)))\n                                          (get ty/type-ts [(:k res) 1]))" "a Lemmis function's result type is looked up as an array" :to-clotran]])
+   ["fortran.cljf" "(when (and (= :function (:kind p)) res (zero? (or (:rank res) 0)))\n                                          (get ty/type-ts [(:k res) 0]))" "(when (and (= :function (:kind p)) res (zero? (or (:rank res) 0)))\n                                          (get ty/type-ts [(:k res) 1]))" "a Lemmis function's result type is looked up as an array" :to-clotran]
+   ;; the macro expander
+   ["macro.cljf" "(op? (peek out) \",\") (recur more (pop out))" "(op? (peek out) \",\") (recur more out)" "an empty rest leaves its comma behind" :macro]
+   ["macro.cljf" "(some (fn [r] (when-let [b (match-list (:items r) args)] [r b])) rules)" "(some (fn [r] (when-let [b (match-list (:items r) args)] [r b])) (reverse rules))" "the last matching rule wins" :macro]
+   ["macro.cljf" "(recur (rest sts) (inc d) (conj blk st))" "(recur (rest sts) d (conj blk st))" "a nested call ends the outer block" :macro]
+   ["macro.cljf" "->>(f(args..., x), rest...)" "->>(f(x, args...), rest...)" "->> threads first" :macro]
+   ["macro.cljf" "do i = 0, (n) - 1" "do i = 0, (n)" "dotimes runs one time too many" :macro]
+   ["macro.cljf" "(and (map? v) (:block v))" "(and (map? v) false)" "a block is not spliced" :macro]
+   ["macro.cljf" "(too-deep! path t depth)\n            (recur (inc j)" "(recur (inc j)" "expression recursion is not limited" :macro]])
 
-(def mutations (if only (filterv #(str/includes? (nth % 3) only) mutations) mutations))
+(def mutations (if only (filterv #(or (str/includes? (nth % 3) only) (= only (name (nth % 4)))) mutations) mutations))
 
 (def corpus [(str here "/cases") (str here "/model-cases") (str here "/fortran-cases") (str here "/multi/mu_basic/mu_basic.lms") (str here "/multi/mu_whole/mu_whole.lms") "--fuzz" "1" "25"])
 
 (defn run-check [check src]
   (case check
     :two-path (apply p/shell {:continue true :out :string :err :string :extra-env {"LEMMIS_SRC" src}} "bb" (str here "/two_path.bb") corpus)
+    :macro (p/shell {:continue true :out :string :err :string :extra-env {"LEMMIS_SRC" src}} "bb" (str here "/macro.bb"))
     :typer (p/shell {:continue true :out :string :err :string :extra-env {"LEMMIS_SRC" src}} "bb" (str here "/typer.bb"))
     :to-clotran (p/shell {:continue true :out :string :err :string :extra-env {"LEMMIS_SRC" src}} "bb" (str here "/to_clotran.bb") "--fuzz" "1" "6" (str here "/to-clotran/cl_calls"))))
 
 (println "baseline (no mutation) ...")
-(doseq [c [:two-path :typer]]
+(doseq [c (if (= only "macro") [:macro] [:two-path :typer])]
   (let [r (run-check c (str root "/src"))]
     (when (pos? (:exit r)) (println "the" (name c) "check fails with no mutation:\n" (:out r)) (System/exit 1))))
 

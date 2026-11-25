@@ -1,0 +1,11 @@
+macro expr again(x)
+  again(x)
+end macro
+module deep
+  implicit none
+contains
+  subroutine run()
+    integer :: i
+    i = again(1)
+  end subroutine run
+end module deep

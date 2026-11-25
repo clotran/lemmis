@@ -10,7 +10,7 @@
 (def root (str (fs/parent here)))
 (def clotran (or (System/getenv "CLOTRAN") "/Users/james/clotran/clotran/clotran"))
 (defn ct [& args] (:out (apply p/shell {:out :string :err :string :continue true :dir here
-                                       :extra-env {"CLOTRAN_PATH" (str root "/src")}} clotran args)))
+                                       :extra-env {"CLOTRAN_PATH" (or (System/getenv "LEMMIS_SRC") (str root "/src"))}} clotran args)))
 (defn body [out] (rest (str/split-lines out)))
 (def fails (atom []))
 (doseq [f (sort (map str (fs/glob (str here "/macro") "*.lms")))
@@ -26,6 +26,8 @@
 (let [bad (str root "/test/macro/bad/nomatch.lms")
       out (ct "run-lms.clj" "macro/bad/nomatch.lms")]
   (when-not (str/includes? out "nomatch.lms:6:") (swap! fails conj (str "nomatch: " out))))
+(let [out (ct "run-lms.clj" "macro/bad/deep.lms")]
+  (when-not (and (str/includes? out "deep.lms:9:") (str/includes? out "deeper than")) (swap! fails conj (str "deep: " out))))
 (doseq [m @fails] (println "FAIL" m))
 (println (if (empty? @fails) "macro: ok" (str "macro: " (count @fails) " failed")))
 (System/exit (if (empty? @fails) 0 1))
